@@ -8,7 +8,14 @@ import {
 import { type RedirectSettings, redirect } from "./redirect";
 
 const CACHE_NAME = "flashbang";
-const ASSETS = ["/home", "/app.js", "/icon.svg", "/manifest.json"];
+const ASSETS = [
+  "/home",
+  "/bench",
+  "/bench.js",
+  "/app.js",
+  "/icon.svg",
+  "/manifest.json",
+];
 
 self.addEventListener("install", (e: ExtendableEvent) => {
   e.waitUntil(
