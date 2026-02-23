@@ -5,7 +5,7 @@ import {
   invalidateCache,
   readRedirectSettings,
 } from "./idb";
-import { type RedirectSettings, redirect } from "./redirect";
+import { type RedirectSettings, redirect, redirectRaw } from "./redirect";
 
 const CACHE_NAME = "flashbang";
 const ASSETS = [
@@ -76,18 +76,14 @@ self.addEventListener("fetch", (e: FetchEvent) => {
   if (qIdx !== -1) {
     const vStart = qIdx + 3;
     const vEnd = raw.indexOf("&", vStart);
-    const q = decodeURIComponent(
-      (vEnd === -1
-        ? raw.substring(vStart)
-        : raw.substring(vStart, vEnd)
-      ).replace(/\+/g, " ")
-    );
-    if (q) {
+    const rawQ =
+      vEnd === -1 ? raw.substring(vStart) : raw.substring(vStart, vEnd);
+    if (rawQ) {
       const cached = getCachedSettings();
       if (cached) {
-        e.respondWith(redirect(q, cached));
+        e.respondWith(redirectRaw(rawQ, cached));
       } else {
-        e.respondWith(readRedirectSettings().then((s) => redirect(q, s)));
+        e.respondWith(readRedirectSettings().then((s) => redirectRaw(rawQ, s)));
       }
       return;
     }

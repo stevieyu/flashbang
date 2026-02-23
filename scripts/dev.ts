@@ -64,7 +64,7 @@ async function build() {
     }),
   ]);
 
-  await $`bunx unocss "src/ui/home.html" "src/ui/bench.html" "src/ui/app.ts" "src/ui/bench.ts" "src/ui/liquid-metal.ts" -o dist/styles.css --minify`.quiet();
+  await $`bunx unocss "src/ui/home.html" "src/ui/bench.html" "src/ui/**/*.ts" -o dist/styles.css --minify`.quiet();
 
   const css = await Bun.file("dist/styles.css").text();
   const inlineCSS = (src: string) =>

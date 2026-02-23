@@ -39,7 +39,7 @@ await Bun.build({
 });
 
 console.log("=== Generate CSS ===");
-await $`bunx unocss "src/ui/home.html" "src/ui/bench.html" "src/ui/app.ts" "src/ui/bench.ts" "src/ui/liquid-metal.ts" -o dist/styles.css --minify`;
+await $`bunx unocss "src/ui/home.html" "src/ui/bench.html" "src/ui/**/*.ts" -o dist/styles.css --minify`;
 
 console.log("=== Inline CSS + minify HTML ===");
 const css = await Bun.file("dist/styles.css").text();
