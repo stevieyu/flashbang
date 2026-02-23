@@ -38,16 +38,24 @@ flashbang/
 │   │   └── bangs-meta.json # bang count & timestamp
 │   ├── sw/
 │   │   ├── sw.ts           # Service Worker lifecycle & fetch handler
-│   │   ├── redirect.ts     # Bang parsing & redirect logic
+│   │   ├── redirect.ts     # Bang parsing & redirect logic (zero-copy raw + decoded paths)
 │   │   ├── suggest.ts      # Bang autocomplete & search suggestions
 │   │   └── idb.ts          # IndexedDB access & settings cache
 │   └── ui/
-│       ├── index.html       # HTML template
-│       ├── app.ts           # Settings UI & initialization
-│       ├── db.ts            # IndexedDB wrapper
-│       ├── liquid-metal.ts  # WebGL2 shader effect
-│       ├── manifest.json    # PWA manifest
-│       └── opensearch.xml   # OpenSearch descriptor
+│       ├── index.html        # HTML template
+│       ├── app.ts            # Initialization & orchestration
+│       ├── dom.ts            # $() selector & el() factory
+│       ├── sw-bridge.ts      # notifySW() — postMessage to Service Worker
+│       ├── dns-prefetch.ts   # DNS prefetch for default bang
+│       ├── cookie.ts         # Suggest cookie management
+│       ├── animations.ts     # Flash & shake CSS animations
+│       ├── modal.ts          # Settings modal with focus trapping
+│       ├── settings.ts       # Settings event wiring, bang search, import/export
+│       ├── custom-bangs.ts   # Custom bang list & add form
+│       ├── db.ts             # IndexedDB wrapper
+│       ├── liquid-metal.ts   # WebGL2 shader effect
+│       ├── manifest.json     # PWA manifest
+│       └── opensearch.xml    # OpenSearch descriptor
 ├── .dockerignore           # Files excluded from Docker build context
 ├── Dockerfile              # Multi-stage Docker build
 ├── package.json
@@ -83,8 +91,8 @@ The bang data is split into two tiers so the Service Worker loads only what it n
 `bun run build` bundles the app (requires `bun run codegen` first):
 
 1. **Bundle Service Worker** — Bun bundles `src/sw/sw.ts` with `bangs-min.js` into `dist/sw.js`. Code splitting lazy-loads `suggest.ts` on first suggestion request
-2. **Bundle UI** — Bun bundles `src/ui/app.ts` with `bangs-full.js` into `dist/app.js`
-3. **Generate CSS** — UnoCSS scans source files and emits atomic utility classes
+2. **Bundle UI** — Bun bundles `src/ui/app.ts` (and its module imports) with `bangs-full.js` into `dist/app.js`
+3. **Generate CSS** — UnoCSS scans `src/ui/**/*.ts` and HTML files, emitting atomic utility classes
 4. **Inline & minify HTML** — CSS is inlined into `<style>`, HTML is minified with `@minify-html/node`
 5. **Pre-compress** — All static assets are compressed with Brotli (max quality) and written as `.br` files alongside the originals. The production server serves these automatically when the client supports it, falling back to uncompressed
 
