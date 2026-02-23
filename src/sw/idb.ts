@@ -78,7 +78,8 @@ export async function readRedirectSettings(): Promise<RedirectSettings> {
       luckyUrl: DEFAULT_LUCKY_URL,
     };
   }
-  return cachedRedirect!;
+
+  return cachedRedirect;
 }
 
 export function invalidateCache() {

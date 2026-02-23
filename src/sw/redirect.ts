@@ -124,11 +124,11 @@ export function redirect(
 
   if (!term) {
     try {
-      return Response.redirect(new URL(url!.replace("{}", "")).origin, 302);
+      return Response.redirect(new URL(url.replace("{}", "")).origin, 302);
     } catch {
-      return Response.redirect(url!.replace("{}", ""), 302);
+      return Response.redirect(url.replace("{}", ""), 302);
     }
   }
 
-  return Response.redirect(url!.replace("{}", encode(term)), 302);
+  return Response.redirect(url.replace("{}", encode(term)), 302);
 }
