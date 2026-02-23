@@ -10,8 +10,10 @@ export class DB {
 
   async getSetting(key: string): Promise<string | null> {
     const s = await this.store("settings");
-    const r = await idbWrap(s.get(key));
-    return (r as any)?.value ?? null;
+    const r = await idbWrap<{ key: string; value: string } | undefined>(
+      s.get(key),
+    );
+    return r?.value ?? null;
   }
 
   async setSetting(key: string, value: string) {
@@ -23,7 +25,9 @@ export class DB {
     Array<{ trigger: string; name: string; url: string }>
   > {
     const s = await this.store("custom-bangs");
-    return idbWrap(s.getAll()) as any;
+    return idbWrap<Array<{ trigger: string; name: string; url: string }>>(
+      s.getAll(),
+    );
   }
 
   async addCustomBang(bang: { trigger: string; name: string; url: string }) {
