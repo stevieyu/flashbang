@@ -1,5 +1,4 @@
 import { $ } from "bun";
-import { parse as parseTOML } from "smol-toml";
 
 interface Bang {
   domain: string;
@@ -93,11 +92,10 @@ function parseKagi(raw: string): Bang[] {
   return bangs;
 }
 
-function parseCustom(raw: string): Bang[] {
-  const file = parseTOML(raw) as {
-    bangs: Record<string, { name: string; url: string; domain: string }>;
-  };
-  return Object.entries(file.bangs).map(([trigger, b]) => ({
+function parseCustom(
+  data: Record<string, { name: string; url: string; domain: string }>
+): Bang[] {
+  return Object.entries(data).map(([trigger, b]) => ({
     trigger: trigger.toLowerCase(),
     name: b.name,
     domain: b.domain,
@@ -236,8 +234,8 @@ const kagiBangs = parseKagi(kagiRaw);
 console.log(`Kagi: ${kagiBangs.length} bangs parsed`);
 allSources.push(["kagi", kagiBangs]);
 
-const customRaw = await Bun.file("config/custom.toml").text();
-const customBangs = parseCustom(customRaw);
+const customData = await Bun.file("config/custom.json").json();
+const customBangs = parseCustom(customData);
 console.log(`Custom: ${customBangs.length} bangs parsed`);
 allSources.push(["custom", customBangs]);
 

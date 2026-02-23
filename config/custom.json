@@ -1,0 +1,17 @@
+{
+  "mdn": {
+    "name": "MDN Web Docs",
+    "url": "https://developer.mozilla.org/en-US/search?q={}",
+    "domain": "developer.mozilla.org"
+  },
+  "kagi": {
+    "name": "Kagi",
+    "url": "https://kagi.com/search?q={}",
+    "domain": "kagi.com"
+  },
+  "settings": {
+    "name": "Settings",
+    "url": "/settings",
+    "domain": "flashbang"
+  }
+}

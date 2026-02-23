@@ -25,7 +25,7 @@ flashbang/
 ├── functions/
 │   └── suggest.ts          # Cloudflare Pages Function for /suggest
 ├── config/
-│   └── custom.toml         # Custom bang definitions
+│   └── custom.json         # Custom bang definitions
 ├── scripts/
 │   ├── codegen.ts          # Fetch sources, parse, merge, generate bang maps
 │   ├── build.ts            # Bundle + minify pipeline
@@ -71,7 +71,7 @@ Tests live alongside the source files they cover:
 `bun run codegen` fetches bang sources and generates the JavaScript bang maps that `build` and `dev` depend on:
 
 1. **Fetch sources** — Downloads bang definitions from DuckDuckGo (`bang.js`) and Kagi (`bangs.json`) into `data/`
-2. **Generate** — Parses DDG, Kagi, and custom TOML sources. Merges by trigger (deduplicates), validates URLs, and generates three files in `src/generated/`:
+2. **Generate** — Parses DDG, Kagi, and custom sources. Merges by trigger (deduplicates), validates URLs, and generates three files in `src/generated/`:
    - `bangs-min.js` — trigger→URL map for the Service Worker (~847 KB)
    - `bangs-full.js` — trigger→{name, domain, url, relevance} for the UI and suggestions
    - `bangs-meta.json` — bang count and timestamp

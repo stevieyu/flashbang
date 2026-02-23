@@ -15,16 +15,17 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for setup instructions and available comman
 
 ## Adding bangs
 
-Custom bangs live in [`config/custom.toml`](config/custom.toml). Each entry looks like:
+Custom bangs live in [`config/custom.json`](config/custom.json). Each entry looks like:
 
-```toml
-[bangs.mdn]
-name = "MDN Web Docs"
-url = "https://developer.mozilla.org/en-US/search?q={}"
-domain = "developer.mozilla.org"
+```json
+"mdn": {
+  "name": "MDN Web Docs",
+  "url": "https://developer.mozilla.org/en-US/search?q={}",
+  "domain": "developer.mozilla.org"
+}
 ```
 
-- The key after `bangs.` is the trigger (e.g. `!mdn`)
+- The key is the trigger (e.g. `!mdn`)
 - `url` must contain `{}` as the query placeholder
 - `domain` is shown in the UI for display
 
