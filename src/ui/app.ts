@@ -36,6 +36,21 @@ function notifySW(type: string) {
   navigator.serviceWorker.controller?.postMessage({ type });
 }
 
+let dnsPrefetchLink: HTMLLinkElement | null = null;
+function setDnsPrefetch(bangUrl: string) {
+  try {
+    const origin = new URL(bangUrl.replace("{}", "")).origin;
+    if (!dnsPrefetchLink) {
+      dnsPrefetchLink = document.createElement("link");
+      dnsPrefetchLink.rel = "dns-prefetch";
+      document.head.appendChild(dnsPrefetchLink);
+    }
+    dnsPrefetchLink.href = origin;
+  } catch {
+    //
+  }
+}
+
 function setSuggestCookie(
   provider: string,
   trigger: string,
@@ -181,6 +196,7 @@ async function initSettings() {
       await db.setSetting("default-bang", val);
       notifySW("invalidate");
       setSuggestCookie(suggestSelect.value, val, suggestUrlInput.value.trim());
+      setDnsPrefetch(f[val].u);
       flashAnim(defaultInput);
       $("#bang-status").textContent = f[val].s;
       $("#bang-status").className = "text-sm text-success";
@@ -371,7 +387,18 @@ async function renderCustom() {
   );
 }
 
+async function initDnsPrefetch() {
+  const defaultBang = (await db.getSetting("default-bang")) || "g";
+  const full = await getFull();
+  const entry = full[defaultBang];
+  if (entry) {
+    setDnsPrefetch(entry.u);
+  }
+}
+
 function init() {
+  initDnsPrefetch();
+
   $<HTMLInputElement>("#setup-url").value = `${location.origin}?q=%s`;
 
   const metal = initLiquidMetal(
