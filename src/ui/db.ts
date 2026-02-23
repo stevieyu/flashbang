@@ -54,7 +54,16 @@ export class DB {
     };
   }
 
-  async importAll(data: any) {
+  async importAll(data: {
+    settings: {
+      defaultBang?: string;
+      suggestProvider?: string;
+      suggestUrl?: string;
+      luckyProvider?: string;
+      luckyUrl?: string;
+    };
+    customBangs?: Array<{ trigger: string; name: string; url: string }>;
+  }) {
     if (data.settings?.defaultBang) {
       await this.setSetting("default-bang", data.settings.defaultBang);
     }

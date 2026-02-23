@@ -8,7 +8,7 @@ let bangsFull: Record<string, { s: string; d: string; u: string }> | null =
 async function getFull() {
   if (!bangsFull) {
     const mod = await import("../generated/bangs-full.js");
-    bangsFull = (mod as any).BANGS;
+    bangsFull = mod.BANGS;
   }
   return bangsFull!;
 }
