@@ -13,7 +13,7 @@
     "start": "bun scripts/start.ts",
     "check": "biome check",
     "fix": "biome check --write",
-    "clean": "rm -rf dist",
+    "clean": "bun -e \"import{rmSync}from'fs';rmSync('dist',{recursive:true,force:true})\"",
     "test": "bun test"
   },
   "devDependencies": {

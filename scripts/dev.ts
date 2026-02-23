@@ -102,6 +102,12 @@ async function build() {
   console.log(`Build done in ${(performance.now() - t).toFixed(0)}ms`);
 }
 
+const generated = Bun.file("src/generated/bangs-min.js");
+if (!(await generated.exists())) {
+  console.warn("Generated bang data not found. Running codegen...");
+  await $`bun run codegen`;
+}
+
 await build();
 
 let timeout: Timer;

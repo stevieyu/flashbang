@@ -1,14 +1,13 @@
-name: Release
+name: CI
 
 on:
   push:
-    tags: ['v*']
-
-permissions:
-  contents: write
+    branches: [master]
+  pull_request:
+    branches: [master]
 
 jobs:
-  release:
+  ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +17,3 @@ jobs:
       - run: bun test
       - run: bun run codegen
       - run: bun run build
-      - name: Create GitHub Release
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
-        env:
-          GH_TOKEN: ${{ github.token }}
