@@ -11,7 +11,7 @@ export class DB {
   async getSetting(key: string): Promise<string | null> {
     const s = await this.store("settings");
     const r = await idbWrap<{ key: string; value: string } | undefined>(
-      s.get(key),
+      s.get(key)
     );
     return r?.value ?? null;
   }
@@ -26,7 +26,7 @@ export class DB {
   > {
     const s = await this.store("custom-bangs");
     return idbWrap<Array<{ trigger: string; name: string; url: string }>>(
-      s.getAll(),
+      s.getAll()
     );
   }
 
