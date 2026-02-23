@@ -90,7 +90,8 @@ Nothing to build or deploy.
 
 1. Connect your repo on [Railway](https://railway.app)
 2. Railway builds the Docker image and sets the `PORT` environment variable automatically
-3. Add a custom search engine:
+3. Connect domain (you can auto-generate it in settings)
+4. Add a custom search engine:
    - **Search URL:** `https://your-app.up.railway.app?q=%s`
    - **Suggestion URL:** `https://your-app.up.railway.app/suggest?q=%s`
 
