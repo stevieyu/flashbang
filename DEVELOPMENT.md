@@ -48,6 +48,8 @@ flashbang/
 │       ├── liquid-metal.ts  # WebGL2 shader effect
 │       ├── manifest.json    # PWA manifest
 │       └── opensearch.xml   # OpenSearch descriptor
+├── .dockerignore           # Files excluded from Docker build context
+├── Dockerfile              # Multi-stage Docker build
 ├── package.json
 ├── uno.config.ts           # UnoCSS theme
 └── LICENSE
@@ -99,14 +101,33 @@ The bang data is split into two tiers so the Service Worker loads only what it n
 
 `bun run start` serves the pre-built `dist/` directory with no build step, file watching, or live reload injection. Useful for testing the production build locally. Requires `bun run build` to have been run first.
 
+## Docker
+
+The Dockerfile uses a multi-stage build to produce a minimal runtime image:
+
+1. **Build stage** — Installs dependencies, runs `codegen` to fetch bang sources, and runs `build` to bundle and pre-compress all assets
+2. **Runtime stage** — Copies only the built `dist/`, the production server script, and the modules it imports (suggestions, OpenSearch, bang data). No source code or dev dependencies in the final image
+
+```sh
+docker build -t flashbang .
+docker run -p 3000:3000 flashbang
+```
+
+The port is configurable via the `PORT` environment variable:
+
+```sh
+docker run -p 8080:8080 -e PORT=8080 flashbang
+```
+
+Static assets are served with Brotli pre-compression when the client supports it, falling back to uncompressed. No runtime compression overhead.
+
 ## Releasing
 
 1. Update `version` in `package.json`
-2. Add a new section to `CHANGELOG.md` under `## [X.Y.Z] - YYYY-MM-DD`
-3. Commit: `chore: release vX.Y.Z`
-4. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`
-5. Push: `git push && git push --tags`
+2. Commit: `chore: release vX.Y.Z`
+3. Tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`
+4. Push: `git push && git push --tags`
 
 The release workflow (`.github/workflows/release.yaml`) handles the rest:
-runs tests, builds the project, extracts the changelog entry, and creates a
-GitHub Release.
+runs tests, builds the project, and creates a GitHub Release. Release notes
+are maintained on GitHub Releases directly.
