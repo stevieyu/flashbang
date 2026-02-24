@@ -5,7 +5,7 @@ COPY package.json bun.lock bunfig.toml ./
 RUN bun install --frozen-lockfile
 
 COPY . .
-RUN bun run codegen && bun run build
+RUN bun run codegen --from-merged && bun run build
 
 FROM oven/bun:latest
 
