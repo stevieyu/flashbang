@@ -16,23 +16,15 @@ jobs:
       - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      - name: Fetch sources
-        run: |
-          mkdir -p data
-          curl -sfo data/kagi.json https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json
-          curl -sfo data/ddg.json https://duckduckgo.com/bang.js
-
-      - name: Generate bangs
-        run: |
-          mkdir -p src/generated
-          bun scripts/codegen.ts --no-fetch
+      - name: Fetch and generate bangs
+        run: bun run codegen
 
       - name: Check for changes
         id: diff
         run: |
-          git add src/generated/
+          git add data/bangs.json
           if git diff --staged --quiet; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
@@ -44,11 +36,5 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          PREV=$(git log -1 --pretty=%B)
-          if [[ "$PREV" == "chore: update bangs" ]]; then
-            git commit --amend -m "chore: update bangs"
-            git push --force-with-lease
-          else
-            git commit -m "chore: update bangs"
-            git push
-          fi
+          git commit -m "chore: update bangs"
+          git push

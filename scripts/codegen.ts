@@ -196,55 +196,62 @@ function generateKeys(bangs: Bang[]): string {
   return js;
 }
 
-function generateMeta(bangs: Bang[]): string {
-  return JSON.stringify({
-    count: bangs.length,
-    generated: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
-  });
-}
-
+const MERGED_PATH = "data/bangs.json";
 const noFetch = process.argv.includes("--no-fetch");
+const fromMerged = process.argv.includes("--from-merged");
 
-if (!noFetch) {
-  console.log("=== Fetch bang sources ===");
-  await $`mkdir -p data`;
-  const [kagiRes, ddgRes] = await Promise.all([
-    fetch(
-      "https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json"
-    ),
-    fetch("https://duckduckgo.com/bang.js"),
-  ]);
-  await Promise.all([
-    Bun.write("data/kagi.json", kagiRes),
-    Bun.write("data/ddg.json", ddgRes),
-  ]);
+let valid: Bang[];
+
+if (fromMerged) {
+  console.log("=== Read merged bangs ===");
+  valid = await Bun.file(MERGED_PATH).json();
+  console.log(`Loaded ${valid.length} bangs from ${MERGED_PATH}`);
+} else {
+  if (!noFetch) {
+    console.log("=== Fetch bang sources ===");
+    await $`mkdir -p data`;
+    const [kagiRes, ddgRes] = await Promise.all([
+      fetch(
+        "https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json"
+      ),
+      fetch("https://duckduckgo.com/bang.js"),
+    ]);
+    await Promise.all([
+      Bun.write("data/kagi.json", kagiRes),
+      Bun.write("data/ddg.json", ddgRes),
+    ]);
+  }
+
+  console.log("=== Parse sources ===");
+
+  const allSources: [string, Bang[]][] = [];
+
+  const ddgRaw = await Bun.file("data/ddg.json").text();
+  const ddgBangs = parseDdg(ddgRaw);
+  console.log(`DDG: ${ddgBangs.length} bangs parsed`);
+  allSources.push(["ddg", ddgBangs]);
+
+  const kagiRaw = await Bun.file("data/kagi.json").text();
+  const kagiBangs = parseKagi(kagiRaw);
+  console.log(`Kagi: ${kagiBangs.length} bangs parsed`);
+  allSources.push(["kagi", kagiBangs]);
+
+  const customData = await Bun.file("config/custom.json").json();
+  const customBangs = parseCustom(customData);
+  console.log(`Custom: ${customBangs.length} bangs parsed`);
+  allSources.push(["custom", customBangs]);
+
+  console.log("=== Merge + validate ===");
+  const merged = merge(allSources);
+  console.log(`Merged: ${merged.length} unique bangs`);
+
+  valid = validate(merged);
+  console.log(`Valid: ${valid.length} bangs after validation`);
+
+  console.log("=== Save merged bangs ===");
+  await Bun.write(MERGED_PATH, JSON.stringify(valid));
+  console.log(`  ${MERGED_PATH}: ${valid.length} bangs`);
 }
-
-console.log("=== Parse sources ===");
-
-const allSources: [string, Bang[]][] = [];
-
-const ddgRaw = await Bun.file("data/ddg.json").text();
-const ddgBangs = parseDdg(ddgRaw);
-console.log(`DDG: ${ddgBangs.length} bangs parsed`);
-allSources.push(["ddg", ddgBangs]);
-
-const kagiRaw = await Bun.file("data/kagi.json").text();
-const kagiBangs = parseKagi(kagiRaw);
-console.log(`Kagi: ${kagiBangs.length} bangs parsed`);
-allSources.push(["kagi", kagiBangs]);
-
-const customData = await Bun.file("config/custom.json").json();
-const customBangs = parseCustom(customData);
-console.log(`Custom: ${customBangs.length} bangs parsed`);
-allSources.push(["custom", customBangs]);
-
-console.log("=== Merge + validate ===");
-const merged = merge(allSources);
-console.log(`Merged: ${merged.length} unique bangs`);
-
-const valid = validate(merged);
-console.log(`Valid: ${valid.length} bangs after validation`);
 
 console.log("=== Generate ===");
 const outDir = "src/generated";
@@ -262,7 +269,19 @@ const keysJs = generateKeys(valid);
 await Bun.write(`${outDir}/bangs-keys.js`, keysJs);
 console.log(`  bangs-keys.js: ${keysJs.length} bytes`);
 
-const metaJson = generateMeta(valid);
-await Bun.write(`${outDir}/bangs-meta.json`, metaJson);
+await Promise.all([
+  Bun.write(
+    `${outDir}/bangs-min.d.ts`,
+    "export declare const BANGS: Record<string, string>;\n"
+  ),
+  Bun.write(
+    `${outDir}/bangs-full.d.ts`,
+    "export declare const BANGS: Record<string, { s: string; d: string; u: string; r: number }>;\n"
+  ),
+  Bun.write(
+    `${outDir}/bangs-keys.d.ts`,
+    "export declare const BANG_KEYS: string[];\n"
+  ),
+]);
 
 console.log(`Generated ${valid.length} bangs in ${outDir}/`);

@@ -7,11 +7,11 @@
 ## Commands
 
 ```sh
-bun install        # install dependencies
+bun install        # install dependencies + generate bang maps from data/bangs.json (postinstall)
 bun run check      # format + lint check (fails on issues)
 bun run fix        # auto-fix format + lint issues
-bun run codegen    # fetch DDG/Kagi sources + generate bang maps
-bun run build      # bundle, minify + pre-compress with Brotli (requires codegen first)
+bun run codegen    # fetch DDG/Kagi sources, merge, and generate bang maps
+bun run build      # bundle, minify + pre-compress with Brotli
 bun run dev        # bundle + dev server with file watching & live reload (auto-runs codegen if needed)
 bun run start      # serve pre-built dist/ (run `bun run build` first)
 bun test           # run tests
@@ -31,11 +31,13 @@ flashbang/
 │   ├── build.ts            # Bundle + minify pipeline
 │   ├── dev.ts              # Dev server with file watching, rebuild & live reload
 │   └── start.ts            # Production server (serves pre-built dist/)
+├── data/
+│   └── bangs.json          # Merged bang data (committed, updated by CI daily)
 ├── src/
-│   ├── generated/          # Output of codegen (gitignored)
+│   ├── generated/          # Output of codegen (gitignored, generated from data/bangs.json)
 │   │   ├── bangs-min.js    # trigger→URL map for Service Worker
 │   │   ├── bangs-full.js   # trigger→{name, domain, url, relevance} for UI & suggestions
-│   │   └── bangs-meta.json # bang count & timestamp
+│   │   └── bangs-keys.js   # sorted trigger array for binary search autocomplete
 │   ├── sw/
 │   │   ├── sw.ts           # Service Worker lifecycle & fetch handler
 │   │   ├── redirect.ts     # Bang parsing & redirect logic (zero-copy raw + decoded paths)
@@ -79,16 +81,19 @@ Tests live alongside the source files they cover:
 `bun run codegen` fetches bang sources and generates the JavaScript bang maps that `build` and `dev` depend on:
 
 1. **Fetch sources** — Downloads bang definitions from DuckDuckGo (`bang.js`) and Kagi (`bangs.json`) into `data/`
-2. **Generate** — Parses DDG, Kagi, and custom sources. Merges by trigger (deduplicates), validates URLs, and generates three files in `src/generated/`:
-   - `bangs-min.js` — trigger→URL map for the Service Worker (~847 KB)
+2. **Merge + validate** — Parses DDG, Kagi, and custom sources. Merges by trigger (deduplicates), validates URLs, and saves the merged result to `data/bangs.json`
+3. **Generate** — Produces three JS files in `src/generated/` from the merged data:
+   - `bangs-min.js` — trigger→URL map for the Service Worker
    - `bangs-full.js` — trigger→{name, domain, url, relevance} for the UI and suggestions
-   - `bangs-meta.json` — bang count and timestamp
+   - `bangs-keys.js` — sorted trigger array for binary search autocomplete
+
+The `--from-merged` flag skips steps 1–2 and generates directly from the committed `data/bangs.json`. This is what `postinstall` and CI builds use — no network fetch needed.
 
 The bang data is split into two tiers so the Service Worker loads only what it needs for fast redirects, while the UI gets the full metadata for searching and display.
 
 ## Build pipeline
 
-`bun run build` bundles the app (requires `bun run codegen` first):
+`bun run build` bundles the app:
 
 1. **Bundle Service Worker** — Bun bundles `src/sw/sw.ts` with `bangs-min.js` into `dist/sw.js`. Code splitting lazy-loads `suggest.ts` on first suggestion request
 2. **Bundle UI** — Bun bundles `src/ui/app.ts` (and its module imports) with `bangs-full.js` into `dist/app.js`
@@ -100,7 +105,7 @@ The bang data is split into two tiers so the Service Worker loads only what it n
 
 `bun run dev` runs the dev server with `bun --hot` for soft module reloading:
 
-- **Codegen guard** — If `src/generated/bangs-min.js` is missing, automatically runs `bun run codegen` before the first build so `bun run dev` works out of the box on a fresh clone
+- **Codegen guard** — If `src/generated/bangs-min.js` is missing, automatically runs `bun run codegen` before the first build
 - **Inline builds** — Uses `Bun.build()` API directly instead of shelling out to build scripts
 - **File watching** — Watches `src/` recursively via `fs.watch` with 200ms debounce. Any source change triggers a full rebuild
 - **Live reload** — SSE endpoint at `/__dev/events` pushes reload events to the browser. A small script is injected into HTML responses that unregisters the Service Worker, clears all caches, and reloads the page on each rebuild
@@ -114,7 +119,7 @@ The bang data is split into two tiers so the Service Worker loads only what it n
 
 The Dockerfile uses a multi-stage build to produce a minimal runtime image:
 
-1. **Build stage** — Installs dependencies, runs `codegen` to fetch bang sources, and runs `build` to bundle and pre-compress all assets
+1. **Build stage** — Installs dependencies (which generates bang maps from `data/bangs.json` via postinstall), then runs `build` to bundle and pre-compress all assets
 2. **Runtime stage** — Copies only the built `dist/`, the production server script, and the modules it imports (suggestions, OpenSearch, bang data). No source code or dev dependencies in the final image
 
 ```sh
@@ -132,7 +137,9 @@ Static assets are served with Brotli pre-compression when the client supports it
 
 ## CI
 
-A CI workflow (`.github/workflows/ci.yaml`) runs on every push and pull request to `master`. It runs lint checks, tests, codegen, and a full build to catch issues before merge.
+A CI workflow (`.github/workflows/ci.yaml`) runs on every push and pull request to `master`. It runs lint checks, tests, and a full build to catch issues before merge. Bang maps are generated from the committed `data/bangs.json` via the `postinstall` script — no external fetching during CI builds.
+
+A daily cron workflow (`.github/workflows/update-bangs.yaml`) fetches fresh bang sources from DDG and Kagi, merges them, and commits the updated `data/bangs.json`. The push triggers a deploy on Cloudflare Pages / Railway.
 
 ## Releasing
 
