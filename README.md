@@ -79,7 +79,7 @@ Nothing to build or deploy.
 
 **Cloudflare Pages** (recommended) — supports both redirects and suggestions out of the box:
 
-1. Deploy the repo to Cloudflare Pages with build command `bun run build` and output directory `dist`
+1. Deploy the repo to Cloudflare Pages with build command `bun run codegen --from-merged && bun run build` and output directory `dist`
 2. The Pages Functions automatically handle `/suggest` (search suggestions) and `/opensearch.xml` (search engine discovery with correct origin) on the edge
 3. Visit the site — your browser will auto-discover it via OpenSearch
 4. Or manually add a custom search engine:

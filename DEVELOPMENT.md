@@ -7,7 +7,7 @@
 ## Commands
 
 ```sh
-bun install        # install dependencies + generate bang maps from data/bangs.json (postinstall)
+bun install        # install dependencies
 bun run check      # format + lint check (fails on issues)
 bun run fix        # auto-fix format + lint issues
 bun run codegen    # fetch DDG/Kagi sources, merge, and generate bang maps
@@ -87,7 +87,7 @@ Tests live alongside the source files they cover:
    - `bangs-full.js` — trigger→{name, domain, url, relevance} for the UI and suggestions
    - `bangs-keys.js` — sorted trigger array for binary search autocomplete
 
-The `--from-merged` flag skips steps 1–2 and generates directly from the committed `data/bangs.json`. This is what `postinstall` and CI builds use — no network fetch needed.
+The `--from-merged` flag skips steps 1–2 and generates directly from the committed `data/bangs.json`. This is what CI builds use — no network fetch needed.
 
 The bang data is split into two tiers so the Service Worker loads only what it needs for fast redirects, while the UI gets the full metadata for searching and display.
 
@@ -119,7 +119,7 @@ The bang data is split into two tiers so the Service Worker loads only what it n
 
 The Dockerfile uses a multi-stage build to produce a minimal runtime image:
 
-1. **Build stage** — Installs dependencies (which generates bang maps from `data/bangs.json` via postinstall), then runs `build` to bundle and pre-compress all assets
+1. **Build stage** — Installs dependencies, runs `codegen --from-merged` to generate bang maps from `data/bangs.json`, then runs `build` to bundle and pre-compress all assets
 2. **Runtime stage** — Copies only the built `dist/`, the production server script, and the modules it imports (suggestions, OpenSearch, bang data). No source code or dev dependencies in the final image
 
 ```sh
@@ -137,7 +137,7 @@ Static assets are served with Brotli pre-compression when the client supports it
 
 ## CI
 
-A CI workflow (`.github/workflows/ci.yaml`) runs on every push and pull request to `master`. It runs lint checks, tests, and a full build to catch issues before merge. Bang maps are generated from the committed `data/bangs.json` via the `postinstall` script — no external fetching during CI builds.
+A CI workflow (`.github/workflows/ci.yaml`) runs on every push and pull request to `master`. It runs lint checks, tests, codegen (`--from-merged`), and a full build to catch issues before merge — no external fetching during CI builds.
 
 A daily cron workflow (`.github/workflows/update-bangs.yaml`) fetches fresh bang sources from DDG and Kagi, merges them, and commits the updated `data/bangs.json`. The push triggers a deploy on Cloudflare Pages / Railway.
 

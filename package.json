@@ -14,8 +14,7 @@
     "check": "biome check",
     "fix": "biome check --write",
     "clean": "bun -e \"import{rmSync}from'fs';rmSync('dist',{recursive:true,force:true})\"",
-    "test": "bun test",
-    "postinstall": "bun run codegen -- --from-merged"
+    "test": "bun test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
