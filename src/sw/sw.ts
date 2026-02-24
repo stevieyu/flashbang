@@ -22,7 +22,7 @@ self.addEventListener("install", (e: ExtendableEvent) => {
     Promise.all([
       caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)),
       self.skipWaiting(),
-    ])
+    ]),
   );
 });
 
@@ -33,10 +33,10 @@ self.addEventListener("activate", (e: ExtendableEvent) => {
       .keys()
       .then((keys) =>
         Promise.all(
-          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
-        )
+          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)),
+        ),
       )
-      .then(() => self.clients.claim())
+      .then(() => self.clients.claim()),
   );
 });
 
@@ -67,7 +67,6 @@ self.addEventListener("message", (e: ExtendableMessageEvent) => {
 self.addEventListener("fetch", (e: FetchEvent) => {
   const raw = e.request.url;
 
-  // Skip dev server requests (live reload SSE, etc.)
   if (raw.includes("/__dev/")) {
     return;
   }
@@ -97,15 +96,15 @@ self.addEventListener("fetch", (e: FetchEvent) => {
           (r) =>
             r ||
             fetch("/bench").catch(
-              () => new Response("Offline", { status: 503 })
-            )
+              () => new Response("Offline", { status: 503 }),
+            ),
         )
         .then((r) => {
           const h = new Headers(r.headers);
           h.set("Cross-Origin-Opener-Policy", "same-origin");
           h.set("Cross-Origin-Embedder-Policy", "credentialless");
           return new Response(r.body, { status: r.status, headers: h });
-        })
+        }),
     );
     return;
   }
@@ -121,8 +120,10 @@ self.addEventListener("fetch", (e: FetchEvent) => {
         .then(
           (r) =>
             r ||
-            fetch("/home").catch(() => new Response("Offline", { status: 503 }))
-        )
+            fetch("/home").catch(
+              () => new Response("Offline", { status: 503 }),
+            ),
+        ),
     );
     return;
   }
@@ -133,7 +134,9 @@ self.addEventListener("fetch", (e: FetchEvent) => {
       .then(
         (r) =>
           r ||
-          fetch(e.request).catch(() => new Response("Offline", { status: 503 }))
-      )
+          fetch(e.request).catch(
+            () => new Response("Offline", { status: 503 }),
+          ),
+      ),
   );
 });

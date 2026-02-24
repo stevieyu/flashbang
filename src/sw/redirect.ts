@@ -37,8 +37,11 @@ function findRawSpace(s: string, from: number): [number, number] {
   return [-1, 0];
 }
 
+const RE_PLUS = /\+/g;
+const RE_ENCODED_SLASH = /%2[Ff]/g;
+
 function rawFixup(raw: string): string {
-  return raw.replace(/\+/g, "%20").replace(/%2[Ff]/g, "/");
+  return raw.replace(RE_PLUS, "%20").replace(RE_ENCODED_SLASH, "/");
 }
 
 function trimRaw(rawQuery: string): string {
@@ -274,11 +277,13 @@ function resolve(
   }
 
   if (!rawTerm) {
-    try {
-      return Response.redirect(new URL(url.replace("{}", "")).origin, 302);
-    } catch {
+    const protoEnd = url.indexOf("://");
+    if (protoEnd === -1) {
       return Response.redirect(url.replace("{}", ""), 302);
     }
+    const pathStart = url.indexOf("/", protoEnd + 3);
+    const origin = pathStart !== -1 ? url.substring(0, pathStart) : url;
+    return Response.redirect(origin, 302);
   }
 
   return Response.redirect(url.replace("{}", rawFixup(rawTerm)), 302);

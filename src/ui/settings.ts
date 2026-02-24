@@ -102,6 +102,8 @@ export async function initSettings(db: DB) {
   });
 
   let timer: ReturnType<typeof setTimeout>;
+  let cachedEntries: [string, { s: string; d: string; u: string }][] | null =
+    null;
   $<HTMLInputElement>("#bang-search").addEventListener("input", (e) => {
     clearTimeout(timer);
     const q = (e.target as HTMLInputElement).value.trim().toLowerCase();
@@ -110,7 +112,10 @@ export async function initSettings(db: DB) {
       return;
     }
     timer = setTimeout(() => {
-      const hits = Object.entries(full)
+      if (!cachedEntries) {
+        cachedEntries = Object.entries(full);
+      }
+      const hits = cachedEntries
         .filter(
           ([t, b]) =>
             t.includes(q) || b.s.toLowerCase().includes(q) || b.d.includes(q)

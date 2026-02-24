@@ -9,13 +9,12 @@
       title="flashbang"
       href="/opensearch.xml"
     >
+    <link rel="preload" as="script" href="/sw.js">
     <style>
     html {
       background: #0a0a0f;
     }
     </style>
-  </head>
-  <body>
     <script>
     "use strict";
     (() => {
@@ -67,10 +66,14 @@
             }
           }),
         ]).then(() => {
-          location.replace(location.href);
+          const p = location.pathname;
+          if (p === "/" || p === "/index.html" || p === "/settings") {
+            location.replace(location.href);
+          }
         });
       }
     })();
     </script>
-  </body>
+  </head>
+  <body></body>
 </html>
