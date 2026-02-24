@@ -2,7 +2,7 @@
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!!**/dist", "!!**/generated"]
+    "includes": ["**", "!!**/dist", "!!**/generated", "!!data/bangs.json"]
   },
   "vcs": {
     "enabled": true,
