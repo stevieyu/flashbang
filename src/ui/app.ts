@@ -1,6 +1,6 @@
 import { flashAnim } from "./animations";
 import { DB } from "./db";
-import { initDnsPrefetch } from "./dns-prefetch";
+import { initDnsLinks } from "./dns-links";
 import { $ } from "./dom";
 import { initLiquidMetal } from "./liquid-metal";
 import { setupModal } from "./modal";
@@ -9,7 +9,7 @@ import { initSettings } from "./settings";
 const db = new DB();
 
 function init() {
-  initDnsPrefetch(db);
+  initDnsLinks(db);
 
   $<HTMLInputElement>("#setup-url").value = `${location.origin}?q=%s`;
 

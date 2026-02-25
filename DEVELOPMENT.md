@@ -48,7 +48,7 @@ flashbang/
 │       ├── app.ts            # Initialization & orchestration
 │       ├── dom.ts            # $() selector & el() factory
 │       ├── sw-bridge.ts      # notifySW() — postMessage to Service Worker
-│       ├── dns-prefetch.ts   # DNS prefetch for default bang
+│       ├── dns-links.ts      # DNS prefetch and preconnect for default bang
 │       ├── cookie.ts         # Suggest cookie management
 │       ├── animations.ts     # Flash & shake CSS animations
 │       ├── modal.ts          # Settings modal with focus trapping

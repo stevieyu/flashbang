@@ -2,7 +2,7 @@ import { flashAnim, shakeAnim } from "./animations";
 import { setSuggestCookie } from "./cookie";
 import { setupCustomBangs } from "./custom-bangs";
 import type { DB } from "./db";
-import { setDnsPrefetch } from "./dns-prefetch";
+import { setDnsLinks } from "./dns-links";
 import { $, el } from "./dom";
 import { notifySW } from "./sw-bridge";
 
@@ -53,7 +53,7 @@ export async function initSettings(db: DB) {
       await db.setSetting("default-bang", val);
       notifySW("invalidate");
       setSuggestCookie(suggestSelect.value, val, suggestUrlInput.value.trim());
-      setDnsPrefetch(full[val].u);
+      setDnsLinks(full[val].u);
       flashAnim(defaultInput);
       $("#bang-status").textContent = full[val].s;
       $("#bang-status").className = "text-sm text-success";
