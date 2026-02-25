@@ -18,12 +18,7 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e: ExtendableEvent) => {
-  e.waitUntil(
-    Promise.all([
-      caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)),
-      self.skipWaiting(),
-    ])
-  );
+  e.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (e: ExtendableEvent) => {
@@ -37,6 +32,7 @@ self.addEventListener("activate", (e: ExtendableEvent) => {
         )
       )
       .then(() => self.clients.claim())
+      .then(() => caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)))
   );
 });
 
