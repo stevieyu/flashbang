@@ -39,6 +39,7 @@ function findRawSpace(s: string, from: number): [number, number] {
 
 const RE_PLUS = /\+/g;
 const RE_ENCODED_SLASH = /%2[Ff]/g;
+const RE_ENCODED_EXCL = /%21/g;
 
 function rawFixup(raw: string): string {
   return raw.replace(RE_PLUS, "%20").replace(RE_ENCODED_SLASH, "/");
@@ -293,7 +294,7 @@ export function redirectRaw(
   rawQuery: string,
   settings: RedirectSettings
 ): Response {
-  const s = trimRaw(rawQuery);
+  const s = trimRaw(rawQuery).replace(RE_ENCODED_EXCL, "!");
   if (!s || s === "!") {
     return Response.redirect("/", 302);
   }

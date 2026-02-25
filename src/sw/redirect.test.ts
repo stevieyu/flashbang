@@ -377,6 +377,56 @@ describe("redirectRaw — leading/trailing space trimming", () => {
   });
 });
 
+describe("redirectRaw — %21 encoded bang", () => {
+  test('"%21gh" → prefix bang → github.com', () => {
+    const r = redirectRaw("%21gh", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://github.com");
+  });
+
+  test('"%21g+cats" → prefix bang with term', () => {
+    const r = redirectRaw("%21g+cats", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=cats");
+  });
+
+  test('"g%21+cats" → prefix suffix-bang', () => {
+    const r = redirectRaw("g%21+cats", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=cats");
+  });
+
+  test('"cats+%21g" → trailing prefix-bang', () => {
+    const r = redirectRaw("cats+%21g", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=cats");
+  });
+
+  test('"cats+g%21" → trailing suffix-bang', () => {
+    const r = redirectRaw("cats+g%21", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=cats");
+  });
+
+  test('"%21+cats" → leading bare bang lucky', () => {
+    const r = redirectRaw("%21+cats", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?btnI&q=cats");
+  });
+
+  test('"cats+%21" → trailing bare bang lucky', () => {
+    const r = redirectRaw("cats+%21", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?btnI&q=cats");
+  });
+
+  test('"%21" alone → redirect to "/"', () => {
+    const r = redirectRaw("%21", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("/");
+  });
+});
+
 describe("redirectRaw ↔ redirect cross-validation", () => {
   const queries: [string, string][] = [
     ["!g cats", "!g+cats"],
@@ -394,6 +444,7 @@ describe("redirectRaw ↔ redirect cross-validation", () => {
     ["!g a/b/c", "!g+a%2Fb%2Fc"],
     ["!", "!"],
     ["!gh", "!gh"],
+    ["!gh", "%21gh"],
     ["!zzz cats", "!zzz+cats"],
   ];
 
