@@ -3,6 +3,14 @@ import { minify } from "@minify-html/node";
 import { $ } from "bun";
 import { parseSettings } from "../src/suggest";
 
+const SECURITY_HEADERS: Record<string, string> = {
+  "Content-Security-Policy":
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+};
+
 interface SSEClient {
   close: () => void;
   enqueue: (data: string) => void;
@@ -144,7 +152,11 @@ function htmlResponse(
 ): Response {
   const content = injectLiveReload(file);
   return new Response(content, {
-    headers: { "Content-Type": "text/html; charset=utf-8", ...headers },
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      ...SECURITY_HEADERS,
+      ...headers,
+    },
   });
 }
 
@@ -184,12 +196,20 @@ Bun.serve({
     if (url.pathname === "/suggest" && url.searchParams.get("q")) {
       const { suggest } = await import("../src/suggest");
       const settings = parseSettings(url, req);
-      return suggest(url.searchParams.get("q")!, settings);
+      const res = await suggest(url.searchParams.get("q")!, settings);
+      for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+        res.headers.set(k, v);
+      }
+      return res;
     }
 
     if (url.pathname === "/opensearch.xml") {
       const { opensearch } = await import("../src/opensearch");
-      return opensearch(url.origin);
+      const res = opensearch(url.origin);
+      for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+        res.headers.set(k, v);
+      }
+      return res;
     }
 
     if (url.pathname === "/bench") {
@@ -206,7 +226,7 @@ Bun.serve({
       if (path.endsWith(".html")) {
         return htmlResponse(await file.text());
       }
-      return new Response(file);
+      return new Response(file, { headers: SECURITY_HEADERS });
     }
     const htmlFile = Bun.file(`dist${path}.html`);
     if (await htmlFile.exists()) {

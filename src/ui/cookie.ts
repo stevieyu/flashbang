@@ -15,5 +15,5 @@ export function setSuggestCookie(
   if (custom?.length) {
     value += `||${custom.join(".")}`;
   }
-  document.cookie = `suggest=${value};path=/;max-age=31536000;SameSite=Lax`;
+  document.cookie = `suggest=${value};path=/;max-age=31536000;SameSite=Lax;Secure`;
 }

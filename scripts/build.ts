@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { brotliCompressSync, constants } from "node:zlib";
 import { minify } from "@minify-html/node";
 import { $ } from "bun";
@@ -76,8 +77,43 @@ await Bun.write(
 await $`rm dist/styles.css`;
 await $`cp src/ui/manifest.json dist/`;
 await $`cp src/ui/icon.svg dist/`;
-await $`cp src/ui/_headers dist/`;
 await Bun.write("dist/robots.txt", "User-agent: *\nAllow: /\n");
+
+console.log("=== Generate _headers with CSP ===");
+function extractScriptHashes(html: string): string[] {
+  const hashes: string[] = [];
+  const re = /<script>([\s\S]*?)<\/script>/g;
+  for (const match of html.matchAll(re)) {
+    const hash = createHash("sha256").update(match[1]).digest("base64");
+    hashes.push(`'sha256-${hash}'`);
+  }
+  return hashes;
+}
+const distIndex = await Bun.file("dist/index.html").text();
+const distHome = await Bun.file("dist/home.html").text();
+const distBench = await Bun.file("dist/bench.html").text();
+const scriptHashes = [
+  ...extractScriptHashes(distIndex),
+  ...extractScriptHashes(distHome),
+  ...extractScriptHashes(distBench),
+];
+const csp = [
+  "default-src 'self'",
+  `script-src 'self' ${scriptHashes.join(" ")}`,
+  "style-src 'self' 'unsafe-inline'",
+  "connect-src 'self'",
+  "img-src 'self'",
+  "font-src 'self'",
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+].join("; ");
+await Bun.write(
+  "dist/_headers",
+  `/*\n  Content-Security-Policy: ${csp}\n  X-Content-Type-Options: nosniff\n  X-Frame-Options: DENY\n  Referrer-Policy: strict-origin-when-cross-origin\n\n/opensearch.xml\n  Content-Type: application/opensearchdescription+xml\n`
+);
 
 console.log("=== Pre-compress static assets ===");
 for (const file of new Bun.Glob("*.{html,js,svg,json,txt}").scanSync("dist")) {
