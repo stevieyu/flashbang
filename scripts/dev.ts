@@ -52,6 +52,10 @@ async function build() {
       minify: true,
       target: "browser",
       format: "esm",
+      define: {
+        __CACHE_VERSION__: '"flashbang-dev"',
+        __EXTRA_ASSETS__: "[]",
+      },
     }),
     Bun.build({
       entrypoints: ["src/ui/app.ts"],

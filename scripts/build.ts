@@ -8,6 +8,47 @@ for (const f of new Bun.Glob("*.js").scanSync("dist")) {
   await $`rm dist/${f}`;
 }
 
+console.log("=== Bundle app + bench (to discover chunks) ===");
+const [appBuild, benchBuild] = await Promise.all([
+  Bun.build({
+    entrypoints: ["src/ui/app.ts"],
+    outdir: "dist",
+    naming: "app.js",
+    splitting: true,
+    minify: true,
+    target: "browser",
+    format: "esm",
+  }),
+  Bun.build({
+    entrypoints: ["src/ui/bench.ts"],
+    outdir: "dist",
+    naming: "bench.js",
+    minify: true,
+    target: "browser",
+    format: "esm",
+  }),
+]);
+
+const SIZE_THRESHOLD = 50 * 1024; // 50 KB
+const allOutputs = [...appBuild.outputs, ...benchBuild.outputs];
+const chunkNames = allOutputs.map((o) => o.path.split("/").pop()!).sort();
+const cacheVersion =
+  "fb-" +
+  createHash("sha256").update(chunkNames.join(",")).digest("hex").slice(0, 8);
+
+const extraAssets = allOutputs
+  .filter(
+    (o) =>
+      !(o.path.endsWith("/app.js") || o.path.endsWith("/bench.js")) &&
+      o.size < SIZE_THRESHOLD
+  )
+  .map((o) => `/${o.path.split("/").pop()!}`);
+
+console.log(`Cache version: ${cacheVersion}`);
+if (extraAssets.length) {
+  console.log(`Extra assets: ${extraAssets.join(", ")}`);
+}
+
 console.log("=== Bundle service worker ===");
 await Bun.build({
   entrypoints: ["src/sw/sw.ts"],
@@ -16,27 +57,10 @@ await Bun.build({
   minify: true,
   target: "browser",
   format: "esm",
-});
-
-console.log("=== Bundle settings page ===");
-await Bun.build({
-  entrypoints: ["src/ui/app.ts"],
-  outdir: "dist",
-  naming: "app.js",
-  splitting: true,
-  minify: true,
-  target: "browser",
-  format: "esm",
-});
-
-console.log("=== Bundle bench page ===");
-await Bun.build({
-  entrypoints: ["src/ui/bench.ts"],
-  outdir: "dist",
-  naming: "bench.js",
-  minify: true,
-  target: "browser",
-  format: "esm",
+  define: {
+    __CACHE_VERSION__: JSON.stringify(cacheVersion),
+    __EXTRA_ASSETS__: JSON.stringify(extraAssets),
+  },
 });
 
 console.log("=== Generate CSS ===");

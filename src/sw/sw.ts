@@ -10,7 +10,10 @@ import {
 } from "./idb";
 import { type RedirectSettings, redirect, redirectRaw } from "./redirect";
 
-const CACHE_NAME = "flashbang";
+declare const __CACHE_VERSION__: string;
+declare const __EXTRA_ASSETS__: string[];
+
+const CACHE_NAME = __CACHE_VERSION__;
 const ASSETS = [
   "/home",
   "/bench",
@@ -18,6 +21,7 @@ const ASSETS = [
   "/app.js",
   "/icon.svg",
   "/manifest.json",
+  ...__EXTRA_ASSETS__,
 ];
 
 self.addEventListener("install", (e: ExtendableEvent) => {
@@ -160,5 +164,6 @@ self.addEventListener("fetch", (e: FetchEvent) => {
           r ||
           fetch(e.request).catch(() => new Response("Offline", { status: 503 }))
       )
+      .catch(() => new Response("Offline", { status: 503 }))
   );
 });
