@@ -1,17 +1,12 @@
 import { BANGS } from "../generated/bangs-min.js";
+import {
+  DEFAULT_LUCKY_URL,
+  DEFAULT_URL,
+  LUCKY_URLS,
+  MAX_FRECENCY_ENTRIES,
+} from "../shared/constants";
 import { idbWrap, openDB, resetDB } from "../shared/idb";
 import type { RedirectSettings } from "./redirect";
-
-const DEFAULT_URL = "https://www.google.com/search?q={}";
-
-const LUCKY_URLS: Record<string, string> = {
-  g: "https://www.google.com/search?q={}&btnI=1",
-  ddg: "https://duckduckgo.com/?q=\\{}",
-  kagi: "https://kagi.com/search?q=\\{}",
-};
-const DEFAULT_LUCKY_URL = "https://duckduckgo.com/?q=\\{}";
-
-const MAX_FRECENCY_ENTRIES = 64;
 
 let cachedRedirect: RedirectSettings | null = null;
 let frecencyCounts: Record<string, number> | null = null;

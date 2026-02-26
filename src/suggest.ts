@@ -1,4 +1,10 @@
 import { TRIE, type TrieNode } from "./generated/bangs-trie.js";
+import {
+  FRECENCY_BOOST_CAP,
+  FRECENCY_BOOST_MULTIPLIER,
+  SUGGEST_URLS,
+  TOP_K,
+} from "./shared/constants";
 
 export interface SuggestSettings {
   customUrl: string | null;
@@ -8,23 +14,9 @@ export interface SuggestSettings {
   custom: string[];
 }
 
-const SUGGEST_URLS: Record<string, string> = {
-  google:
-    "https://suggestqueries.google.com/complete/search?client=firefox&q={}",
-  ddg: "https://duckduckgo.com/ac/?q={}&type=list",
-  bing: "https://www.bing.com/osjson.aspx?query={}",
-  brave: "https://search.brave.com/api/suggest?q={}&rich=false",
-  yahoo: "https://ff.search.yahoo.com/gossip?output=fxjson&command={}",
-  ecosia: "https://ac.ecosia.org/autocomplete?q={}&type=list",
-  kagi: "https://kagi.com/api/autosuggest?q={}",
-  yandex: "https://suggest.yandex.com/suggest-ff.cgi?part={}",
-  baidu: "https://suggestion.baidu.com/su?wd={}&action=opensearch",
-};
-
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const COOKIE_RE = /(?:^|;\s*)suggest=([^;]*)/;
 const SF_RE = /(?:^|;\s*)sf=([^;]*)/;
-const TOP_K = 8;
 
 function empty(query: string): Response {
   return new Response(JSON.stringify([query, []]), { headers: JSON_HEADERS });
@@ -107,7 +99,9 @@ function effectiveScore(
   if (!count) {
     return relevance;
   }
-  return relevance + Math.min(count * 10, 2000);
+  return (
+    relevance + Math.min(count * FRECENCY_BOOST_MULTIPLIER, FRECENCY_BOOST_CAP)
+  );
 }
 
 // DFS with max-relevance pruning. Children are pre-sorted by m descending.
