@@ -184,16 +184,133 @@ function generateFull(bangs: Bang[]): string {
   return js;
 }
 
-function generateKeys(bangs: Bang[]): string {
-  let js = "export const BANG_KEYS=[";
-  for (let i = 0; i < bangs.length; i++) {
-    if (i > 0) {
-      js += ",";
+// --- Radix trie for suggestions ---
+
+interface TrieNode {
+  children: Map<string, TrieNode>;
+  maxRelevance: number;
+  terminal: Bang | null;
+}
+
+function buildRadixTrie(bangs: Bang[]): TrieNode {
+  const root: TrieNode = {
+    children: new Map(),
+    maxRelevance: 0,
+    terminal: null,
+  };
+
+  for (const bang of bangs) {
+    let node = root;
+    let key = bang.trigger;
+    let created = false;
+
+    while (key.length > 0) {
+      let found = false;
+      for (const [edge, child] of node.children) {
+        let common = 0;
+        const limit = Math.min(key.length, edge.length);
+        while (
+          common < limit &&
+          key.charCodeAt(common) === edge.charCodeAt(common)
+        ) {
+          common++;
+        }
+
+        if (common === 0) {
+          continue;
+        }
+
+        if (common === edge.length) {
+          // Edge fully consumed — descend
+          node = child;
+          key = key.substring(common);
+          found = true;
+          break;
+        }
+
+        // Partial match — split edge
+        const splitNode: TrieNode = {
+          children: new Map(),
+          maxRelevance: 0,
+          terminal: null,
+        };
+        node.children.delete(edge);
+        node.children.set(edge.substring(0, common), splitNode);
+        splitNode.children.set(edge.substring(common), child);
+        node = splitNode;
+        key = key.substring(common);
+        found = true;
+        break;
+      }
+
+      if (!found) {
+        // No matching edge — create new leaf
+        const leaf: TrieNode = {
+          children: new Map(),
+          maxRelevance: bang.relevance,
+          terminal: bang,
+        };
+        node.children.set(key, leaf);
+        created = true;
+        break;
+      }
     }
-    js += `'${jsEscape(bangs[i].trigger)}'`;
+
+    // key fully consumed by descending — set terminal on current node
+    if (!created) {
+      node.terminal = bang;
+    }
   }
-  js += "];";
-  return js;
+
+  // Compute maxRelevance bottom-up
+  function computeMax(node: TrieNode): number {
+    let max = node.terminal ? node.terminal.relevance : 0;
+    for (const child of node.children.values()) {
+      max = Math.max(max, computeMax(child));
+    }
+    node.maxRelevance = max;
+    return max;
+  }
+  computeMax(root);
+
+  return root;
+}
+
+function serializeNode(node: TrieNode): string {
+  const parts: string[] = [];
+
+  // children array, sorted by maxRelevance descending for best-first traversal
+  const sorted = [...node.children.entries()].sort(
+    (a, b) => b[1].maxRelevance - a[1].maxRelevance
+  );
+  let childrenStr = "[";
+  for (let i = 0; i < sorted.length; i++) {
+    if (i > 0) {
+      childrenStr += ",";
+    }
+    childrenStr += `['${jsEscape(sorted[i][0])}',${serializeNode(sorted[i][1])}]`;
+  }
+  childrenStr += "]";
+  parts.push(`c:${childrenStr}`);
+
+  // max relevance
+  parts.push(`m:${node.maxRelevance}`);
+
+  // terminal data
+  if (node.terminal) {
+    const t = node.terminal;
+    parts.push(
+      `t:{k:'${jsEscape(t.trigger)}',s:'${jsEscape(t.name)}',d:'${jsEscape(t.domain)}',u:'${jsEscape(t.url)}',r:${t.relevance}}`
+    );
+  } else {
+    parts.push("t:null");
+  }
+
+  return `{${parts.join(",")}}`;
+}
+
+function generateTrie(root: TrieNode): string {
+  return `export const TRIE=${serializeNode(root)};`;
 }
 
 const MERGED_PATH = "data/bangs.json";
@@ -265,9 +382,10 @@ const fullJs = generateFull(valid);
 await Bun.write(`${outDir}/bangs-full.js`, fullJs);
 console.log(`  bangs-full.js: ${fullJs.length} bytes`);
 
-const keysJs = generateKeys(valid);
-await Bun.write(`${outDir}/bangs-keys.js`, keysJs);
-console.log(`  bangs-keys.js: ${keysJs.length} bytes`);
+const trieRoot = buildRadixTrie(valid);
+const trieJs = generateTrie(trieRoot);
+await Bun.write(`${outDir}/bangs-trie.js`, trieJs);
+console.log(`  bangs-trie.js: ${trieJs.length} bytes`);
 
 await Promise.all([
   Bun.write(
@@ -279,8 +397,16 @@ await Promise.all([
     "export declare const BANGS: Record<string, { s: string; d: string; u: string; r: number }>;\n"
   ),
   Bun.write(
-    `${outDir}/bangs-keys.d.ts`,
-    "export declare const BANG_KEYS: string[];\n"
+    `${outDir}/bangs-trie.d.ts`,
+    [
+      "export interface TrieNode {",
+      "  c: [string, TrieNode][];",
+      "  m: number;",
+      "  t: { k: string; s: string; d: string; u: string; r: number } | null;",
+      "}",
+      "export declare const TRIE: TrieNode;",
+      "",
+    ].join("\n")
   ),
 ]);
 

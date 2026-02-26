@@ -4,8 +4,14 @@ import {
   getCachedSettings,
   invalidateCache,
   readRedirectSettings,
+  trackBangUsage,
 } from "./idb";
-import { type RedirectSettings, redirect, redirectRaw } from "./redirect";
+import {
+  parseBang,
+  type RedirectSettings,
+  redirect,
+  redirectRaw,
+} from "./redirect";
 
 const CACHE_NAME = "flashbang";
 const ASSETS = [
@@ -79,6 +85,10 @@ self.addEventListener("fetch", (e: FetchEvent) => {
         e.respondWith(redirectRaw(rawQ, cached));
       } else {
         e.respondWith(readRedirectSettings().then((s) => redirectRaw(rawQ, s)));
+      }
+      const trigger = parseBang(rawQ);
+      if (trigger) {
+        trackBangUsage(trigger);
       }
       return;
     }

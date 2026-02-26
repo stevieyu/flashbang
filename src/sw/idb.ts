@@ -86,3 +86,22 @@ export function invalidateCache() {
   cachedRedirect = null;
   dbPromise = null;
 }
+
+export function trackBangUsage(trigger: string) {
+  getDB()
+    .then((db) => {
+      const tx = db.transaction("settings", "readwrite");
+      const store = tx.objectStore("settings");
+      const req = store.get("frecency");
+      req.onsuccess = () => {
+        const counts: Record<string, number> = req.result?.value
+          ? JSON.parse(req.result.value)
+          : {};
+        counts[trigger] = (counts[trigger] || 0) + 1;
+        store.put({ key: "frecency", value: JSON.stringify(counts) });
+      };
+    })
+    .catch(() => {
+      /* fire-and-forget */
+    });
+}

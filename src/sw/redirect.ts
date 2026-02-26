@@ -304,3 +304,11 @@ export function redirectRaw(
 export function redirect(query: string, settings: RedirectSettings): Response {
   return redirectRaw(encodeURIComponent(query).replace(/%5C/g, "\\"), settings);
 }
+
+export function parseBang(rawQuery: string): string | null {
+  const s = trimRaw(rawQuery).replace(RE_ENCODED_EXCL, "!");
+  if (!s || s === "!") {
+    return null;
+  }
+  return parseRaw(s).bang;
+}
