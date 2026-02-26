@@ -88,7 +88,7 @@ Tests live alongside the source files they cover:
 3. **Generate** — Produces three JS files in `src/generated/` from the merged data:
    - `bangs-min.js` — trigger→URL map for the Service Worker
    - `bangs-full.js` — trigger→{name, domain, url, relevance} for the UI and suggestions
-   - `bangs-keys.js` — sorted trigger array for binary search autocomplete
+   - `bangs-trie.js` — radix trie for prefix-matched bang suggestions
 
 The `--from-merged` flag skips steps 1–2 and generates directly from the committed `data/bangs.json`. This is what CI builds use — no network fetch needed.
 

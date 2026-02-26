@@ -15,7 +15,7 @@ COPY --from=builder /app/scripts/start.ts scripts/start.ts
 COPY --from=builder /app/src/suggest.ts src/suggest.ts
 COPY --from=builder /app/src/opensearch.ts src/opensearch.ts
 COPY --from=builder /app/src/generated/bangs-full.js src/generated/bangs-full.js
-COPY --from=builder /app/src/generated/bangs-keys.js src/generated/bangs-keys.js
+COPY --from=builder /app/src/generated/bangs-trie.js src/generated/bangs-trie.js
 
 ENV PORT=3000
 EXPOSE 3000
