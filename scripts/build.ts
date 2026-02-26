@@ -126,7 +126,7 @@ const csp = [
   `script-src 'self' ${scriptHashes.join(" ")}`,
   "style-src 'self' 'unsafe-inline'",
   "connect-src 'self'",
-  "img-src 'self'",
+  "img-src 'self' data:",
   "font-src 'self'",
   "worker-src 'self'",
   "manifest-src 'self'",
