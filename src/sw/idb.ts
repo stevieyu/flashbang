@@ -1,5 +1,5 @@
 import { BANGS } from "../generated/bangs-min.js";
-import { idbWrap, openDB } from "../shared/idb";
+import { idbWrap, openDB, resetDB } from "../shared/idb";
 import type { RedirectSettings } from "./redirect";
 
 const DEFAULT_URL = "https://www.google.com/search?q={}";
@@ -11,14 +11,7 @@ const LUCKY_URLS: Record<string, string> = {
 };
 const DEFAULT_LUCKY_URL = "https://duckduckgo.com/?q=\\{}";
 
-let dbPromise: Promise<IDBDatabase> | null = null;
-
-function getDB(): Promise<IDBDatabase> {
-  if (!dbPromise) {
-    dbPromise = openDB();
-  }
-  return dbPromise;
-}
+const MAX_FRECENCY_ENTRIES = 64;
 
 let cachedRedirect: RedirectSettings | null = null;
 let frecencyCounts: Record<string, number> | null = null;
@@ -33,7 +26,7 @@ export async function readRedirectSettings(): Promise<RedirectSettings> {
     return cachedRedirect;
   }
   try {
-    const db = await getDB();
+    const db = await openDB();
     const tx = db.transaction(["settings", "custom-bangs"], "readonly");
     const store = tx.objectStore("settings");
     const [result, luckyProviderResult, luckyUrlResult, all] =
@@ -86,7 +79,7 @@ export async function readRedirectSettings(): Promise<RedirectSettings> {
 
 export function invalidateCache() {
   cachedRedirect = null;
-  dbPromise = null;
+  resetDB();
   frecencyCounts = null;
   frecencyCookie = "";
 }
@@ -106,6 +99,19 @@ function regenerateFrecencyValue(): void {
   frecencyCookie = top.map(([k, v]) => `${k}:${v}`).join(".");
 }
 
+function pruneFrecency(): void {
+  if (!frecencyCounts) {
+    return;
+  }
+  const keys = Object.keys(frecencyCounts);
+  if (keys.length <= MAX_FRECENCY_ENTRIES) {
+    return;
+  }
+  const entries = Object.entries(frecencyCounts);
+  entries.sort((a, b) => b[1] - a[1]);
+  frecencyCounts = Object.fromEntries(entries.slice(0, MAX_FRECENCY_ENTRIES));
+}
+
 export function getFrecencyValue(): string {
   return frecencyCookie;
 }
@@ -115,11 +121,12 @@ export async function loadFrecency(): Promise<void> {
     return;
   }
   try {
-    const db = await getDB();
+    const db = await openDB();
     const tx = db.transaction("settings", "readonly");
     const store = tx.objectStore("settings");
     const result = await idbWrap(store.get("frecency"));
     frecencyCounts = result?.value ? JSON.parse(result.value) : {};
+    pruneFrecency();
     regenerateFrecencyValue();
   } catch {
     frecencyCounts = {};
@@ -134,7 +141,7 @@ export function trackBangUsage(trigger: string) {
   regenerateFrecencyValue();
 
   // Fire-and-forget IDB write for persistence across SW restarts
-  getDB()
+  openDB()
     .then((db) => {
       const tx = db.transaction("settings", "readwrite");
       const store = tx.objectStore("settings");

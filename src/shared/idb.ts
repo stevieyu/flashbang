@@ -1,21 +1,30 @@
 const DB_NAME = "flashbang";
 const DB_VERSION = 1;
 
+let dbPromise: Promise<IDBDatabase> | null = null;
+
 export function openDB(): Promise<IDBDatabase> {
-  return new Promise((ok, err) => {
-    const r = indexedDB.open(DB_NAME, DB_VERSION);
-    r.onupgradeneeded = () => {
-      const db = r.result;
-      if (!db.objectStoreNames.contains("settings")) {
-        db.createObjectStore("settings", { keyPath: "key" });
-      }
-      if (!db.objectStoreNames.contains("custom-bangs")) {
-        db.createObjectStore("custom-bangs", { keyPath: "trigger" });
-      }
-    };
-    r.onsuccess = () => ok(r.result);
-    r.onerror = () => err(r.error);
-  });
+  if (!dbPromise) {
+    dbPromise = new Promise((ok, err) => {
+      const r = indexedDB.open(DB_NAME, DB_VERSION);
+      r.onupgradeneeded = () => {
+        const db = r.result;
+        if (!db.objectStoreNames.contains("settings")) {
+          db.createObjectStore("settings", { keyPath: "key" });
+        }
+        if (!db.objectStoreNames.contains("custom-bangs")) {
+          db.createObjectStore("custom-bangs", { keyPath: "trigger" });
+        }
+      };
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => err(r.error);
+    });
+  }
+  return dbPromise;
+}
+
+export function resetDB(): void {
+  dbPromise = null;
 }
 
 export function idbWrap<T>(req: IDBRequest<T>): Promise<T> {

@@ -118,44 +118,44 @@ function topK(
   customMatches: Candidate[]
 ): Candidate[] {
   const results: Candidate[] = [];
+  let minIdx = -1;
   let threshold = -1;
 
-  for (const c of customMatches) {
-    results.push(c);
-    if (results.length === TOP_K) {
-      results.sort((a, b) => b.score - a.score);
-      threshold = results[TOP_K - 1].score;
+  function findMin(): void {
+    minIdx = 0;
+    for (let i = 1; i < TOP_K; i++) {
+      if (results[i].score < results[minIdx].score) {
+        minIdx = i;
+      }
     }
+    threshold = results[minIdx].score;
+  }
+
+  function addCandidate(c: Candidate): void {
+    if (results.length < TOP_K) {
+      results.push(c);
+      if (results.length === TOP_K) {
+        findMin();
+      }
+    } else if (c.score > threshold) {
+      results[minIdx] = c;
+      findMin();
+    }
+  }
+
+  for (const c of customMatches) {
+    addCandidate(c);
   }
 
   function dfs(node: TrieNode) {
     if (node.t) {
-      const score = effectiveScore(node.t.r, frecent, node.t.k);
-      if (results.length < TOP_K) {
-        results.push({
-          trigger: node.t.k,
-          name: node.t.s,
-          domain: node.t.d,
-          url: node.t.u,
-          score,
-        });
-        if (results.length === TOP_K) {
-          results.sort((a, b) => b.score - a.score);
-          threshold = results[TOP_K - 1].score;
-        }
-      } else if (score > threshold) {
-        // Replace the lowest scoring result
-        results.sort((a, b) => b.score - a.score);
-        results[TOP_K - 1] = {
-          trigger: node.t.k,
-          name: node.t.s,
-          domain: node.t.d,
-          url: node.t.u,
-          score,
-        };
-        results.sort((a, b) => b.score - a.score);
-        threshold = results[TOP_K - 1].score;
-      }
+      addCandidate({
+        trigger: node.t.k,
+        name: node.t.s,
+        domain: node.t.d,
+        url: node.t.u,
+        score: effectiveScore(node.t.r, frecent, node.t.k),
+      });
     }
 
     for (const [, child] of node.c) {

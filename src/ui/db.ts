@@ -64,25 +64,29 @@ export class DB {
     };
     customBangs?: Array<{ trigger: string; name: string; url: string }>;
   }) {
-    if (data.settings?.defaultBang) {
-      await this.setSetting("default-bang", data.settings.defaultBang);
-    }
-    if (data.settings?.suggestProvider) {
-      await this.setSetting("suggest-provider", data.settings.suggestProvider);
-    }
-    if (data.settings?.suggestUrl) {
-      await this.setSetting("suggest-url", data.settings.suggestUrl);
-    }
-    if (data.settings?.luckyProvider) {
-      await this.setSetting("lucky-provider", data.settings.luckyProvider);
-    }
-    if (data.settings?.luckyUrl) {
-      await this.setSetting("lucky-url", data.settings.luckyUrl);
+    const db = await this.dbp;
+    const tx = db.transaction(["settings", "custom-bangs"], "readwrite");
+    const settingsStore = tx.objectStore("settings");
+    const customStore = tx.objectStore("custom-bangs");
+    const ops: Promise<unknown>[] = [];
+
+    const map: Record<string, string | undefined> = {
+      "default-bang": data.settings?.defaultBang,
+      "suggest-provider": data.settings?.suggestProvider,
+      "suggest-url": data.settings?.suggestUrl,
+      "lucky-provider": data.settings?.luckyProvider,
+      "lucky-url": data.settings?.luckyUrl,
+    };
+    for (const [key, value] of Object.entries(map)) {
+      if (value) {
+        ops.push(idbWrap(settingsStore.put({ key, value })));
+      }
     }
     if (Array.isArray(data.customBangs)) {
       for (const b of data.customBangs) {
-        await this.addCustomBang(b);
+        ops.push(idbWrap(customStore.put(b)));
       }
     }
+    await Promise.all(ops);
   }
 }
