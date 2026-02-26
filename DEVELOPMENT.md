@@ -34,22 +34,25 @@ flashbang/
 ├── data/
 │   └── bangs.json          # Merged bang data (committed, updated by CI daily)
 ├── src/
-│   ├── generated/          # Output of codegen (gitignored, generated from data/bangs.json)
-│   │   ├── bangs-min.js    # trigger→URL map for Service Worker
-│   │   ├── bangs-full.js   # trigger→{name, domain, url, relevance} for UI & suggestions
-│   │   └── bangs-keys.js   # sorted trigger array for binary search autocomplete
+│   ├── suggest.ts           # Bang suggestions, search suggest proxy & cookie parsing
+│   ├── opensearch.ts        # OpenSearch XML generation
+│   ├── shared/
+│   │   └── idb.ts           # Shared IndexedDB open helper
+│   ├── generated/           # Output of codegen (gitignored, generated from data/bangs.json)
+│   │   ├── bangs-min.js     # trigger→URL map for Service Worker
+│   │   ├── bangs-full.js    # trigger→{name, domain, url, relevance} for UI & suggestions
+│   │   └── bangs-trie.js    # radix trie for prefix-matched bang suggestions
 │   ├── sw/
-│   │   ├── sw.ts           # Service Worker lifecycle & fetch handler
-│   │   ├── redirect.ts     # Bang parsing & redirect logic (zero-copy raw + decoded paths)
-│   │   ├── suggest.ts      # Bang autocomplete & search suggestions
-│   │   └── idb.ts          # IndexedDB access & settings cache
+│   │   ├── sw.ts            # Service Worker lifecycle & fetch handler
+│   │   ├── redirect.ts      # Bang parsing & redirect logic (zero-copy raw + decoded paths)
+│   │   └── idb.ts           # IndexedDB access, settings cache & in-memory frecency
 │   └── ui/
 │       ├── index.html        # HTML template
 │       ├── app.ts            # Initialization & orchestration
 │       ├── dom.ts            # $() selector & el() factory
 │       ├── sw-bridge.ts      # notifySW() — postMessage to Service Worker
 │       ├── dns-links.ts      # DNS prefetch and preconnect for default bang
-│       ├── cookie.ts         # Suggest cookie management
+│       ├── cookie.ts         # Suggest cookie management (provider, custom bangs)
 │       ├── animations.ts     # Flash & shake CSS animations
 │       ├── modal.ts          # Settings modal with focus trapping
 │       ├── settings.ts       # Settings event wiring, bang search, import/export
@@ -100,6 +103,18 @@ The bang data is split into two tiers so the Service Worker loads only what it n
 3. **Generate CSS** — UnoCSS scans `src/ui/**/*.ts` and HTML files, emitting atomic utility classes
 4. **Inline & minify HTML** — CSS is inlined into `<style>`, HTML is minified with `@minify-html/node`
 5. **Pre-compress** — All static assets are compressed with Brotli (max quality) and written as `.br` files alongside the originals. The production server serves these automatically when the client supports it, falling back to uncompressed
+
+## Frecency
+
+The Service Worker tracks bang usage to personalize suggestion ordering. The flow:
+
+1. **On bang redirect** — `sw.ts` calls `trackBangUsage(trigger)` in `idb.ts`, which increments an in-memory count map and regenerates a compact cookie value (top 8 bangs, format: `g:50.yt:30.w:12`). A fire-and-forget IDB write persists the counts across SW restarts
+2. **Cookie sync** — `sw.ts` calls `cookieStore.set()` to write the `sf` cookie with the current frecency value. This happens on every bang redirect
+3. **Suggest reads frecency** — `suggest.ts` parses the `sf` cookie (or falls back to the `suggest` cookie's frecent section) via `parseCookie()` and passes it to `bangSuggestions()`, which boosts candidates by usage count via `effectiveScore()`
+
+The in-memory cache (`frecencyCounts` + preformatted `frecencyCookie` string in `idb.ts`) follows the same pattern as `cachedRedirect` — loaded from IDB once on SW activate, kept in memory for the lifetime of the SW, and reset on `invalidateCache()`.
+
+**Browser cookie behavior**: Chromium-based browsers (Chrome, Edge, Arc) send cookies with suggest requests when the site is the default search engine. Firefox-based browsers (Firefox, Zen, LibreWolf) intentionally withhold cookies from OpenSearch suggest requests as a privacy decision ([bug 1624457](https://bugzilla.mozilla.org/show_bug.cgi?id=1624457)). In those browsers, suggestions fall back to default popularity ranking. Frecency only affects suggestion ordering — it has no effect on redirects.
 
 ## Dev server
 

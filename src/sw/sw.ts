@@ -2,16 +2,13 @@ declare const self: ServiceWorkerGlobalScope;
 
 import {
   getCachedSettings,
+  getFrecencyValue,
   invalidateCache,
+  loadFrecency,
   readRedirectSettings,
   trackBangUsage,
 } from "./idb";
-import {
-  parseBang,
-  type RedirectSettings,
-  redirect,
-  redirectRaw,
-} from "./redirect";
+import { type RedirectSettings, redirect, redirectRaw } from "./redirect";
 
 const CACHE_NAME = "flashbang";
 const ASSETS = [
@@ -29,6 +26,7 @@ self.addEventListener("install", (e: ExtendableEvent) => {
 
 self.addEventListener("activate", (e: ExtendableEvent) => {
   readRedirectSettings();
+  loadFrecency();
   e.waitUntil(
     caches
       .keys()
@@ -73,6 +71,14 @@ self.addEventListener("fetch", (e: FetchEvent) => {
     return;
   }
 
+  if (raw.includes("/suggest?q=")) {
+    const val = getFrecencyValue();
+    if (val) {
+      e.respondWith(fetch(`${raw}&sf=${val}`));
+    }
+    return;
+  }
+
   const qIdx = raw.indexOf("?q=");
   if (qIdx !== -1) {
     const vStart = qIdx + 3;
@@ -81,14 +87,27 @@ self.addEventListener("fetch", (e: FetchEvent) => {
       vEnd === -1 ? raw.substring(vStart) : raw.substring(vStart, vEnd);
     if (rawQ) {
       const cached = getCachedSettings();
+      const respond = (s: RedirectSettings): Response => {
+        const [resp, trigger] = redirectRaw(rawQ, s);
+        if (trigger) {
+          trackBangUsage(trigger);
+          const val = getFrecencyValue();
+          if (val) {
+            cookieStore.set({
+              name: "sf",
+              value: val,
+              path: "/",
+              expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
+              sameSite: "lax",
+            });
+          }
+        }
+        return resp;
+      };
       if (cached) {
-        e.respondWith(redirectRaw(rawQ, cached));
+        e.respondWith(respond(cached));
       } else {
-        e.respondWith(readRedirectSettings().then((s) => redirectRaw(rawQ, s)));
-      }
-      const trigger = parseBang(rawQ);
-      if (trigger) {
-        trackBangUsage(trigger);
+        e.respondWith(readRedirectSettings().then(respond));
       }
       return;
     }

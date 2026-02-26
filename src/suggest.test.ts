@@ -197,7 +197,7 @@ mock.module("./generated/bangs-trie.js", () => ({
   TRIE: TEST_TRIE,
 }));
 
-import { parseCookie, suggest } from "./suggest";
+import { parseCookie, parseSettings, suggest } from "./suggest";
 
 const fetchSpy = spyOn(globalThis, "fetch");
 
@@ -317,6 +317,62 @@ describe("parseCookie", () => {
     const s = parseCookie(req("suggest=google,g,||"));
     expect(s.frecent).toEqual({});
     expect(s.custom).toEqual([]);
+  });
+
+  test("sf cookie takes priority over suggest= frecent section", () => {
+    const s = parseCookie(req("suggest=google,g,|gh:10.yt:5; sf=w:50.b:30"));
+    expect(s.frecent).toEqual({ w: 50, b: 30 });
+    expect(s.provider).toBe("google");
+    expect(s.trigger).toBe("g");
+  });
+
+  test("sf cookie absent falls back to suggest= frecent section", () => {
+    const s = parseCookie(req("suggest=google,g,|gh:50.yt:30"));
+    expect(s.frecent).toEqual({ gh: 50, yt: 30 });
+  });
+
+  test("sf cookie with suggest= cookie together, sf wins for frecent", () => {
+    const s = parseCookie(
+      req("sf=ddg:100.g:80; suggest=brave,b,|mdn:20|mysite")
+    );
+    expect(s.frecent).toEqual({ ddg: 100, g: 80 });
+    expect(s.provider).toBe("brave");
+    expect(s.trigger).toBe("b");
+    expect(s.custom).toEqual(["mysite"]);
+  });
+});
+
+describe("parseSettings", () => {
+  test("sp query param overrides cookie provider", () => {
+    const url = new URL("http://localhost/suggest?q=cats&sp=ddg");
+    const r = req("suggest=google,g,");
+    const s = parseSettings(url, r);
+    expect(s.provider).toBe("ddg");
+    expect(s.trigger).toBe("g");
+  });
+
+  test("no query params falls back to cookie", () => {
+    const url = new URL("http://localhost/suggest?q=cats");
+    const r = req("suggest=brave,b,");
+    const s = parseSettings(url, r);
+    expect(s.provider).toBe("brave");
+    expect(s.trigger).toBe("b");
+  });
+
+  test("no query params and no cookie returns defaults", () => {
+    const url = new URL("http://localhost/suggest?q=cats");
+    const r = req();
+    const s = parseSettings(url, r);
+    expect(s).toEqual(defaultSettings);
+  });
+
+  test("sp does not affect other settings", () => {
+    const url = new URL("http://localhost/suggest?q=cats&sp=bing");
+    const r = req("suggest=google,ddg,|w:10");
+    const s = parseSettings(url, r);
+    expect(s.provider).toBe("bing");
+    expect(s.frecent).toEqual({ w: 10 });
+    expect(s.trigger).toBe("ddg");
   });
 });
 

@@ -18,7 +18,7 @@ All three support bangs natively — but every query still round-trips through t
 
 ### Privacy
 
-> Core redirects never leave your machine — the Service Worker handles them offline with no server involved. Search suggestions are completely optional and go through our server when enabled on the hosted version. A same-site cookie stores your configured suggestion provider so the server knows which upstream to proxy — no accounts, no sessions, no personal data. There is no tracking or analytics — we don't know what you search or what bangs you use. Cloudflare Pages exposes basic request counts in its dashboard as a platform feature we did not opt into and cannot disable. It contains no query content or personally identifiable information.
+> Core redirects never leave your machine — the Service Worker handles them offline with no server involved. Search suggestions are completely optional and go through our server when enabled on the hosted version. A same-site cookie stores your configured suggestion provider and custom bang triggers so the server knows which upstream to proxy. A separate same-site cookie (`sf`) stores your top bang usage counts so suggestions can be personalized by frecency — it contains only bang triggers and hit counts (e.g. `g:50.yt:30`), no query content. No accounts, no sessions, no personal data. There is no tracking or analytics — we don't know what you search or what bangs you use. Cloudflare Pages exposes basic request counts in its dashboard as a platform feature we did not opt into and cannot disable. It contains no query content or personally identifiable information.
 >
 > If you'd rather not trust our server at all, Flashbang is fully self-hostable. Deploy to Cloudflare Pages/Railway in minutes or `docker run` it on any VPS — a single command gets you a fully private instance. See [Setup](#setup-as-search-engine) for details.
 
@@ -28,7 +28,8 @@ All three support bangs natively — but every query still round-trips through t
 - **Private** — No analytics, no tracking. All data stays on your device for the core feature - redirects
 - **14,000+ bangs** — Merged from DuckDuckGo, Kagi, and custom sources. Updated daily via automated CI
 - **Custom bangs** — Add your own bangs through the settings UI. They take priority over built-ins
-- **Search suggestions** — The only bang tool with bang-aware autocomplete in your browser's native address bar. Type `!y` and the browser itself suggests `!yt` (YouTube), `!ya` (Yandex), `!yf` (Yahoo Finance) — ranked by popularity so the most-used bangs surface first. Regular queries return web search suggestions from Google, DuckDuckGo, Bing, Brave, or a custom provider. Both are unified through a single `/suggest` endpoint that plugs into your browser's built-in suggestion UI
+- **Search suggestions** — The only bang tool with bang-aware autocomplete in your browser's native address bar. Type `!y` and the browser itself suggests `!yt` (YouTube), `!ya` (Yandex), `!yf` (Yahoo Finance) — ranked by a combination of global popularity and your personal usage frequency. Regular queries return web search suggestions from Google, DuckDuckGo, Bing, Brave, or a custom provider. Both are unified through a single `/suggest` endpoint that plugs into your browser's built-in suggestion UI
+- **Frecency** — The Service Worker tracks which bangs you use and how often, entirely in-memory for zero redirect overhead. Your most-used bangs are promoted in autocomplete suggestions so they surface first. Frecency data is persisted to IndexedDB across Service Worker restarts. This works automatically in Chromium-based browsers (Chrome, Edge, Arc) which send cookies with default search engine suggest requests. Firefox and Firefox-based browsers (Zen, LibreWolf) intentionally withhold cookies from suggest requests as a privacy measure, so suggestions use default popularity ranking in those browsers
 - **Feeling Lucky** — Prefix a query with `\`, or add a bare `!` before or after it, to skip the results page and jump straight to the first result. Works with Google's "I'm Feeling Lucky" when that's your default engine, falls back to DuckDuckGo's `\` redirect for others. Configurable per-engine or with a custom URL, or disable it entirely
 - **OpenSearch** — Browsers auto-discover Flashbang as a search engine via `/opensearch.xml`, including the suggestions endpoint. The XML is dynamically generated at request time using the current origin, so it works out of the box on any self-hosted domain or `localhost` — no hardcoded URLs to change
 
@@ -65,6 +66,21 @@ The redirect destination depends on your lucky provider (configurable in setting
 ## Setup as search engine
 
 > **Note:** Search suggestions and OpenSearch auto-discovery require a server endpoint since browsers don't route these requests through Service Workers — both are completely optional. Redirects always work offline once installed with no server needed. If you use the hosted version, these requests go through our Cloudflare Pages Functions. No queries are logged or stored — self-host if you'd rather keep them local too.
+
+### Suggestion URL parameters
+
+The suggestion endpoint accepts an optional `sp` (suggestion provider) query parameter to choose which search engine provides autocomplete results, without relying on cookies:
+
+```
+google, ddg, bing, brave, yahoo, ecosia, kagi, yandex, baidu, none
+```
+
+Example suggestion URL with a provider override:
+```
+https://flashbang-dyr.pages.dev/suggest?q=%s&sp=ddg
+```
+
+**Why this exists:** Chromium-based browsers (Chrome, Edge, Arc) send cookies with suggest requests when flashbang is the default search engine, so settings configured in the UI are automatically picked up. Firefox and Firefox-based browsers (Zen, LibreWolf) intentionally [withhold cookies from suggest requests](https://bugzilla.mozilla.org/show_bug.cgi?id=1624457) as a privacy measure. For those browsers, `sp` is the only way to choose a suggestion provider — without it, suggestions default to Google. Custom bangs and frecency-ranked suggestions are not available in browsers that withhold cookies, since the suggest endpoint has no way to receive that data.
 
 ### Use the hosted version
 

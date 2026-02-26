@@ -1,7 +1,7 @@
 import { watch } from "node:fs";
 import { minify } from "@minify-html/node";
 import { $ } from "bun";
-import { parseCookie } from "../src/suggest";
+import { parseSettings } from "../src/suggest";
 
 interface SSEClient {
   close: () => void;
@@ -183,7 +183,8 @@ Bun.serve({
 
     if (url.pathname === "/suggest" && url.searchParams.get("q")) {
       const { suggest } = await import("../src/suggest");
-      return suggest(url.searchParams.get("q")!, parseCookie(req));
+      const settings = parseSettings(url, req);
+      return suggest(url.searchParams.get("q")!, settings);
     }
 
     if (url.pathname === "/opensearch.xml") {

@@ -21,6 +21,8 @@ function getDB(): Promise<IDBDatabase> {
 }
 
 let cachedRedirect: RedirectSettings | null = null;
+let frecencyCounts: Record<string, number> | null = null;
+let frecencyCookie: string = "";
 
 export function getCachedSettings(): RedirectSettings | null {
   return cachedRedirect;
@@ -85,21 +87,61 @@ export async function readRedirectSettings(): Promise<RedirectSettings> {
 export function invalidateCache() {
   cachedRedirect = null;
   dbPromise = null;
+  frecencyCounts = null;
+  frecencyCookie = "";
+}
+
+function regenerateFrecencyValue(): void {
+  if (!frecencyCounts) {
+    frecencyCookie = "";
+    return;
+  }
+  const entries = Object.entries(frecencyCounts);
+  entries.sort((a, b) => b[1] - a[1]);
+  const top = entries.slice(0, 8);
+  if (top.length === 0) {
+    frecencyCookie = "";
+    return;
+  }
+  frecencyCookie = top.map(([k, v]) => `${k}:${v}`).join(".");
+}
+
+export function getFrecencyValue(): string {
+  return frecencyCookie;
+}
+
+export async function loadFrecency(): Promise<void> {
+  if (frecencyCounts) {
+    return;
+  }
+  try {
+    const db = await getDB();
+    const tx = db.transaction("settings", "readonly");
+    const store = tx.objectStore("settings");
+    const result = await idbWrap(store.get("frecency"));
+    frecencyCounts = result?.value ? JSON.parse(result.value) : {};
+    regenerateFrecencyValue();
+  } catch {
+    frecencyCounts = {};
+  }
 }
 
 export function trackBangUsage(trigger: string) {
+  if (!frecencyCounts) {
+    frecencyCounts = {};
+  }
+  frecencyCounts[trigger] = (frecencyCounts[trigger] || 0) + 1;
+  regenerateFrecencyValue();
+
+  // Fire-and-forget IDB write for persistence across SW restarts
   getDB()
     .then((db) => {
       const tx = db.transaction("settings", "readwrite");
       const store = tx.objectStore("settings");
-      const req = store.get("frecency");
-      req.onsuccess = () => {
-        const counts: Record<string, number> = req.result?.value
-          ? JSON.parse(req.result.value)
-          : {};
-        counts[trigger] = (counts[trigger] || 0) + 1;
-        store.put({ key: "frecency", value: JSON.stringify(counts) });
-      };
+      store.put({
+        key: "frecency",
+        value: JSON.stringify(frecencyCounts),
+      });
     })
     .catch(() => {
       /* fire-and-forget */

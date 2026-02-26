@@ -255,12 +255,16 @@ function parseRawSuffix(s: string): RawParsed {
   return { bang: null, rawTerm: s, rawFull: s, lucky: false };
 }
 
+function redir(url: string): Response {
+  return new Response(null, { status: 302, headers: { Location: url } });
+}
+
 function resolve(
   { bang, rawTerm, rawFull, lucky }: RawParsed,
   { defaultUrl, custom, luckyUrl }: RedirectSettings
-): Response {
+): [Response, string | null] {
   if (lucky && luckyUrl && rawTerm) {
-    return Response.redirect(luckyUrl.replace("{}", rawFixup(rawTerm)), 302);
+    return [redir(luckyUrl.replace("{}", rawFixup(rawTerm))), null];
   }
 
   let url: string | undefined;
@@ -268,10 +272,7 @@ function resolve(
   if (bang) {
     url = custom[bang] || BANGS[bang];
     if (!url) {
-      return Response.redirect(
-        defaultUrl.replace("{}", rawFixup(rawFull)),
-        302
-      );
+      return [redir(defaultUrl.replace("{}", rawFixup(rawFull))), null];
     }
   } else {
     url = defaultUrl;
@@ -280,35 +281,30 @@ function resolve(
   if (!rawTerm) {
     const protoEnd = url.indexOf("://");
     if (protoEnd === -1) {
-      return Response.redirect(url.replace("{}", ""), 302);
+      return [redir(url.replace("{}", "")), bang];
     }
     const pathStart = url.indexOf("/", protoEnd + 3);
     const origin = pathStart !== -1 ? url.substring(0, pathStart) : url;
-    return Response.redirect(origin, 302);
+    return [redir(origin), bang];
   }
 
-  return Response.redirect(url.replace("{}", rawFixup(rawTerm)), 302);
+  return [redir(url.replace("{}", rawFixup(rawTerm))), bang];
 }
 
 export function redirectRaw(
   rawQuery: string,
   settings: RedirectSettings
-): Response {
+): [Response, string | null] {
   const s = trimRaw(rawQuery).replace(RE_ENCODED_EXCL, "!");
   if (!s || s === "!") {
-    return Response.redirect("/", 302);
+    return [redir("/"), null];
   }
   return resolve(parseRaw(s), settings);
 }
 
 export function redirect(query: string, settings: RedirectSettings): Response {
-  return redirectRaw(encodeURIComponent(query).replace(/%5C/g, "\\"), settings);
-}
-
-export function parseBang(rawQuery: string): string | null {
-  const s = trimRaw(rawQuery).replace(RE_ENCODED_EXCL, "!");
-  if (!s || s === "!") {
-    return null;
-  }
-  return parseRaw(s).bang;
+  return redirectRaw(
+    encodeURIComponent(query).replace(/%5C/g, "\\"),
+    settings
+  )[0];
 }

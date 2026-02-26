@@ -23,6 +23,7 @@ const SUGGEST_URLS: Record<string, string> = {
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const COOKIE_RE = /(?:^|;\s*)suggest=([^;]*)/;
+const SF_RE = /(?:^|;\s*)sf=([^;]*)/;
 const TOP_K = 8;
 
 function empty(query: string): Response {
@@ -274,6 +275,20 @@ function resolveEndpoint(provider: string, trigger: string): string | null {
   return null;
 }
 
+function parseFrecency(raw: string): Record<string, number> {
+  const frecent: Record<string, number> = {};
+  for (const pair of raw.split(".")) {
+    const sep = pair.lastIndexOf(":");
+    if (sep > 0) {
+      const count = parseInt(pair.substring(sep + 1), 10);
+      if (count > 0) {
+        frecent[pair.substring(0, sep)] = count;
+      }
+    }
+  }
+  return frecent;
+}
+
 export function parseCookie(request: Request): SuggestSettings {
   const header = request.headers.get("Cookie") || "";
   const match = header.match(COOKIE_RE);
@@ -290,18 +305,13 @@ export function parseCookie(request: Request): SuggestSettings {
   const sections = match[1].split("|");
   const [provider, trigger, customUrl] = (sections[0] || "").split(",");
 
-  // Parse frecency section: "gh:50.yt:30.w:12"
-  const frecent: Record<string, number> = {};
-  if (sections[1]) {
-    for (const pair of sections[1].split(".")) {
-      const sep = pair.lastIndexOf(":");
-      if (sep > 0) {
-        const count = parseInt(pair.substring(sep + 1), 10);
-        if (count > 0) {
-          frecent[pair.substring(0, sep)] = count;
-        }
-      }
-    }
+  // Prefer sf cookie (set by SW on every redirect) over suggest= frecent section
+  const sfMatch = header.match(SF_RE);
+  let frecent: Record<string, number> = {};
+  if (sfMatch?.[1]) {
+    frecent = parseFrecency(sfMatch[1]);
+  } else if (sections[1]) {
+    frecent = parseFrecency(sections[1]);
   }
 
   // Parse custom section: "test8.mysite.proj"
@@ -316,6 +326,17 @@ export function parseCookie(request: Request): SuggestSettings {
     frecent,
     custom,
   };
+}
+
+export function parseSettings(url: URL, request: Request): SuggestSettings {
+  const settings = parseCookie(request);
+
+  const sp = url.searchParams.get("sp");
+  if (sp) {
+    settings.provider = sp;
+  }
+
+  return settings;
 }
 
 export async function suggest(

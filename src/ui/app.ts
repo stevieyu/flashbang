@@ -1,5 +1,5 @@
 import { flashAnim } from "./animations";
-import { readFrecencyData, setSuggestCookie } from "./cookie";
+import { readCustomBangs, setSuggestCookie } from "./cookie";
 import { DB } from "./db";
 import { initDnsLinks } from "./dns-links";
 import { $ } from "./dom";
@@ -10,14 +10,14 @@ import { initSettings } from "./settings";
 const db = new DB();
 
 async function syncSuggestCookie() {
-  const [provider, trigger, url, fd] = await Promise.all([
+  const [provider, trigger, url, custom] = await Promise.all([
     db.getSetting("suggest-provider").then((v) => v || "default"),
     db.getSetting("default-bang").then((v) => v || "g"),
     db.getSetting("suggest-url").then((v) => v || ""),
-    readFrecencyData(db),
+    readCustomBangs(db),
   ]);
 
-  setSuggestCookie(provider, trigger, url, fd.frecent, fd.custom);
+  setSuggestCookie(provider, trigger, url, custom);
 }
 
 function init() {

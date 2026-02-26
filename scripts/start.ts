@@ -1,4 +1,4 @@
-import { parseCookie } from "../src/suggest";
+import { parseSettings } from "../src/suggest";
 
 const distIndex = Bun.file("dist/index.html");
 if (!(await distIndex.exists())) {
@@ -48,7 +48,7 @@ Bun.serve({
 
     if (url.pathname === "/suggest" && url.searchParams.get("q")) {
       const { suggest } = await import("../src/suggest");
-      return suggest(url.searchParams.get("q")!, parseCookie(req));
+      return suggest(url.searchParams.get("q")!, parseSettings(url, req));
     }
 
     if (url.pathname === "/opensearch.xml") {

@@ -13,7 +13,15 @@ mock.module("../generated/bangs-min.js", () => {
   return { BANGS };
 });
 
-import { type RedirectSettings, redirect, redirectRaw } from "./redirect";
+import {
+  type RedirectSettings,
+  redirect,
+  redirectRaw as redirectRawTuple,
+} from "./redirect";
+
+function redirectRaw(rawQuery: string, settings: RedirectSettings): Response {
+  return redirectRawTuple(rawQuery, settings)[0];
+}
 
 const DEFAULT_URL = "https://www.google.com/search?q={}";
 const LUCKY_URL = "https://www.google.com/search?btnI&q={}";
