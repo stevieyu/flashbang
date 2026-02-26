@@ -1,5 +1,5 @@
 import { flashAnim, shakeAnim } from "./animations";
-import { setSuggestCookie } from "./cookie";
+import { readFrecencyData, setSuggestCookie } from "./cookie";
 import { setupCustomBangs } from "./custom-bangs";
 import type { DB } from "./db";
 import { setDnsLinks } from "./dns-links";
@@ -13,13 +13,14 @@ export async function initSettings(db: DB) {
   const luckySelect = $<HTMLSelectElement>("#lucky-provider");
   const luckyUrlInput = $<HTMLInputElement>("#lucky-url");
 
-  const [defaultBang, savedProvider, savedUrl, savedLucky, savedLuckyUrl] =
+  const [defaultBang, savedProvider, savedUrl, savedLucky, savedLuckyUrl, fd] =
     await Promise.all([
       db.getSetting("default-bang").then((v) => v || "g"),
       db.getSetting("suggest-provider").then((v) => v || "default"),
       db.getSetting("suggest-url").then((v) => v || ""),
       db.getSetting("lucky-provider").then((v) => v || "default"),
       db.getSetting("lucky-url").then((v) => v || ""),
+      readFrecencyData(db),
     ]);
 
   luckySelect.value = savedLucky;
@@ -39,7 +40,7 @@ export async function initSettings(db: DB) {
     suggestUrlInput.value = savedUrl;
   }
 
-  setSuggestCookie(savedProvider, defaultBang, savedUrl);
+  setSuggestCookie(savedProvider, defaultBang, savedUrl, fd.frecent, fd.custom);
 
   const mod = await import("../generated/bangs-full.js");
   const full: Record<string, { s: string; d: string; u: string }> = mod.BANGS;
@@ -52,7 +53,13 @@ export async function initSettings(db: DB) {
     if (full[val]) {
       await db.setSetting("default-bang", val);
       notifySW("invalidate");
-      setSuggestCookie(suggestSelect.value, val, suggestUrlInput.value.trim());
+      setSuggestCookie(
+        suggestSelect.value,
+        val,
+        suggestUrlInput.value.trim(),
+        fd.frecent,
+        fd.custom
+      );
       setDnsLinks(full[val].u);
       flashAnim(defaultInput);
       $("#bang-status").textContent = full[val].s;
@@ -70,7 +77,9 @@ export async function initSettings(db: DB) {
     setSuggestCookie(
       suggestSelect.value,
       defaultInput.value,
-      suggestUrlInput.value.trim()
+      suggestUrlInput.value.trim(),
+      fd.frecent,
+      fd.custom
     );
     if (suggestSelect.value === "custom") {
       suggestUrlInput.classList.remove("hidden");
@@ -83,7 +92,13 @@ export async function initSettings(db: DB) {
     const url = suggestUrlInput.value.trim();
     await db.setSetting("suggest-url", url);
     notifySW("invalidate");
-    setSuggestCookie(suggestSelect.value, defaultInput.value, url);
+    setSuggestCookie(
+      suggestSelect.value,
+      defaultInput.value,
+      url,
+      fd.frecent,
+      fd.custom
+    );
   });
 
   luckySelect.addEventListener("change", async () => {
