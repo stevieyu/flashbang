@@ -1,3 +1,5 @@
+import { $ } from "./dom";
+
 const QUERY_TYPES = [
   { label: "Prefix bang", example: "!g kittens", query: "!g kittens" },
   { label: "Suffix bang", example: "kittens g!", query: "kittens g!" },
@@ -30,7 +32,7 @@ async function ensureSW(): Promise<void> {
     return;
   }
 
-  const status = document.getElementById("sw-status")!;
+  const status = $("#sw-status");
   status.textContent = "Installing Service Worker…";
   status.classList.remove("hidden");
 
@@ -78,7 +80,7 @@ function computeStats(times: number[]): Stats {
     median: sorted[Math.floor(n * 0.5)],
     mean: sorted.reduce((a, b) => a + b, 0) / n,
     p95: sorted[Math.floor(n * 0.95)],
-    p99: sorted[Math.min(Math.floor(n * 0.99), n - 1)],
+    p99: sorted[Math.floor(n * 0.99)],
     min: sorted[0],
     max: sorted[n - 1],
   };
@@ -132,14 +134,14 @@ async function benchQuery(
 }
 
 function renderResults(results: BenchResult[]) {
-  document.getElementById("results-section")!.classList.remove("hidden");
+  $("#results-section").classList.remove("hidden");
 
   const validMedians = results
     .filter((r): r is { error: false } & Stats => !r.error)
     .map((r) => r.median);
   const minMedian = validMedians.length > 0 ? Math.min(...validMedians) : 0;
 
-  const tbody = document.getElementById("stats-body")!;
+  const tbody = $("#stats-body");
   tbody.replaceChildren();
   for (let i = 0; i < results.length; i++) {
     const r = results[i];
@@ -180,9 +182,9 @@ function renderResults(results: BenchResult[]) {
   if (validMedians.length > 0) {
     const sorted = [...validMedians].sort((a, b) => a - b);
     const overallMedian = sorted[Math.floor(sorted.length * 0.5)];
-    const card = document.getElementById("summary-card")!;
+    const card = $("#summary-card");
     card.classList.remove("hidden");
-    const summary = document.getElementById("summary")!;
+    const summary = $("#summary");
     summary.textContent = "";
     summary.append(
       "Overall median: ",
@@ -195,18 +197,15 @@ function renderResults(results: BenchResult[]) {
   }
 }
 
-const runBtn = document.getElementById("run-btn") as HTMLButtonElement;
-const progressEl = document.getElementById("progress")!;
-const progressFill = document.getElementById("progress-fill")!;
-const progressText = document.getElementById("progress-text")!;
+const runBtn = $<HTMLButtonElement>("#run-btn");
+const progressEl = $("#progress");
+const progressFill = $("#progress-fill");
+const progressText = $("#progress-text");
 
 runBtn.addEventListener("click", async () => {
   const iterations = Math.max(
     100,
-    Math.min(
-      5000,
-      +(document.getElementById("iterations") as HTMLInputElement).value || 500
-    )
+    Math.min(5000, +$<HTMLInputElement>("#iterations").value || 500)
   );
 
   runBtn.disabled = true;
@@ -214,7 +213,7 @@ runBtn.addEventListener("click", async () => {
   try {
     await ensureSW();
   } catch {
-    const status = document.getElementById("sw-status")!;
+    const status = $("#sw-status");
     status.textContent =
       "Could not install Service Worker. Results will measure server response.";
     status.classList.remove("hidden");

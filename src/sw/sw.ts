@@ -1,5 +1,6 @@
 declare const self: ServiceWorkerGlobalScope;
 
+import { COOKIE_MAX_AGE_S } from "../shared/constants";
 import {
   getCachedSettings,
   getFrecencyValue,
@@ -96,15 +97,14 @@ self.addEventListener("fetch", (e: FetchEvent) => {
         if (trigger) {
           trackBangUsage(trigger);
           const val = getFrecencyValue();
-          if (val) {
+          if (val && typeof cookieStore !== "undefined") {
             cookieStore.set({
               name: "sf",
               value: val,
               path: "/",
-              expires: Date.now() + 365 * 24 * 60 * 60 * 1000,
+              expires: Date.now() + COOKIE_MAX_AGE_S * 1000,
               sameSite: "lax",
-              secure: true,
-            } as CookieInit & { secure: boolean });
+            });
           }
         }
         return resp;

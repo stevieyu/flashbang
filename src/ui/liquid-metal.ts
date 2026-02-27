@@ -17,7 +17,7 @@ function createTextMaskTexture(
   font: string,
   width: number,
   height: number
-): WebGLTexture {
+): WebGLTexture | null {
   const c = document.createElement("canvas");
   c.width = width;
   c.height = height;
@@ -49,7 +49,10 @@ function createTextMaskTexture(
     packed[i * 4 + 3] = 255;
   }
 
-  const tex = gl.createTexture()!;
+  const tex = gl.createTexture();
+  if (!tex) {
+    return null;
+  }
   gl.bindTexture(gl.TEXTURE_2D, tex);
   gl.texImage2D(
     gl.TEXTURE_2D,
@@ -149,6 +152,7 @@ export function initLiquidMetal(
   let brightness = 1.0;
   let rafId = 0;
   const startTime = performance.now();
+  let maskTex: WebGLTexture | null = null;
 
   function resize() {
     const rect = canvas.parentElement!.getBoundingClientRect();
@@ -162,16 +166,13 @@ export function initLiquidMetal(
       canvas.style.height = `${rect.height}px`;
       gl.viewport(0, 0, w, h);
 
-      const tex = createTextMaskTexture(
-        gl,
-        text,
-        getWordmarkFont(canvas),
-        w,
-        h
-      );
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.uniform1i(uMask, 0);
+      gl.deleteTexture(maskTex);
+      maskTex = createTextMaskTexture(gl, text, getWordmarkFont(canvas), w, h);
+      if (maskTex) {
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, maskTex);
+        gl.uniform1i(uMask, 0);
+      }
       gl.uniform2f(uResolution, w, h);
     }
   }
@@ -209,6 +210,7 @@ export function initLiquidMetal(
     destroy() {
       cancelAnimationFrame(rafId);
       ro.disconnect();
+      gl.deleteTexture(maskTex);
       gl.deleteProgram(program);
       gl.deleteBuffer(buf);
     },

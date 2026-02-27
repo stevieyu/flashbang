@@ -186,95 +186,9 @@ function generateFull(bangs: Bang[]): string {
 
 // --- Radix trie for suggestions ---
 
-interface TrieNode {
-  children: Map<string, TrieNode>;
-  maxRelevance: number;
-  terminal: Bang | null;
-}
+import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 
-function buildRadixTrie(bangs: Bang[]): TrieNode {
-  const root: TrieNode = {
-    children: new Map(),
-    maxRelevance: 0,
-    terminal: null,
-  };
-
-  for (const bang of bangs) {
-    let node = root;
-    let key = bang.trigger;
-    let created = false;
-
-    while (key.length > 0) {
-      let found = false;
-      for (const [edge, child] of node.children) {
-        let common = 0;
-        const limit = Math.min(key.length, edge.length);
-        while (
-          common < limit &&
-          key.charCodeAt(common) === edge.charCodeAt(common)
-        ) {
-          common++;
-        }
-
-        if (common === 0) {
-          continue;
-        }
-
-        if (common === edge.length) {
-          // Edge fully consumed — descend
-          node = child;
-          key = key.substring(common);
-          found = true;
-          break;
-        }
-
-        // Partial match — split edge
-        const splitNode: TrieNode = {
-          children: new Map(),
-          maxRelevance: 0,
-          terminal: null,
-        };
-        node.children.delete(edge);
-        node.children.set(edge.substring(0, common), splitNode);
-        splitNode.children.set(edge.substring(common), child);
-        node = splitNode;
-        key = key.substring(common);
-        found = true;
-        break;
-      }
-
-      if (!found) {
-        // No matching edge — create new leaf
-        const leaf: TrieNode = {
-          children: new Map(),
-          maxRelevance: bang.relevance,
-          terminal: bang,
-        };
-        node.children.set(key, leaf);
-        created = true;
-        break;
-      }
-    }
-
-    // key fully consumed by descending — set terminal on current node
-    if (!created) {
-      node.terminal = bang;
-    }
-  }
-
-  // Compute maxRelevance bottom-up
-  function computeMax(node: TrieNode): number {
-    let max = node.terminal ? node.terminal.relevance : 0;
-    for (const child of node.children.values()) {
-      max = Math.max(max, computeMax(child));
-    }
-    node.maxRelevance = max;
-    return max;
-  }
-  computeMax(root);
-
-  return root;
-}
+type TrieNode = BuildNode<Bang>;
 
 function serializeNode(node: TrieNode): string {
   const parts: string[] = [];
@@ -382,7 +296,11 @@ const fullJs = generateFull(valid);
 await Bun.write(`${outDir}/bangs-full.js`, fullJs);
 console.log(`  bangs-full.js: ${fullJs.length} bytes`);
 
-const trieRoot = buildRadixTrie(valid);
+const trieRoot = buildRadixTrie(
+  valid,
+  (b) => b.trigger,
+  (b) => b.relevance
+);
 const trieJs = generateTrie(trieRoot);
 await Bun.write(`${outDir}/bangs-trie.js`, trieJs);
 console.log(`  bangs-trie.js: ${trieJs.length} bytes`);

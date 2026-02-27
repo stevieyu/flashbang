@@ -18,12 +18,16 @@ interface SSEClient {
 const clients = new Set<SSEClient>();
 
 function broadcast() {
+  const dead: SSEClient[] = [];
   for (const client of clients) {
     try {
       client.enqueue("data: reload\n\n");
     } catch {
-      clients.delete(client);
+      dead.push(client);
     }
+  }
+  for (const c of dead) {
+    clients.delete(c);
   }
 }
 

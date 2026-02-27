@@ -1,5 +1,13 @@
 import { idbWrap, openDB } from "../shared/idb";
 
+const VALID_SETTING_KEYS: Record<string, string> = {
+  defaultBang: "default-bang",
+  suggestProvider: "suggest-provider",
+  suggestUrl: "suggest-url",
+  luckyProvider: "lucky-provider",
+  luckyUrl: "lucky-url",
+};
+
 export class DB {
   private readonly dbp: Promise<IDBDatabase> = openDB();
 
@@ -54,39 +62,61 @@ export class DB {
     };
   }
 
-  async importAll(data: {
-    settings: {
-      defaultBang?: string;
-      suggestProvider?: string;
-      suggestUrl?: string;
-      luckyProvider?: string;
-      luckyUrl?: string;
-    };
-    customBangs?: Array<{ trigger: string; name: string; url: string }>;
-  }) {
+  async importAll(data: unknown) {
+    if (!data || typeof data !== "object") {
+      throw new Error("Invalid import data");
+    }
+    const obj = data as Record<string, unknown>;
+
     const db = await this.dbp;
     const tx = db.transaction(["settings", "custom-bangs"], "readwrite");
     const settingsStore = tx.objectStore("settings");
     const customStore = tx.objectStore("custom-bangs");
     const ops: Promise<unknown>[] = [];
 
-    const map: Record<string, string | undefined> = {
-      "default-bang": data.settings?.defaultBang,
-      "suggest-provider": data.settings?.suggestProvider,
-      "suggest-url": data.settings?.suggestUrl,
-      "lucky-provider": data.settings?.luckyProvider,
-      "lucky-url": data.settings?.luckyUrl,
-    };
-    for (const [key, value] of Object.entries(map)) {
-      if (value) {
-        ops.push(idbWrap(settingsStore.put({ key, value })));
+    if (obj.settings && typeof obj.settings === "object") {
+      const settings = obj.settings as Record<string, unknown>;
+      for (const [exportKey, idbKey] of Object.entries(VALID_SETTING_KEYS)) {
+        const value = settings[exportKey];
+        if (typeof value === "string" && value) {
+          ops.push(idbWrap(settingsStore.put({ key: idbKey, value })));
+        }
       }
     }
-    if (Array.isArray(data.customBangs)) {
-      for (const b of data.customBangs) {
-        ops.push(idbWrap(customStore.put(b)));
+
+    if (Array.isArray(obj.customBangs)) {
+      for (const item of obj.customBangs) {
+        if (!item || typeof item !== "object") {
+          continue;
+        }
+        const b = item as Record<string, unknown>;
+        if (
+          typeof b.trigger !== "string" ||
+          typeof b.name !== "string" ||
+          typeof b.url !== "string"
+        ) {
+          continue;
+        }
+        if (!b.url.includes("{}")) {
+          continue;
+        }
+        ops.push(
+          idbWrap(
+            customStore.put({
+              trigger: b.trigger,
+              name: b.name,
+              url: b.url,
+            })
+          )
+        );
       }
     }
+
     await Promise.all(ops);
   }
+}
+
+export async function readCustomBangs(db: DB): Promise<string[]> {
+  const customBangs = await db.getAllCustomBangs();
+  return customBangs.map((b) => b.trigger);
 }

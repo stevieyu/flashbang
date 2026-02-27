@@ -367,6 +367,7 @@ const evalMinTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
   const code = minFile.replace("export const BANGS=", "var __BANGS=");
   const t0 = Bun.nanoseconds();
+  // Intentional: eval-equivalent to benchmark JS parse+eval time
   new Function(code)();
   const elapsed = Bun.nanoseconds() - t0;
   evalMinTimes.push(elapsed);
@@ -380,6 +381,7 @@ const evalFullTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
   const code = fullFile.replace("export const BANGS=", "var __BANGS=");
   const t0 = Bun.nanoseconds();
+  // Intentional: eval-equivalent to benchmark JS parse+eval time
   new Function(code)();
   const elapsed = Bun.nanoseconds() - t0;
   evalFullTimes.push(elapsed);
@@ -393,6 +395,7 @@ const evalTrieTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
   const code = trieFile.replace("export const TRIE=", "var __TRIE=");
   const t0 = Bun.nanoseconds();
+  // Intentional: eval-equivalent to benchmark JS parse+eval time
   new Function(code)();
   const elapsed = Bun.nanoseconds() - t0;
   evalTrieTimes.push(elapsed);

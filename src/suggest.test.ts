@@ -7,13 +7,8 @@ import {
   spyOn,
   test,
 } from "bun:test";
-
-// Build a mini trie from test data
-interface TrieNode {
-  c: [string, TrieNode][];
-  m: number;
-  t: { k: string; s: string; d: string; u: string; r: number } | null;
-}
+import type { TrieNode } from "./generated/bangs-trie";
+import { type BuildNode, buildRadixTrie } from "./shared/trie";
 
 interface TestBang {
   k: string;
@@ -24,87 +19,13 @@ interface TestBang {
 }
 
 function buildTestTrie(bangs: TestBang[]): TrieNode {
-  interface BuildNode {
-    children: Map<string, BuildNode>;
-    maxRelevance: number;
-    terminal: TestBang | null;
-  }
+  const root = buildRadixTrie(
+    bangs,
+    (b) => b.k,
+    (b) => b.r
+  );
 
-  const root: BuildNode = {
-    children: new Map(),
-    maxRelevance: 0,
-    terminal: null,
-  };
-
-  for (const bang of bangs) {
-    let node = root;
-    let key = bang.k;
-    let created = false;
-
-    while (key.length > 0) {
-      let found = false;
-      for (const [edge, child] of node.children) {
-        let common = 0;
-        const limit = Math.min(key.length, edge.length);
-        while (
-          common < limit &&
-          key.charCodeAt(common) === edge.charCodeAt(common)
-        ) {
-          common++;
-        }
-        if (common === 0) {
-          continue;
-        }
-
-        if (common === edge.length) {
-          node = child;
-          key = key.substring(common);
-          found = true;
-          break;
-        }
-
-        const splitNode: BuildNode = {
-          children: new Map(),
-          maxRelevance: 0,
-          terminal: null,
-        };
-        node.children.delete(edge);
-        node.children.set(edge.substring(0, common), splitNode);
-        splitNode.children.set(edge.substring(common), child);
-        node = splitNode;
-        key = key.substring(common);
-        found = true;
-        break;
-      }
-
-      if (!found) {
-        const leaf: BuildNode = {
-          children: new Map(),
-          maxRelevance: bang.r,
-          terminal: bang,
-        };
-        node.children.set(key, leaf);
-        created = true;
-        break;
-      }
-    }
-
-    if (!created) {
-      node.terminal = bang;
-    }
-  }
-
-  function computeMax(node: BuildNode): number {
-    let max = node.terminal ? node.terminal.r : 0;
-    for (const child of node.children.values()) {
-      max = Math.max(max, computeMax(child));
-    }
-    node.maxRelevance = max;
-    return max;
-  }
-  computeMax(root);
-
-  function serialize(node: BuildNode): TrieNode {
+  function serialize(node: BuildNode<TestBang>): TrieNode {
     const sorted = [...node.children.entries()].sort(
       (a, b) => b[1].maxRelevance - a[1].maxRelevance
     );

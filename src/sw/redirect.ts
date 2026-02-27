@@ -1,4 +1,5 @@
 import { BANGS } from "../generated/bangs-min.js";
+import { CH_EXCL } from "../shared/constants";
 
 export interface RedirectSettings {
   custom: Record<string, string>;
@@ -7,7 +8,6 @@ export interface RedirectSettings {
 }
 
 const CH_PLUS = 43; // +
-const CH_EXCL = 33; // !
 const CH_BSLASH = 92; // \
 const CH_PERCENT = 37; // %
 const CH_2 = 50; // '2'

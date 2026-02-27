@@ -1,6 +1,6 @@
 import { flashAnim } from "./animations";
-import { readCustomBangs, setSuggestCookie } from "./cookie";
-import { DB } from "./db";
+import { setSuggestCookie } from "./cookie";
+import { DB, readCustomBangs } from "./db";
 import { initDnsLinks } from "./dns-links";
 import { $ } from "./dom";
 import { initLiquidMetal } from "./liquid-metal";

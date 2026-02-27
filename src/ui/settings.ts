@@ -1,7 +1,7 @@
 import { flashAnim, shakeAnim } from "./animations";
-import { readCustomBangs, setSuggestCookie } from "./cookie";
+import { setSuggestCookie } from "./cookie";
 import { setupCustomBangs } from "./custom-bangs";
-import type { DB } from "./db";
+import { type DB, readCustomBangs } from "./db";
 import { setDnsLinks } from "./dns-links";
 import { $, el } from "./dom";
 import { notifySW } from "./sw-bridge";

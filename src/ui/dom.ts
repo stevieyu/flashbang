@@ -1,5 +1,9 @@
 export function $<T extends HTMLElement>(sel: string): T {
-  return document.querySelector(sel) as T;
+  const el = document.querySelector(sel);
+  if (!el) {
+    throw new Error(`Missing: ${sel}`);
+  }
+  return el as T;
 }
 
 export function el<K extends keyof HTMLElementTagNameMap>(

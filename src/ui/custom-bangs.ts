@@ -52,6 +52,14 @@ export function setupCustomBangs(db: DB) {
     if (!(trigger && name && url)) {
       return;
     }
+    if (!url.includes("{}")) {
+      return;
+    }
+    try {
+      new URL(url.replace("{}", "test"));
+    } catch {
+      return;
+    }
     await db.addCustomBang({ trigger, name, url });
     notifySW("invalidate");
     form.reset();

@@ -1,5 +1,6 @@
 import { TRIE, type TrieNode } from "./generated/bangs-trie.js";
 import {
+  CH_EXCL,
   FRECENCY_BOOST_CAP,
   FRECENCY_BOOST_MULTIPLIER,
   SUGGEST_URLS,
@@ -26,7 +27,7 @@ function parsePartialBang(
   q: string
 ): { prefix: string; partial: string } | null {
   const s = q.trim();
-  if (s.charCodeAt(0) === 33) {
+  if (s.charCodeAt(0) === CH_EXCL) {
     return s.indexOf(" ") === -1
       ? { prefix: "", partial: s.substring(1).toLowerCase() }
       : null;
@@ -107,7 +108,6 @@ function effectiveScore(
 // DFS with max-relevance pruning. Children are pre-sorted by m descending.
 function topK(
   subtree: TrieNode,
-  _edgeRemainder: string,
   frecent: Record<string, number>,
   customMatches: Candidate[]
 ): Candidate[] {
@@ -207,8 +207,8 @@ function bangSuggestions(
     );
   }
 
-  const [subtree, edgeRemainder] = result;
-  const candidates = topK(subtree, edgeRemainder, frecent, customMatches);
+  const [subtree] = result;
+  const candidates = topK(subtree, frecent, customMatches);
 
   const completions: string[] = [];
   const descriptions: string[] = [];
@@ -231,42 +231,32 @@ function bangSuggestions(
   );
 }
 
+const TRIGGER_ALIAS: Record<string, string> = {
+  g: "google",
+  google: "google",
+  ddg: "ddg",
+  duckduckgo: "ddg",
+  b: "bing",
+  bing: "bing",
+  brave: "brave",
+  y: "yahoo",
+  yahoo: "yahoo",
+  ec: "ecosia",
+  ecosia: "ecosia",
+  kagi: "kagi",
+  ya: "yandex",
+  yandex: "yandex",
+  bd: "baidu",
+  baidu: "baidu",
+};
+
 function resolveEndpoint(provider: string, trigger: string): string | null {
-  const url = SUGGEST_URLS[provider];
-  if (url) {
-    return url;
-  }
-  if (provider === "none") {
-    return null;
-  }
-  if (trigger === "g" || trigger === "google") {
-    return SUGGEST_URLS.google;
-  }
-  if (trigger === "ddg" || trigger === "duckduckgo") {
-    return SUGGEST_URLS.ddg;
-  }
-  if (trigger === "b" || trigger === "bing") {
-    return SUGGEST_URLS.bing;
-  }
-  if (trigger === "brave") {
-    return SUGGEST_URLS.brave;
-  }
-  if (trigger === "y" || trigger === "yahoo") {
-    return SUGGEST_URLS.yahoo;
-  }
-  if (trigger === "ec" || trigger === "ecosia") {
-    return SUGGEST_URLS.ecosia;
-  }
-  if (trigger === "kagi") {
-    return SUGGEST_URLS.kagi;
-  }
-  if (trigger === "ya" || trigger === "yandex") {
-    return SUGGEST_URLS.yandex;
-  }
-  if (trigger === "bd" || trigger === "baidu") {
-    return SUGGEST_URLS.baidu;
-  }
-  return null;
+  return (
+    SUGGEST_URLS[provider] ??
+    (provider === "none"
+      ? null
+      : (SUGGEST_URLS[TRIGGER_ALIAS[trigger]] ?? null))
+  );
 }
 
 function parseFrecency(raw: string): Record<string, number> {

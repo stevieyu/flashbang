@@ -24,3 +24,6 @@ export const SUGGEST_URLS: Record<string, string> = {
   yandex: "https://suggest.yandex.com/suggest-ff.cgi?part={}",
   baidu: "https://suggestion.baidu.com/su?wd={}&action=opensearch",
 };
+
+export const COOKIE_MAX_AGE_S = 31_536_000; // 365 days in seconds
+export const CH_EXCL = 33; // '!' char code

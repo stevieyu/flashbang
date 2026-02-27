@@ -1,9 +1,4 @@
-import type { DB } from "./db";
-
-export async function readCustomBangs(db: DB): Promise<string[]> {
-  const customBangs = await db.getAllCustomBangs();
-  return customBangs.map((b) => b.trigger);
-}
+import { COOKIE_MAX_AGE_S } from "../shared/constants";
 
 export function setSuggestCookie(
   provider: string,
@@ -15,5 +10,5 @@ export function setSuggestCookie(
   if (custom?.length) {
     value += `||${custom.join(".")}`;
   }
-  document.cookie = `suggest=${value};path=/;max-age=31536000;SameSite=Lax;Secure`;
+  document.cookie = `suggest=${value};path=/;max-age=${COOKIE_MAX_AGE_S};SameSite=Lax;Secure`;
 }

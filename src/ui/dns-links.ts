@@ -1,6 +1,6 @@
 import type { DB } from "./db";
 
-let dnsLinks: HTMLLinkElement[] = [];
+const dnsLinks: HTMLLinkElement[] = [];
 
 // NOTE: using both links according to https://web.dev/articles/preconnect-and-dns-prefetch
 export function setDnsLinks(bangUrl: string) {
@@ -16,12 +16,9 @@ export function setDnsLinks(bangUrl: string) {
       dnsLinks.push(prefetchLink);
       dnsLinks.push(preconnectLink);
     }
-    dnsLinks = dnsLinks.length
-      ? dnsLinks.map((el) => {
-          el.href = origin;
-          return el;
-        })
-      : [];
+    for (const link of dnsLinks) {
+      link.href = origin;
+    }
   } catch {
     //
   }
