@@ -83,18 +83,24 @@ export function invalidateCache() {
 }
 
 function regenerateFrecencyValue(): void {
-  if (!frecencyCounts) {
+  const counts = frecencyCounts;
+  if (!counts) {
     frecencyCookie = "";
     return;
   }
-  const entries = Object.entries(frecencyCounts);
-  entries.sort((a, b) => b[1] - a[1]);
-  const top = entries.slice(0, 8);
-  if (top.length === 0) {
+  const keys = Object.keys(counts);
+  const len = keys.length;
+  if (len === 0) {
     frecencyCookie = "";
     return;
   }
-  frecencyCookie = top.map(([k, v]) => `${k}:${v}`).join(".");
+  keys.sort((a, b) => counts[b] - counts[a]);
+  const n = len < 8 ? len : 8;
+  let s = `${keys[0]}:${counts[keys[0]]}`;
+  for (let i = 1; i < n; i++) {
+    s += `.${keys[i]}:${counts[keys[i]]}`;
+  }
+  frecencyCookie = s;
 }
 
 function applyDecay(): void {
