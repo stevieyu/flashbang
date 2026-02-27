@@ -126,8 +126,7 @@
         // Intentional cookie access for provider settings
         "noDocumentCookie": "off",
         "noEmptyBlockStatements": "error",
-        // IndexedDB wrappers and event handlers use `any` intentionally
-        "noExplicitAny": "off",
+        "noExplicitAny": "error",
         "noDoubleEquals": "error",
         "useAwait": "error",
         "useStaticResponseMethods": "error"
@@ -141,9 +140,6 @@
         "rules": {
           "complexity": {
             "noExcessiveCognitiveComplexity": "off"
-          },
-          "suspicious": {
-            "noExplicitAny": "off"
           }
         }
       }

@@ -2,6 +2,7 @@ import { BANGS } from "../generated/bangs-min.js";
 import {
   DEFAULT_LUCKY_URL,
   DEFAULT_URL,
+  FRECENCY_HALF_LIFE_MS,
   LUCKY_URLS,
   MAX_FRECENCY_ENTRIES,
 } from "../shared/constants";
@@ -11,6 +12,7 @@ import type { RedirectSettings } from "./redirect";
 let cachedRedirect: RedirectSettings | null = null;
 let frecencyCounts: Record<string, number> | null = null;
 let frecencyCookie: string = "";
+let lastDecayTs: number = 0;
 
 export function getCachedSettings(): RedirectSettings | null {
   return cachedRedirect;
@@ -77,6 +79,7 @@ export function invalidateCache() {
   resetDB();
   frecencyCounts = null;
   frecencyCookie = "";
+  lastDecayTs = 0;
 }
 
 function regenerateFrecencyValue(): void {
@@ -92,6 +95,43 @@ function regenerateFrecencyValue(): void {
     return;
   }
   frecencyCookie = top.map(([k, v]) => `${k}:${v}`).join(".");
+}
+
+function applyDecay(): void {
+  if (!(frecencyCounts && lastDecayTs)) {
+    lastDecayTs = Date.now();
+    return;
+  }
+  const now = Date.now();
+  const elapsed = now - lastDecayTs;
+  if (elapsed < 3_600_000) {
+    return;
+  }
+  const factor = 0.5 ** (elapsed / FRECENCY_HALF_LIFE_MS);
+  const pruned: Record<string, number> = {};
+  for (const key of Object.keys(frecencyCounts)) {
+    const decayed = Math.round(frecencyCounts[key] * factor);
+    if (decayed >= 1) {
+      pruned[key] = decayed;
+    }
+  }
+  frecencyCounts = pruned;
+  lastDecayTs = now;
+}
+
+function persistFrecency(): void {
+  openDB()
+    .then((db) => {
+      const tx = db.transaction("settings", "readwrite");
+      const store = tx.objectStore("settings");
+      store.put({
+        key: "frecency",
+        value: JSON.stringify({ c: frecencyCounts, t: lastDecayTs }),
+      });
+    })
+    .catch(() => {
+      /* fire-and-forget */
+    });
 }
 
 function pruneFrecency(): void {
@@ -120,11 +160,24 @@ export async function loadFrecency(): Promise<void> {
     const tx = db.transaction("settings", "readonly");
     const store = tx.objectStore("settings");
     const result = await idbWrap(store.get("frecency"));
-    frecencyCounts = result?.value ? JSON.parse(result.value) : {};
+    const raw = result?.value ? JSON.parse(result.value) : {};
+
+    // Migration: old format is plain counts, new format has {c, t}
+    if (raw.c && typeof raw.t === "number") {
+      frecencyCounts = raw.c;
+      lastDecayTs = raw.t;
+    } else {
+      frecencyCounts = raw;
+      lastDecayTs = Date.now();
+    }
+
+    applyDecay();
     pruneFrecency();
     regenerateFrecencyValue();
+    persistFrecency();
   } catch {
     frecencyCounts = {};
+    lastDecayTs = Date.now();
   }
 }
 
@@ -134,18 +187,5 @@ export function trackBangUsage(trigger: string) {
   }
   frecencyCounts[trigger] = (frecencyCounts[trigger] || 0) + 1;
   regenerateFrecencyValue();
-
-  // Fire-and-forget IDB write for persistence across SW restarts
-  openDB()
-    .then((db) => {
-      const tx = db.transaction("settings", "readwrite");
-      const store = tx.objectStore("settings");
-      store.put({
-        key: "frecency",
-        value: JSON.stringify(frecencyCounts),
-      });
-    })
-    .catch(() => {
-      /* fire-and-forget */
-    });
+  persistFrecency();
 }
