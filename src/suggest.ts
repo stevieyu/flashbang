@@ -143,13 +143,16 @@ function topK(
 
   function dfs(node: TrieNode) {
     if (node.t) {
-      addCandidate({
-        trigger: node.t.k,
-        name: node.t.s,
-        domain: node.t.d,
-        url: node.t.u,
-        score: effectiveScore(node.t.r, frecent, node.t.k),
-      });
+      const score = effectiveScore(node.t.r, frecent, node.t.k);
+      if (results.length < TOP_K || score > threshold) {
+        addCandidate({
+          trigger: node.t.k,
+          name: node.t.s,
+          domain: node.t.d,
+          url: node.t.u,
+          score,
+        });
+      }
     }
 
     for (const [, child] of node.c) {
@@ -163,7 +166,7 @@ function topK(
   dfs(subtree);
 
   results.sort((a, b) => b.score - a.score);
-  return results.slice(0, TOP_K);
+  return results;
 }
 
 function bangSuggestions(
@@ -218,7 +221,13 @@ function bangSuggestions(
     completions.push(`${prefix}!${c.trigger}`);
     if (c.url) {
       descriptions.push(`${c.name} — ${c.domain}`);
-      urls.push(new URL(c.url).origin);
+      const protoEnd = c.url.indexOf("://");
+      if (protoEnd === -1) {
+        urls.push(c.url);
+      } else {
+        const pathStart = c.url.indexOf("/", protoEnd + 3);
+        urls.push(pathStart === -1 ? c.url : c.url.substring(0, pathStart));
+      }
     } else {
       descriptions.push("");
       urls.push("");
