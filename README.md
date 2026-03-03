@@ -14,7 +14,7 @@ Visit **[flashbang-dyr.pages.dev](https://flashbang-dyr.pages.dev)** — if your
 
 ### Already using DuckDuckGo, Brave, or Kagi?
 
-All three support bangs natively — but every query still round-trips through their servers before redirecting, adding significant network latency you can feel. Flashbang's Service Worker resolves the bang locally in ~1ms and redirects before any network request leaves your machine. You also get bang-aware search suggestions in your address bar, custom bangs, feeling lucky, and it works in any browser — not just the one your engine ships with.
+All three support bangs natively — but every query still round-trips through their servers before redirecting, adding significant network latency you can feel. Flashbang's Service Worker resolves the bang locally in sub 1ms and redirects before any network request leaves your machine. You also get bang-aware search suggestions in your address bar, custom bangs, feeling lucky, and it works in any browser — not just the one your engine ships with.
 
 ### Privacy
 
@@ -24,7 +24,7 @@ All three support bangs natively — but every query still round-trips through t
 
 ## Features
 
-- **Built for speed** — Sub-1ms median redirect latency in our testing, advertised as ~1ms to be conservative. That's the overhead Flashbang adds before your browser starts loading the destination — network time to reach the target site is the same regardless of which tool you use. The Service Worker intercepts requests before they hit the network, parses the bang, and responds with a 302 — no page load, no framework, no round-trip to a server. Don't trust our numbers? [Run the benchmark yourself](https://flashbang-dyr.pages.dev/bench) — results vary by machine
+- **Built for speed** — Advertised as sub-1ms to be conservative, since technically, it could fall anywhere in this range, in my tests I have achieved median of 0.14ms in /bench page on Chrome's Incognito window. That's the overhead Flashbang adds before your browser starts loading the destination — network time to reach the target site is the same regardless of which tool you use. The Service Worker intercepts requests before they hit the network, parses the bang, and responds with a 302 — no page load, no framework, no round-trip to a server. Don't trust our numbers? [Run the benchmark yourself](https://flashbang-dyr.pages.dev/bench) — results vary by machine
 - **Private** — No analytics, no tracking. All data stays on your device for the core feature - redirects
 - **14,000+ bangs** — Merged from DuckDuckGo, Kagi, and custom sources. Updated daily via automated CI
 - **Custom bangs** — Add your own bangs through the settings UI. They take priority over built-ins
