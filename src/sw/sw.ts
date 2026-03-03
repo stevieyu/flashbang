@@ -30,8 +30,8 @@ self.addEventListener("install", (e: ExtendableEvent) => {
 });
 
 self.addEventListener("activate", (e: ExtendableEvent) => {
-  readRedirectSettings();
-  loadFrecency();
+  void readRedirectSettings();
+  void loadFrecency();
   e.waitUntil(
     caches
       .keys()

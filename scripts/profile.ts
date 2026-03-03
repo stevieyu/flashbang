@@ -8,6 +8,8 @@
 import { BANGS } from "../src/generated/bangs-min.js";
 import type { TrieNode } from "../src/generated/bangs-trie.js";
 import { TRIE } from "../src/generated/bangs-trie.js";
+import { handleSuggestRequest } from "../src/server/handlers";
+import { readPathname } from "../src/shared/raw-url";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -353,10 +355,155 @@ for (const q of queries) {
 }
 
 // ---------------------------------------------------------------------------
-// 6. MODULE PARSE/EVAL TIME
+// 6. SERVER ROUTE PATH PARSE PERFORMANCE
 // ---------------------------------------------------------------------------
 
-separator("6. MODULE PARSE/EVAL TIME");
+separator("6. SERVER ROUTE PATH PARSE PERFORMANCE");
+
+const RAW_URL = "https://flashbang.local/suggest?q=%21g&sp=none#x";
+const PATH_ITERS = 1_000_000;
+const pathViaUrlTimes: number[] = [];
+const pathViaRawTimes: number[] = [];
+
+for (let i = 0; i < 10_000; i++) {
+  void new URL(RAW_URL).pathname;
+  void readPathname(RAW_URL);
+}
+
+for (let run = 0; run < 10; run++) {
+  let t0 = Bun.nanoseconds();
+  for (let i = 0; i < PATH_ITERS; i++) {
+    void new URL(RAW_URL).pathname;
+  }
+  pathViaUrlTimes.push((Bun.nanoseconds() - t0) / PATH_ITERS);
+
+  t0 = Bun.nanoseconds();
+  for (let i = 0; i < PATH_ITERS; i++) {
+    void readPathname(RAW_URL);
+  }
+  pathViaRawTimes.push((Bun.nanoseconds() - t0) / PATH_ITERS);
+}
+
+console.log(
+  `\nPath parse benchmark — ${PATH_ITERS.toLocaleString()} iterations × 10 runs:`
+);
+console.log(`  new URL(url).pathname: ${fmt(median(pathViaUrlTimes))} median`);
+console.log(`  readPathname(url):      ${fmt(median(pathViaRawTimes))} median`);
+
+// ---------------------------------------------------------------------------
+// 7. SUGGEST HANDLER PERFORMANCE
+// ---------------------------------------------------------------------------
+
+separator("7. SUGGEST HANDLER PERFORMANCE");
+
+const reqBang = new Request("http://localhost/suggest?q=!gh", {
+  headers: { Cookie: "suggest=default,g," },
+});
+const reqPlain = new Request("http://localhost/suggest?q=flashbang&sp=none", {
+  headers: { Cookie: "suggest=none,g," },
+});
+
+const HANDLER_ITERS = 100_000;
+for (let i = 0; i < 1_000; i++) {
+  await handleSuggestRequest(reqBang);
+  await handleSuggestRequest(reqPlain);
+}
+
+const handlerBangTimes: number[] = [];
+const handlerPlainTimes: number[] = [];
+for (let run = 0; run < 10; run++) {
+  let t0 = Bun.nanoseconds();
+  for (let i = 0; i < HANDLER_ITERS; i++) {
+    await handleSuggestRequest(reqBang);
+  }
+  handlerBangTimes.push((Bun.nanoseconds() - t0) / HANDLER_ITERS);
+
+  t0 = Bun.nanoseconds();
+  for (let i = 0; i < HANDLER_ITERS; i++) {
+    await handleSuggestRequest(reqPlain);
+  }
+  handlerPlainTimes.push((Bun.nanoseconds() - t0) / HANDLER_ITERS);
+}
+
+console.log(
+  `\nhandleSuggestRequest() — ${HANDLER_ITERS.toLocaleString()} iterations × 10 runs:`
+);
+console.log(`  Bang query path:      ${fmt(median(handlerBangTimes))} median`);
+console.log(`  Plain query path:     ${fmt(median(handlerPlainTimes))} median`);
+
+// ---------------------------------------------------------------------------
+// 8. FIRST-HIT SUGGEST (ISOLATED PROCESS)
+// ---------------------------------------------------------------------------
+
+separator("8. FIRST-HIT SUGGEST (ISOLATED PROCESS)");
+
+function isolatedFirstHitNs(url: string, cookie: string): number {
+  const script = `
+import { handleSuggestRequest } from "./src/server/handlers";
+const req = new Request(${JSON.stringify(url)}, {
+  headers: { Cookie: ${JSON.stringify(cookie)} }
+});
+const t0 = Bun.nanoseconds();
+await handleSuggestRequest(req);
+console.log(Bun.nanoseconds() - t0);
+`;
+  const proc = Bun.spawnSync({
+    cmd: ["bun", "-e", script],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (proc.exitCode !== 0) {
+    const err = new TextDecoder().decode(proc.stderr).trim();
+    throw new Error(`isolatedFirstHitNs failed: ${err}`);
+  }
+  const out = new TextDecoder().decode(proc.stdout).trim();
+  return Number(out);
+}
+
+const coldPlainNs = isolatedFirstHitNs(
+  "http://localhost/suggest?q=flashbang&sp=none",
+  "suggest=none,g,"
+);
+const coldBangNs = isolatedFirstHitNs(
+  "http://localhost/suggest?q=!gh",
+  "suggest=default,g,"
+);
+console.log(`\nFirst plain suggest request: ${fmt(coldPlainNs)}`);
+console.log(`First bang suggest request:  ${fmt(coldBangNs)}`);
+
+function isolatedWarmThenBangNs(): number {
+  const script = `
+import { handleSuggestRequest } from "./src/server/handlers";
+await handleSuggestRequest(new Request("http://localhost/suggest?q=flashbang&sp=none", {
+  headers: { Cookie: "suggest=none,g," }
+}));
+await new Promise((resolve) => setTimeout(resolve, 5));
+const t0 = Bun.nanoseconds();
+await handleSuggestRequest(new Request("http://localhost/suggest?q=!gh", {
+  headers: { Cookie: "suggest=default,g," }
+}));
+console.log(Bun.nanoseconds() - t0);
+`;
+  const proc = Bun.spawnSync({
+    cmd: ["bun", "-e", script],
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (proc.exitCode !== 0) {
+    const err = new TextDecoder().decode(proc.stderr).trim();
+    throw new Error(`isolatedWarmThenBangNs failed: ${err}`);
+  }
+  return Number(new TextDecoder().decode(proc.stdout).trim());
+}
+
+const warmThenBangNs = isolatedWarmThenBangNs();
+console.log(`Warm plain-then-bang request: ${fmt(warmThenBangNs)}`);
+
+// ---------------------------------------------------------------------------
+// 9. MODULE PARSE/EVAL TIME
+// ---------------------------------------------------------------------------
+
+separator("9. MODULE PARSE/EVAL TIME");
 
 const minFile = await Bun.file("src/generated/bangs-min.js").text();
 const fullFile = await Bun.file("src/generated/bangs-full.js").text();
@@ -421,6 +568,11 @@ console.log(`
 ├─────────────────────────────────────┼────────────┼──────────────┤
 │ Object lookup (BANGS[key])          │ ${fmt(median(lookupTimes)).padStart(10)} │ Per redirect │
 │ Trie suggestion pipeline            │ ${fmt(median(trieSuggestTimes)).padStart(10)} │ Per suggest  │
+│ Route parse (raw pathname)          │ ${fmt(median(pathViaRawTimes)).padStart(10)} │ Per request  │
+│ Suggest handler (bang)              │ ${fmt(median(handlerBangTimes)).padStart(10)} │ Per suggest  │
+│ First-hit suggest (plain)           │ ${fmt(coldPlainNs).padStart(10)} │ Cold start   │
+│ First-hit suggest (bang)            │ ${fmt(coldBangNs).padStart(10)} │ Cold start   │
+│ Warm plain-then-bang                │ ${fmt(warmThenBangNs).padStart(10)} │ Cold start   │
 ├─────────────────────────────────────┼────────────┼──────────────┤
 │ Full redirect (bang query)          │  see above │ Per redirect │
 │ Full redirect (non-bang query)      │  see above │ Per redirect │

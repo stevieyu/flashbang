@@ -5,6 +5,8 @@ import {
   handleOpenSearchRequest,
   handleSuggestRequest,
 } from "../src/server/handlers";
+import { readPathname } from "../src/shared/raw-url";
+import { scheduleBangSuggestWarmup } from "../src/suggest";
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy":
@@ -56,6 +58,7 @@ async function build() {
       entrypoints: ["src/sw/sw.ts"],
       outdir: "dist",
       naming: "sw.js",
+      splitting: true,
       minify: true,
       target: "browser",
       format: "esm",
@@ -173,14 +176,15 @@ function htmlResponse(
 
 const port = Number(process.env.PORT) || 3000;
 console.log(`Dev server: http://localhost:${port}`);
+scheduleBangSuggestWarmup();
 
 Bun.serve({
   port,
   idleTimeout: 255,
   async fetch(req) {
-    const url = new URL(req.url);
+    const pathname = readPathname(req.url);
 
-    if (url.pathname === "/__dev/events") {
+    if (pathname === "/__dev/events") {
       const stream = new ReadableStream({
         start(controller) {
           const encoder = new TextEncoder();
@@ -204,7 +208,7 @@ Bun.serve({
       });
     }
 
-    if (url.pathname === "/suggest") {
+    if (pathname === "/suggest") {
       const res = await handleSuggestRequest(req);
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
         res.headers.set(k, v);
@@ -212,15 +216,15 @@ Bun.serve({
       return res;
     }
 
-    if (url.pathname === "/opensearch.xml") {
-      const res = handleOpenSearchRequest(req, url);
+    if (pathname === "/opensearch.xml") {
+      const res = handleOpenSearchRequest(req);
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
         res.headers.set(k, v);
       }
       return res;
     }
 
-    if (url.pathname === "/bench") {
+    if (pathname === "/bench") {
       const text = await Bun.file("dist/bench.html").text();
       return htmlResponse(text, {
         "Cross-Origin-Opener-Policy": "same-origin",
@@ -228,7 +232,7 @@ Bun.serve({
       });
     }
 
-    const path = url.pathname === "/" ? "/index.html" : url.pathname;
+    const path = pathname === "/" ? "/index.html" : pathname;
     const file = Bun.file(`dist${path}`);
     if (await file.exists()) {
       if (path.endsWith(".html")) {

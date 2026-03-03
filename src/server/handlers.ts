@@ -1,6 +1,11 @@
 import { opensearch } from "../opensearch";
 import { readQueryParam } from "../shared/raw-query";
-import { parseSettingsFromRawUrl, suggest } from "../suggest";
+import { readOrigin } from "../shared/raw-url";
+import {
+  parseSettingsFromRawUrl,
+  scheduleBangSuggestWarmup,
+  suggest,
+} from "../suggest";
 
 const MISSING_Q = "Missing q parameter";
 
@@ -12,12 +17,10 @@ export function handleSuggestRequest(
   if (!q) {
     return new Response(MISSING_Q, { status: 400 });
   }
+  scheduleBangSuggestWarmup();
   return suggest(q, parseSettingsFromRawUrl(rawUrl, request));
 }
 
-export function handleOpenSearchRequest(
-  request: Request,
-  url: URL = new URL(request.url)
-): Response {
-  return opensearch(url.origin);
+export function handleOpenSearchRequest(request: Request): Response {
+  return opensearch(readOrigin(request.url));
 }

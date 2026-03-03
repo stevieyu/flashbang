@@ -2,6 +2,8 @@ import {
   handleOpenSearchRequest,
   handleSuggestRequest,
 } from "../src/server/handlers";
+import { readPathname } from "../src/shared/raw-url";
+import { scheduleBangSuggestWarmup } from "../src/suggest";
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy":
@@ -51,13 +53,14 @@ async function serveCompressed(
 
 const port = Number(process.env.PORT) || 3000;
 console.log(`Production server: http://localhost:${port}`);
+scheduleBangSuggestWarmup();
 
 Bun.serve({
   port,
   async fetch(req) {
-    const url = new URL(req.url);
+    const pathname = readPathname(req.url);
 
-    if (url.pathname === "/suggest") {
+    if (pathname === "/suggest") {
       const res = await handleSuggestRequest(req);
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
         res.headers.set(k, v);
@@ -65,22 +68,22 @@ Bun.serve({
       return res;
     }
 
-    if (url.pathname === "/opensearch.xml") {
-      const res = handleOpenSearchRequest(req, url);
+    if (pathname === "/opensearch.xml") {
+      const res = handleOpenSearchRequest(req);
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
         res.headers.set(k, v);
       }
       return res;
     }
 
-    if (url.pathname === "/bench") {
+    if (pathname === "/bench") {
       return (await serveCompressed(req, "dist/bench.html", {
         "Cross-Origin-Opener-Policy": "same-origin",
         "Cross-Origin-Embedder-Policy": "credentialless",
       }))!;
     }
 
-    const path = url.pathname === "/" ? "/index.html" : url.pathname;
+    const path = pathname === "/" ? "/index.html" : pathname;
     const fromDist = await serveCompressed(req, `dist${path}`);
     if (fromDist) {
       return fromDist;
