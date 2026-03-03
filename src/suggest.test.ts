@@ -224,17 +224,17 @@ describe("parseCookie", () => {
     });
   });
 
-  test("cookie with frecency section", () => {
+  test("cookie with frecency section ignored (sf cookie is sole source)", () => {
     const s = parseCookie(req("suggest=google,g,|gh:50.yt:30.w:12"));
-    expect(s.frecent).toEqual({ gh: 50, yt: 30, w: 12 });
+    expect(s.frecent).toEqual({});
     expect(s.custom).toEqual([]);
   });
 
-  test("cookie with frecency and custom sections", () => {
+  test("cookie with frecency and custom sections — frecency ignored, custom works", () => {
     const s = parseCookie(
       req("suggest=google,g,|gh:50.yt:30|test8.mysite.proj")
     );
-    expect(s.frecent).toEqual({ gh: 50, yt: 30 });
+    expect(s.frecent).toEqual({});
     expect(s.custom).toEqual(["test8", "mysite", "proj"]);
   });
 
@@ -253,19 +253,14 @@ describe("parseCookie", () => {
     expect(s.custom).toEqual([]);
   });
 
-  test("sf cookie takes priority over suggest= frecent section", () => {
+  test("sf cookie is the sole source of frecency", () => {
     const s = parseCookie(req("suggest=google,g,|gh:10.yt:5; sf=w:50.b:30"));
     expect(s.frecent).toEqual({ w: 50, b: 30 });
     expect(s.provider).toBe("google");
     expect(s.trigger).toBe("g");
   });
 
-  test("sf cookie absent falls back to suggest= frecent section", () => {
-    const s = parseCookie(req("suggest=google,g,|gh:50.yt:30"));
-    expect(s.frecent).toEqual({ gh: 50, yt: 30 });
-  });
-
-  test("sf cookie with suggest= cookie together, sf wins for frecent", () => {
+  test("sf cookie with suggest= cookie together", () => {
     const s = parseCookie(
       req("sf=ddg:100.g:80; suggest=brave,b,|mdn:20|mysite")
     );
@@ -302,7 +297,7 @@ describe("parseSettings", () => {
 
   test("sp does not affect other settings", () => {
     const url = new URL("http://localhost/suggest?q=cats&sp=bing");
-    const r = req("suggest=google,ddg,|w:10");
+    const r = req("suggest=google,ddg,; sf=w:10");
     const s = parseSettings(url, r);
     expect(s.provider).toBe("bing");
     expect(s.frecent).toEqual({ w: 10 });

@@ -76,14 +76,6 @@ self.addEventListener("fetch", (e: FetchEvent) => {
     return;
   }
 
-  if (raw.includes("/suggest?q=")) {
-    const val = getFrecencyValue();
-    if (val) {
-      e.respondWith(fetch(`${raw}&sf=${val}`));
-    }
-    return;
-  }
-
   const qIdx = raw.indexOf("?q=");
   if (qIdx !== -1) {
     const vStart = qIdx + 3;

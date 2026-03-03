@@ -157,14 +157,10 @@ export function parseCookie(request: Request): SuggestSettings {
   const sections = match[1].split("|");
   const [provider, trigger, customUrl] = (sections[0] || "").split(",");
 
-  // Prefer sf cookie (set by SW on every redirect) over suggest= frecent section
   const sfMatch = header.match(SF_RE);
-  let frecent: Record<string, number> = {};
-  if (sfMatch?.[1]) {
-    frecent = parseFrecency(sfMatch[1]);
-  } else if (sections[1]) {
-    frecent = parseFrecency(sections[1]);
-  }
+  const frecent: Record<string, number> = sfMatch?.[1]
+    ? parseFrecency(sfMatch[1])
+    : {};
 
   // Parse custom section: "test8.mysite.proj"
   const custom = sections[2]
