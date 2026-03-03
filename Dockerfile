@@ -16,10 +16,11 @@ COPY --from=builder /app/src/suggest.ts src/suggest.ts
 COPY --from=builder /app/src/suggest-bang.ts src/suggest-bang.ts
 COPY --from=builder /app/src/opensearch.ts src/opensearch.ts
 COPY --from=builder /app/src/server/handlers.ts src/server/handlers.ts
+COPY --from=builder /app/src/shared/chars.ts src/shared/chars.ts
 COPY --from=builder /app/src/shared/constants.ts src/shared/constants.ts
 COPY --from=builder /app/src/shared/raw-query.ts src/shared/raw-query.ts
 COPY --from=builder /app/src/shared/raw-url.ts src/shared/raw-url.ts
-COPY --from=builder /app/src/generated/bangs-full.js src/generated/bangs-full.js
+COPY --from=builder /app/src/shared/template.ts src/shared/template.ts
 COPY --from=builder /app/src/generated/bangs-trie.js src/generated/bangs-trie.js
 
 ENV PORT=3000

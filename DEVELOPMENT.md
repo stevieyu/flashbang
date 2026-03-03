@@ -14,6 +14,7 @@ bun run codegen    # fetch DDG/Kagi sources, merge, and generate bang maps
 bun run build      # bundle, minify + pre-compress with Brotli
 bun run dev        # bundle + dev server with file watching & live reload (auto-runs codegen if needed)
 bun run start      # serve pre-built dist/ (run `bun run build` first)
+bun run typecheck  # type-check with tsc (no emit)
 bun test           # run tests
 bun run clean      # remove dist/
 ```
@@ -23,48 +24,65 @@ bun run clean      # remove dist/
 ```
 flashbang/
 ├── functions/
-│   └── suggest.ts          # Cloudflare Pages Function for /suggest
+│   ├── suggest.ts            # Cloudflare Pages Function for /suggest
+│   └── opensearch.xml.ts     # Cloudflare Pages Function for /opensearch.xml
 ├── config/
-│   └── custom.json         # Custom bang definitions
+│   └── custom.json           # Custom bang definitions
 ├── scripts/
-│   ├── codegen.ts          # Fetch sources, parse, merge, generate bang maps
-│   ├── build.ts            # Bundle + minify pipeline
-│   ├── dev.ts              # Dev server with file watching, rebuild & live reload
-│   └── start.ts            # Production server (serves pre-built dist/)
+│   ├── codegen.ts            # Fetch sources, parse, merge, generate bang maps
+│   ├── build.ts              # Bundle + minify pipeline
+│   ├── dev.ts                # Dev server with file watching, rebuild & live reload
+│   ├── profile.ts            # Profiling script
+│   └── start.ts              # Production server (serves pre-built dist/)
 ├── data/
-│   └── bangs.json          # Merged bang data (committed, updated by CI daily)
+│   ├── bangs.json            # Merged bang data (committed, updated by CI daily)
+│   ├── ddg.json              # DuckDuckGo source (gitignored, fetched by codegen)
+│   └── kagi.json             # Kagi source (gitignored, fetched by codegen)
 ├── src/
-│   ├── suggest.ts           # Bang suggestions, search suggest proxy & cookie parsing
-│   ├── opensearch.ts        # OpenSearch XML generation
+│   ├── suggest.ts            # Bang suggestions, search suggest proxy & cookie parsing
+│   ├── suggest-bang.ts        # Bang suggestion matching and scoring
+│   ├── opensearch.ts          # OpenSearch XML generation
+│   ├── server/
+│   │   └── handlers.ts       # Production server request handlers
 │   ├── shared/
-│   │   └── idb.ts           # Shared IndexedDB open helper
-│   ├── generated/           # Output of codegen (gitignored, generated from data/bangs.json)
-│   │   ├── bangs-min.js     # trigger→URL map for Service Worker
-│   │   ├── bangs-full.js    # trigger→{name, domain, url, relevance} for UI & suggestions
-│   │   └── bangs-trie.js    # radix trie for prefix-matched bang suggestions
+│   │   ├── chars.ts           # Character classification helpers
+│   │   ├── constants.ts       # Shared constants
+│   │   ├── idb.ts             # Shared IndexedDB open helper
+│   │   ├── raw-query.ts       # Raw query string parsing
+│   │   ├── raw-url.ts         # Raw URL pathname and origin parsing
+│   │   ├── template.ts        # Bang URL template expansion
+│   │   └── trie.ts            # Radix trie lookup
+│   ├── generated/             # Output of codegen (gitignored, generated from data/bangs.json)
+│   │   ├── bangs-min.js       # trigger→URL map for Service Worker
+│   │   ├── bangs-full.js      # trigger→{name, domain, url, relevance} for UI & suggestions
+│   │   └── bangs-trie.js      # radix trie for prefix-matched bang suggestions
 │   ├── sw/
-│   │   ├── sw.ts            # Service Worker lifecycle & fetch handler
-│   │   ├── redirect.ts      # Bang parsing & redirect logic (zero-copy raw + decoded paths)
-│   │   └── idb.ts           # IndexedDB access, settings cache & in-memory frecency
+│   │   ├── sw.ts              # Service Worker lifecycle & fetch handler
+│   │   ├── redirect.ts        # Bang parsing & redirect logic (zero-copy raw + decoded paths)
+│   │   └── idb.ts             # IndexedDB access, settings cache & in-memory frecency
 │   └── ui/
-│       ├── index.html        # HTML template
-│       ├── app.ts            # Initialization & orchestration
-│       ├── dom.ts            # $() selector & el() factory
-│       ├── sw-bridge.ts      # notifySW() — postMessage to Service Worker
-│       ├── dns-links.ts      # DNS prefetch and preconnect for default bang
-│       ├── cookie.ts         # Suggest cookie management (provider, custom bangs)
-│       ├── animations.ts     # Flash & shake CSS animations
-│       ├── modal.ts          # Settings modal with focus trapping
-│       ├── settings.ts       # Settings event wiring, bang search, import/export
-│       ├── custom-bangs.ts   # Custom bang list & add form
-│       ├── db.ts             # IndexedDB wrapper
-│       ├── liquid-metal.ts   # WebGL2 shader effect
-│       ├── manifest.json     # PWA manifest
-│       └── opensearch.xml    # OpenSearch descriptor
-├── .dockerignore           # Files excluded from Docker build context
-├── Dockerfile              # Multi-stage Docker build
+│       ├── index.html         # HTML template
+│       ├── home.html          # Home page partial
+│       ├── bench.html         # Benchmark page
+│       ├── bench.ts           # Benchmark script
+│       ├── app.ts             # Initialization & orchestration
+│       ├── dom.ts             # $() selector & el() factory
+│       ├── sw-bridge.ts       # notifySW() — postMessage to Service Worker
+│       ├── cookie.ts          # Suggest cookie management (provider, custom bangs)
+│       ├── animations.ts      # Flash & shake CSS animations
+│       ├── modal.ts           # Settings modal with focus trapping
+│       ├── settings.ts        # Settings event wiring, bang search, import/export
+│       ├── custom-bangs.ts    # Custom bang list & add form
+│       ├── db.ts              # IndexedDB wrapper
+│       ├── liquid-metal.ts    # WebGL2 shader effect
+│       ├── icon.svg           # App icon
+│       ├── _headers           # Cloudflare Pages headers
+│       ├── manifest.json      # PWA manifest
+│       └── opensearch.xml     # OpenSearch descriptor
+├── .dockerignore             # Files excluded from Docker build context
+├── Dockerfile                # Multi-stage Docker build
 ├── package.json
-├── uno.config.ts           # UnoCSS theme
+├── uno.config.ts             # UnoCSS theme
 └── LICENSE
 ```
 
@@ -78,6 +96,7 @@ Tests live alongside the source files they cover:
 
 - `src/sw/redirect.test.ts` — Bang parsing, routing logic, and URL encoding
 - `src/suggest.test.ts` — Cookie parsing, bang suggestions, and provider proxying
+- `src/shared/raw-url.test.ts` — Raw URL pathname and origin parsing
 
 ## Bang codegen
 
