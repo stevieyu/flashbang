@@ -13,6 +13,47 @@ export interface SuggestSettings {
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const COOKIE_RE = /(?:^|;\s*)suggest=([^;]*)/;
 const SF_RE = /(?:^|;\s*)sf=([^;]*)/;
+const CH_SPACE = 32; // ' '
+const CH_TAB = 9;
+const CH_NL = 10;
+const CH_VTAB = 11;
+const CH_FF = 12;
+const CH_CR = 13;
+type TemplateParts = readonly [string, string];
+const TEMPLATE_CACHE = new Map<string, TemplateParts | null>();
+
+function isTrimWs(code: number): boolean {
+  return (
+    code === CH_SPACE ||
+    code === CH_TAB ||
+    code === CH_NL ||
+    code === CH_VTAB ||
+    code === CH_FF ||
+    code === CH_CR
+  );
+}
+
+function resolveTemplateParts(url: string): TemplateParts | null {
+  const cached = TEMPLATE_CACHE.get(url);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const idx = url.indexOf("{}");
+  const parts =
+    idx === -1
+      ? null
+      : ([url.substring(0, idx), url.substring(idx + 2)] as const);
+  TEMPLATE_CACHE.set(url, parts);
+  return parts;
+}
+
+function fillTemplate(url: string, encodedQuery: string): string {
+  const parts = resolveTemplateParts(url);
+  if (!parts) {
+    return url;
+  }
+  return parts[0] + encodedQuery + parts[1];
+}
 
 function empty(query: string): Response {
   return new Response(JSON.stringify([query, []]), { headers: JSON_HEADERS });
@@ -21,20 +62,45 @@ function empty(query: string): Response {
 function parsePartialBang(
   q: string
 ): { prefix: string; partial: string } | null {
-  const s = q.trim();
-  if (s.charCodeAt(0) === CH_EXCL) {
-    return s.indexOf(" ") === -1
-      ? { prefix: "", partial: s.substring(1).toLowerCase() }
-      : null;
+  let start = 0;
+  let end = q.length;
+
+  while (start < end && isTrimWs(q.charCodeAt(start))) {
+    start++;
   }
-  const trailing = s.lastIndexOf(" !");
-  if (trailing === -1) {
+  while (end > start && isTrimWs(q.charCodeAt(end - 1))) {
+    end--;
+  }
+  if (start === end) {
     return null;
   }
-  const rest = s.substring(trailing + 2);
-  return rest.indexOf(" ") === -1
-    ? { prefix: s.substring(0, trailing + 1), partial: rest.toLowerCase() }
-    : null;
+
+  if (q.charCodeAt(start) === CH_EXCL) {
+    for (let i = start; i < end; i++) {
+      if (q.charCodeAt(i) === CH_SPACE) {
+        return null;
+      }
+    }
+    return { prefix: "", partial: q.substring(start + 1, end).toLowerCase() };
+  }
+
+  for (let i = end - 2; i >= start; i--) {
+    if (q.charCodeAt(i) !== CH_SPACE || q.charCodeAt(i + 1) !== CH_EXCL) {
+      continue;
+    }
+    const bangStart = i + 2;
+    for (let j = bangStart; j < end; j++) {
+      if (q.charCodeAt(j) === CH_SPACE) {
+        return null;
+      }
+    }
+    return {
+      prefix: q.substring(start, i + 1),
+      partial: q.substring(bangStart, end).toLowerCase(),
+    };
+  }
+
+  return null;
 }
 
 const TRIGGER_ALIAS: Record<string, string> = {
@@ -167,7 +233,7 @@ export async function suggest(
   }
 
   try {
-    const res = await fetch(endpoint.replace("{}", encodeURIComponent(query)));
+    const res = await fetch(fillTemplate(endpoint, encodeURIComponent(query)));
     return new Response(res.body, { headers: JSON_HEADERS });
   } catch {
     return empty(query);

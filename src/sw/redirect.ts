@@ -41,6 +41,19 @@ type TemplateParts = readonly [string, string];
 const TEMPLATE_CACHE = new Map<string, TemplateParts | null>();
 
 function rawFixup(raw: string): string {
+  const plusPos = raw.indexOf("+");
+  const upperSlashPos = raw.indexOf("%2F");
+  const lowerSlashPos = raw.indexOf("%2f");
+
+  if (plusPos === -1 && upperSlashPos === -1 && lowerSlashPos === -1) {
+    return raw;
+  }
+  if (plusPos === -1) {
+    return raw.replace(RE_ENCODED_SLASH, "/");
+  }
+  if (upperSlashPos === -1 && lowerSlashPos === -1) {
+    return raw.replace(RE_PLUS, "%20");
+  }
   return raw.replace(RE_PLUS, "%20").replace(RE_ENCODED_SLASH, "/");
 }
 
@@ -319,7 +332,11 @@ export function redirectRaw(
   rawQuery: string,
   settings: RedirectSettings
 ): [Response, string | null] {
-  const s = trimRaw(rawQuery).replace(RE_ENCODED_EXCL, "!");
+  const trimmed = trimRaw(rawQuery);
+  const s =
+    trimmed.indexOf("%21") === -1
+      ? trimmed
+      : trimmed.replace(RE_ENCODED_EXCL, "!");
   if (!s || s === "!") {
     return [redir("/"), null];
   }
