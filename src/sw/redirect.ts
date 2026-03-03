@@ -1,5 +1,5 @@
 import { BANGS } from "../generated/bangs-min.js";
-import { CH_EXCL } from "../shared/constants";
+import { CH_EXCL } from "../shared/chars";
 import { CH_0, CH_2, CH_PERCENT, CH_PLUS } from "../shared/raw-query";
 
 export interface RedirectSettings {

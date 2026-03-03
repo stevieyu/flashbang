@@ -1,4 +1,13 @@
-import { CH_EXCL, SUGGEST_URLS } from "./shared/constants";
+import {
+  CH_CR,
+  CH_EXCL,
+  CH_FF,
+  CH_NL,
+  CH_SPACE,
+  CH_TAB,
+  CH_VTAB,
+} from "./shared/chars";
+import { SUGGEST_URLS } from "./shared/constants";
 import { readQueryParam } from "./shared/raw-query";
 import { bangSuggestions } from "./suggest-bang";
 
@@ -13,12 +22,6 @@ export interface SuggestSettings {
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const COOKIE_RE = /(?:^|;\s*)suggest=([^;]*)/;
 const SF_RE = /(?:^|;\s*)sf=([^;]*)/;
-const CH_SPACE = 32; // ' '
-const CH_TAB = 9;
-const CH_NL = 10;
-const CH_VTAB = 11;
-const CH_FF = 12;
-const CH_CR = 13;
 type TemplateParts = readonly [string, string];
 const TEMPLATE_CACHE = new Map<string, TemplateParts | null>();
 

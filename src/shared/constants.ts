@@ -28,4 +28,3 @@ export const SUGGEST_URLS: Record<string, string> = {
 export const FRECENCY_HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 export const COOKIE_MAX_AGE_S = 31_536_000; // 365 days in seconds
-export const CH_EXCL = 33; // '!' char code
