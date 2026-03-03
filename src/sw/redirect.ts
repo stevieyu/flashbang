@@ -37,9 +37,33 @@ function findRawSpace(s: string, from: number): [number, number] {
 const RE_PLUS = /\+/g;
 const RE_ENCODED_SLASH = /%2[Ff]/g;
 const RE_ENCODED_EXCL = /%21/g;
+type TemplateParts = readonly [string, string];
+const TEMPLATE_CACHE = new Map<string, TemplateParts | null>();
 
 function rawFixup(raw: string): string {
   return raw.replace(RE_PLUS, "%20").replace(RE_ENCODED_SLASH, "/");
+}
+
+function resolveTemplateParts(url: string): TemplateParts | null {
+  const cached = TEMPLATE_CACHE.get(url);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const idx = url.indexOf("{}");
+  const parts =
+    idx === -1
+      ? null
+      : ([url.substring(0, idx), url.substring(idx + 2)] as const);
+  TEMPLATE_CACHE.set(url, parts);
+  return parts;
+}
+
+function fillTemplate(url: string, rawTerm: string): string {
+  const parts = resolveTemplateParts(url);
+  if (!parts) {
+    return url;
+  }
+  return parts[0] + rawFixup(rawTerm) + parts[1];
 }
 
 function trimRaw(rawQuery: string): string {
@@ -253,7 +277,9 @@ function parseRawSuffix(s: string): RawParsed {
 }
 
 function redir(url: string): Response {
-  return new Response(null, { status: 302, headers: { Location: url } });
+  // NOTE: Response.redirect(url, 302) benchmarks faster than constructing
+  // new Response(null, { status: 302, headers: { Location: url } }) here.
+  return Response.redirect(url, 302);
 }
 
 function resolve(
@@ -261,7 +287,7 @@ function resolve(
   { defaultUrl, custom, luckyUrl }: RedirectSettings
 ): [Response, string | null] {
   if (lucky && luckyUrl && rawTerm) {
-    return [redir(luckyUrl.replace("{}", rawFixup(rawTerm))), null];
+    return [redir(fillTemplate(luckyUrl, rawTerm)), null];
   }
 
   let url: string | undefined;
@@ -269,7 +295,7 @@ function resolve(
   if (bang) {
     url = custom[bang] || BANGS[bang];
     if (!url) {
-      return [redir(defaultUrl.replace("{}", rawFixup(rawFull))), null];
+      return [redir(fillTemplate(defaultUrl, rawFull)), null];
     }
   } else {
     url = defaultUrl;
@@ -278,14 +304,15 @@ function resolve(
   if (!rawTerm) {
     const protoEnd = url.indexOf("://");
     if (protoEnd === -1) {
-      return [redir(url.replace("{}", "")), bang];
+      const parts = resolveTemplateParts(url);
+      return [redir(parts ? parts[0] + parts[1] : url), bang];
     }
     const pathStart = url.indexOf("/", protoEnd + 3);
     const origin = pathStart !== -1 ? url.substring(0, pathStart) : url;
     return [redir(origin), bang];
   }
 
-  return [redir(url.replace("{}", rawFixup(rawTerm))), bang];
+  return [redir(fillTemplate(url, rawTerm)), bang];
 }
 
 export function redirectRaw(
