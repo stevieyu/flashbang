@@ -6,6 +6,7 @@ import {
   SUGGEST_URLS,
   TOP_K,
 } from "./shared/constants";
+import { readQueryParam } from "./shared/raw-query";
 
 export interface SuggestSettings {
   customUrl: string | null;
@@ -282,6 +283,14 @@ function parseFrecency(raw: string): Record<string, number> {
   return frecent;
 }
 
+function safeDecodeURIComponent(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
 export function parseCookie(request: Request): SuggestSettings {
   const header = request.headers.get("Cookie") || "";
   const match = header.match(COOKIE_RE);
@@ -315,16 +324,22 @@ export function parseCookie(request: Request): SuggestSettings {
   return {
     provider: provider || "default",
     trigger: trigger || "g",
-    customUrl: customUrl ? decodeURIComponent(customUrl) : null,
+    customUrl: customUrl ? safeDecodeURIComponent(customUrl) : null,
     frecent,
     custom,
   };
 }
 
 export function parseSettings(url: URL, request: Request): SuggestSettings {
-  const settings = parseCookie(request);
+  return parseSettingsFromRawUrl(url.href, request);
+}
 
-  const sp = url.searchParams.get("sp");
+export function parseSettingsFromRawUrl(
+  rawUrl: string,
+  request: Request
+): SuggestSettings {
+  const settings = parseCookie(request);
+  const sp = readQueryParam(rawUrl, "sp");
   if (sp) {
     settings.provider = sp;
   }

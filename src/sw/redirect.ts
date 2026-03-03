@@ -1,5 +1,6 @@
 import { BANGS } from "../generated/bangs-min.js";
 import { CH_EXCL } from "../shared/constants";
+import { CH_0, CH_2, CH_PERCENT, CH_PLUS } from "../shared/raw-query";
 
 export interface RedirectSettings {
   custom: Record<string, string>;
@@ -7,11 +8,7 @@ export interface RedirectSettings {
   luckyUrl: string | null;
 }
 
-const CH_PLUS = 43; // +
 const CH_BSLASH = 92; // \
-const CH_PERCENT = 37; // %
-const CH_2 = 50; // '2'
-const CH_0 = 48; // '0'
 
 function isRawSpaceAt(s: string, i: number): number {
   if (s.charCodeAt(i) === CH_PLUS) {

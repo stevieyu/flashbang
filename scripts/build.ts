@@ -31,10 +31,20 @@ const [appBuild, benchBuild] = await Promise.all([
 
 const SIZE_THRESHOLD = 50 * 1024; // 50 KB
 const allOutputs = [...appBuild.outputs, ...benchBuild.outputs];
-const chunkNames = allOutputs.map((o) => o.path.split("/").pop()!).sort();
+const outputFingerprints: string[] = [];
+for (const out of allOutputs) {
+  const contentHash = createHash("sha256")
+    .update(await Bun.file(out.path).bytes())
+    .digest("hex");
+  outputFingerprints.push(`${out.path}:${contentHash}`);
+}
+outputFingerprints.sort();
 const cacheVersion =
   "fb-" +
-  createHash("sha256").update(chunkNames.join(",")).digest("hex").slice(0, 8);
+  createHash("sha256")
+    .update(outputFingerprints.join(","))
+    .digest("hex")
+    .slice(0, 8);
 
 const extraAssets = allOutputs
   .filter(

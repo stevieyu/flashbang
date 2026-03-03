@@ -301,7 +301,7 @@ for (const p of suggestPartials) {
 
 separator("5. FULL REDIRECT PIPELINE");
 
-const { redirectRaw } = await import("../src/sw/redirect.ts");
+const { redirectRaw } = await import("../src/sw/redirect");
 
 const settings = {
   defaultUrl: "https://www.google.com/search?q={}",

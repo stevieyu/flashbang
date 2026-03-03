@@ -1,5 +1,5 @@
-import { opensearch } from "../src/opensearch";
+import { handleOpenSearchRequest } from "../src/server/handlers";
 
-export const onRequestGet: PagesFunction = ({ request }) => {
-  return opensearch(new URL(request.url).origin);
+export const onRequestGet = ({ request }: { request: Request }) => {
+  return handleOpenSearchRequest(request);
 };

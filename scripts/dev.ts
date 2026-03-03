@@ -1,7 +1,10 @@
 import { watch } from "node:fs";
 import { minify } from "@minify-html/node";
 import { $ } from "bun";
-import { parseSettings } from "../src/suggest";
+import {
+  handleOpenSearchRequest,
+  handleSuggestRequest,
+} from "../src/server/handlers";
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy":
@@ -201,10 +204,8 @@ Bun.serve({
       });
     }
 
-    if (url.pathname === "/suggest" && url.searchParams.get("q")) {
-      const { suggest } = await import("../src/suggest");
-      const settings = parseSettings(url, req);
-      const res = await suggest(url.searchParams.get("q")!, settings);
+    if (url.pathname === "/suggest") {
+      const res = await handleSuggestRequest(req);
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
         res.headers.set(k, v);
       }
@@ -212,8 +213,7 @@ Bun.serve({
     }
 
     if (url.pathname === "/opensearch.xml") {
-      const { opensearch } = await import("../src/opensearch");
-      const res = opensearch(url.origin);
+      const res = handleOpenSearchRequest(req, url);
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
         res.headers.set(k, v);
       }

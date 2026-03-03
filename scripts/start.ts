@@ -1,4 +1,7 @@
-import { parseSettings } from "../src/suggest";
+import {
+  handleOpenSearchRequest,
+  handleSuggestRequest,
+} from "../src/server/handlers";
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy":
@@ -54,12 +57,8 @@ Bun.serve({
   async fetch(req) {
     const url = new URL(req.url);
 
-    if (url.pathname === "/suggest" && url.searchParams.get("q")) {
-      const { suggest } = await import("../src/suggest");
-      const res = await suggest(
-        url.searchParams.get("q")!,
-        parseSettings(url, req)
-      );
+    if (url.pathname === "/suggest") {
+      const res = await handleSuggestRequest(req);
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
         res.headers.set(k, v);
       }
@@ -67,8 +66,7 @@ Bun.serve({
     }
 
     if (url.pathname === "/opensearch.xml") {
-      const { opensearch } = await import("../src/opensearch");
-      const res = opensearch(url.origin);
+      const res = handleOpenSearchRequest(req, url);
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
         res.headers.set(k, v);
       }

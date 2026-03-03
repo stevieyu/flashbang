@@ -8,5 +8,5 @@
     "lib": ["ESNext", "WebWorker", "DOM"],
     "types": ["@types/bun"]
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts"]
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "functions/**/*.ts"]
 }

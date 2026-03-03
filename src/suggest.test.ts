@@ -118,7 +118,13 @@ mock.module("./generated/bangs-trie.js", () => ({
   TRIE: TEST_TRIE,
 }));
 
-import { parseCookie, parseSettings, suggest } from "./suggest";
+import { readQueryParam } from "./shared/raw-query";
+import {
+  parseCookie,
+  parseSettings,
+  parseSettingsFromRawUrl,
+  suggest,
+} from "./suggest";
 
 const fetchSpy = spyOn(globalThis, "fetch");
 
@@ -187,6 +193,13 @@ describe("parseCookie", () => {
       )
     );
     expect(s.customUrl).toBe("https://api.example.com/suggest?q={}");
+  });
+
+  test("malformed customUrl encoding does not throw", () => {
+    const s = parseCookie(req("suggest=custom,g,%E0%A4%A"));
+    expect(s.customUrl).toBeNull();
+    expect(s.provider).toBe("custom");
+    expect(s.trigger).toBe("g");
   });
 
   test("suggest cookie extracted among other cookies", () => {
@@ -294,6 +307,88 @@ describe("parseSettings", () => {
     expect(s.provider).toBe("bing");
     expect(s.frecent).toEqual({ w: 10 });
     expect(s.trigger).toBe("ddg");
+  });
+});
+
+describe("readQueryParam", () => {
+  test("returns null when URL has no query string", () => {
+    expect(readQueryParam("http://localhost/suggest", "q")).toBeNull();
+  });
+
+  test("finds query param in first, middle, and last position", () => {
+    expect(readQueryParam("http://localhost/suggest?q=first&sp=ddg", "q")).toBe(
+      "first"
+    );
+    expect(readQueryParam("http://localhost/suggest?a=1&q=mid&b=2", "q")).toBe(
+      "mid"
+    );
+    expect(readQueryParam("http://localhost/suggest?sp=ddg&q=last", "q")).toBe(
+      "last"
+    );
+  });
+
+  test("decodes + as space", () => {
+    expect(readQueryParam("http://localhost/suggest?q=hello+world", "q")).toBe(
+      "hello world"
+    );
+  });
+
+  test("decodes percent-encoded values", () => {
+    expect(
+      readQueryParam("http://localhost/suggest?q=%2Bcats%20dogs", "q")
+    ).toBe("+cats dogs");
+  });
+
+  test("tolerates malformed percent-encoding like URLSearchParams", () => {
+    expect(readQueryParam("http://localhost/suggest?q=%E0%A4%A", "q")).toBe(
+      "�%A"
+    );
+    expect(readQueryParam("http://localhost/suggest?q=%ZZ", "q")).toBe("%ZZ");
+  });
+
+  test("returns empty string for key without value", () => {
+    expect(readQueryParam("http://localhost/suggest?q", "q")).toBe("");
+    expect(readQueryParam("http://localhost/suggest?q=&sp=ddg", "q")).toBe("");
+  });
+
+  test("returns first occurrence when repeated", () => {
+    expect(readQueryParam("http://localhost/suggest?q=one&q=two", "q")).toBe(
+      "one"
+    );
+  });
+
+  test("ignores fragment after query", () => {
+    expect(
+      readQueryParam("http://localhost/suggest?q=alpha#q=beta&sp=ddg", "q")
+    ).toBe("alpha");
+  });
+});
+
+describe("parseSettingsFromRawUrl", () => {
+  test("sp query param overrides cookie provider", () => {
+    const s = parseSettingsFromRawUrl(
+      "http://localhost/suggest?q=cats&sp=ddg",
+      req("suggest=google,g,")
+    );
+    expect(s.provider).toBe("ddg");
+    expect(s.trigger).toBe("g");
+  });
+
+  test("no sp query param falls back to cookie provider", () => {
+    const s = parseSettingsFromRawUrl(
+      "http://localhost/suggest?q=cats",
+      req("suggest=brave,b,")
+    );
+    expect(s.provider).toBe("brave");
+    expect(s.trigger).toBe("b");
+  });
+
+  test("malformed sp encoding is handled without throwing", () => {
+    const s = parseSettingsFromRawUrl(
+      "http://localhost/suggest?q=cats&sp=%E0%A4%A",
+      req("suggest=google,g,")
+    );
+    expect(s.provider).toBe("�%A");
   });
 });
 
