@@ -121,7 +121,7 @@ function topK(
     }
 
     for (const [, child] of node.c) {
-      if (results.length >= TOP_K && child.m <= threshold) {
+      if (results.length >= TOP_K && child.m + FRECENCY_BOOST_CAP <= threshold) {
         continue;
       }
       dfs(child);
