@@ -416,8 +416,14 @@ describe("bang suggestions — via suggest()", () => {
     ]);
     expect(data[4]["google:suggestdetail"]).toEqual([
       { a: "GitHub \u2014 github.com", i: "https://github.com/favicon.ico" },
-      { a: "GitHub Issues \u2014 github.com", i: "https://github.com/favicon.ico" },
-      { a: "GitHub PRs \u2014 github.com", i: "https://github.com/favicon.ico" },
+      {
+        a: "GitHub Issues \u2014 github.com",
+        i: "https://github.com/favicon.ico",
+      },
+      {
+        a: "GitHub PRs \u2014 github.com",
+        i: "https://github.com/favicon.ico",
+      },
     ]);
   });
 

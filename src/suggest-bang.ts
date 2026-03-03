@@ -205,13 +205,22 @@ export function bangSuggestions(
   }
 
   return new Response(
-    JSON.stringify([query, completions, descriptions, urls, {
-      "google:suggestdetail": candidates.map((c) =>
-        c.url
-          ? { a: `${c.name} \u2014 ${c.domain}`, i: `https://${c.domain}/favicon.ico` }
-          : {}
-      ),
-    }]),
+    JSON.stringify([
+      query,
+      completions,
+      descriptions,
+      urls,
+      {
+        "google:suggestdetail": candidates.map((c) =>
+          c.url
+            ? {
+                a: `${c.name} \u2014 ${c.domain}`,
+                i: `https://${c.domain}/favicon.ico`,
+              }
+            : {}
+        ),
+      },
+    ]),
     { headers: JSON_HEADERS }
   );
 }
