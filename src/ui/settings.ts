@@ -2,7 +2,6 @@ import { flashAnim, shakeAnim } from "./animations";
 import { setSuggestCookie } from "./cookie";
 import { setupCustomBangs } from "./custom-bangs";
 import { type DB, readCustomBangs } from "./db";
-import { setDnsLinks } from "./dns-links";
 import { $, el } from "./dom";
 import { notifySW } from "./sw-bridge";
 
@@ -65,7 +64,6 @@ export async function initSettings(db: DB) {
         suggestUrlInput.value.trim(),
         custom
       );
-      setDnsLinks(full[val].u);
       flashAnim(defaultInput);
       $("#bang-status").textContent = full[val].s;
       $("#bang-status").className = "text-sm text-success";

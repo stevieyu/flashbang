@@ -1,7 +1,6 @@
 import { flashAnim } from "./animations";
 import { setSuggestCookie } from "./cookie";
 import { DB, readCustomBangs } from "./db";
-import { initDnsLinks } from "./dns-links";
 import { $ } from "./dom";
 import { initLiquidMetal } from "./liquid-metal";
 import { setupModal } from "./modal";
@@ -21,8 +20,6 @@ async function syncSuggestCookie() {
 }
 
 function init() {
-  initDnsLinks(db);
-
   syncSuggestCookie();
 
   $<HTMLInputElement>("#setup-url").value = `${location.origin}?q=%s`;
