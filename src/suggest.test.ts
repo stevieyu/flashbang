@@ -401,19 +401,30 @@ describe("bang suggestions — via suggest()", () => {
     expect(completions).toEqual(["!gh", "!ghi", "!ghp"]);
   });
 
-  test('"!gh" descriptions are "name — domain" from BANGS', async () => {
+  test('"!gh" descriptions in OpenSearch positions and google:suggestdetail', async () => {
     const r = await suggest("!gh", defaultSettings);
     const data = await r.json();
     expect(data[2]).toEqual([
-      "GitHub — github.com",
-      "GitHub Issues — github.com",
-      "GitHub PRs — github.com",
+      "GitHub \u2014 github.com",
+      "GitHub Issues \u2014 github.com",
+      "GitHub PRs \u2014 github.com",
     ]);
     expect(data[3]).toEqual([
       "https://github.com",
       "https://github.com",
       "https://github.com",
     ]);
+    expect(data[4]["google:suggestdetail"]).toEqual([
+      { a: "GitHub \u2014 github.com", i: "https://github.com/favicon.ico" },
+      { a: "GitHub Issues \u2014 github.com", i: "https://github.com/favicon.ico" },
+      { a: "GitHub PRs \u2014 github.com", i: "https://github.com/favicon.ico" },
+    ]);
+  });
+
+  test("google:suggestdetail length matches completions length", async () => {
+    const r = await suggest("!g", defaultSettings);
+    const data = await r.json();
+    expect(data[4]["google:suggestdetail"]).toHaveLength(data[1].length);
   });
 
   test('"cats !gh" → trailing partial, prefix "cats " in completions', async () => {
@@ -506,7 +517,7 @@ describe("frecency boosts", () => {
     expect(completions).toEqual(["!gh", "!ghi", "!ghp", "!ghtest"]);
   });
 
-  test("custom bang has empty description and URL", async () => {
+  test("custom bang has empty suggestdetail entry", async () => {
     const settings = {
       ...defaultSettings,
       custom: ["ghtest"],
@@ -516,6 +527,7 @@ describe("frecency boosts", () => {
     expect(data[1]).toEqual(["!ghtest"]);
     expect(data[2]).toEqual([""]);
     expect(data[3]).toEqual([""]);
+    expect(data[4]["google:suggestdetail"]).toEqual([{}]);
   });
 
   test("empty frecency and custom don't affect results", async () => {
@@ -537,7 +549,7 @@ describe("provider proxying — via suggest()", () => {
       provider: "google",
     });
     expect(fetchSpy).toHaveBeenCalledWith(
-      "https://suggestqueries.google.com/complete/search?client=firefox&q=cats"
+      "https://www.google.com/complete/search?client=firefox&channel=fen&q=cats"
     );
     expect(r.headers.get("Content-Type")).toBe("application/json");
   });
@@ -618,7 +630,7 @@ describe("provider proxying — via suggest()", () => {
     fetchSpy.mockResolvedValueOnce(Response.json(["cats", []]));
     await suggest("cats", defaultSettings);
     expect(fetchSpy).toHaveBeenCalledWith(
-      "https://suggestqueries.google.com/complete/search?client=firefox&q=cats"
+      "https://www.google.com/complete/search?client=firefox&channel=fen&q=cats"
     );
   });
 

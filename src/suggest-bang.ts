@@ -172,6 +172,9 @@ export function bangSuggestions(
         top.map((c) => `${prefix}!${c.trigger}`),
         top.map(() => ""),
         top.map(() => ""),
+        {
+          "google:suggestdetail": top.map(() => ({})),
+        },
       ]),
       { headers: JSON_HEADERS }
     );
@@ -187,7 +190,7 @@ export function bangSuggestions(
   for (const c of candidates) {
     completions.push(`${prefix}!${c.trigger}`);
     if (c.url) {
-      descriptions.push(`${c.name} — ${c.domain}`);
+      descriptions.push(`${c.name} \u2014 ${c.domain}`);
       const protoEnd = c.url.indexOf("://");
       if (protoEnd === -1) {
         urls.push(c.url);
@@ -202,7 +205,13 @@ export function bangSuggestions(
   }
 
   return new Response(
-    JSON.stringify([query, completions, descriptions, urls]),
+    JSON.stringify([query, completions, descriptions, urls, {
+      "google:suggestdetail": candidates.map((c) =>
+        c.url
+          ? { a: `${c.name} \u2014 ${c.domain}`, i: `https://${c.domain}/favicon.ico` }
+          : {}
+      ),
+    }]),
     { headers: JSON_HEADERS }
   );
 }

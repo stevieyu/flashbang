@@ -14,7 +14,7 @@ export const DEFAULT_LUCKY_URL = "https://duckduckgo.com/?q=\\{}";
 
 export const SUGGEST_URLS: Record<string, string> = {
   google:
-    "https://suggestqueries.google.com/complete/search?client=firefox&q={}",
+    "https://www.google.com/complete/search?client=firefox&channel=fen&q={}",
   ddg: "https://duckduckgo.com/ac/?q={}&type=list",
   bing: "https://www.bing.com/osjson.aspx?query={}",
   brave: "https://search.brave.com/api/suggest?q={}&rich=false",
