@@ -6,7 +6,6 @@ import {
   handleSuggestRequest,
 } from "../src/server/handlers";
 import { readPathname } from "../src/shared/raw-url";
-import { scheduleBangSuggestWarmup } from "../src/suggest";
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy":
@@ -58,7 +57,6 @@ async function build() {
       entrypoints: ["src/sw/sw.ts"],
       outdir: "dist",
       naming: "sw.js",
-      splitting: true,
       minify: true,
       target: "browser",
       format: "esm",
@@ -176,7 +174,6 @@ function htmlResponse(
 
 const port = Number(process.env.PORT) || 3000;
 console.log(`Dev server: http://localhost:${port}`);
-scheduleBangSuggestWarmup();
 
 Bun.serve({
   port,

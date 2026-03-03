@@ -64,7 +64,6 @@ await Bun.build({
   entrypoints: ["src/sw/sw.ts"],
   outdir: "dist",
   naming: "sw.js",
-  splitting: true,
   minify: true,
   target: "browser",
   format: "esm",

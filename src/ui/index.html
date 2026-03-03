@@ -48,9 +48,9 @@
           },
           { once: true }
         );
-        navigator.serviceWorker.register("/sw.js", { type: "module" });
+        navigator.serviceWorker.register("/sw.js");
       } else if ("serviceWorker" in navigator) {
-        navigator.serviceWorker.register("/sw.js", { type: "module" });
+        navigator.serviceWorker.register("/sw.js");
         Promise.all([
           fetch("/opensearch.xml").catch(() => {
             // pre-warm — ignore errors

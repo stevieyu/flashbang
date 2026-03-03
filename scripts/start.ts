@@ -3,7 +3,6 @@ import {
   handleSuggestRequest,
 } from "../src/server/handlers";
 import { readPathname } from "../src/shared/raw-url";
-import { scheduleBangSuggestWarmup } from "../src/suggest";
 
 const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy":
@@ -53,7 +52,6 @@ async function serveCompressed(
 
 const port = Number(process.env.PORT) || 3000;
 console.log(`Production server: http://localhost:${port}`);
-scheduleBangSuggestWarmup();
 
 Bun.serve({
   port,

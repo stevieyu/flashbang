@@ -1,5 +1,6 @@
 import { CH_EXCL, SUGGEST_URLS } from "./shared/constants";
 import { readQueryParam } from "./shared/raw-query";
+import { bangSuggestions } from "./suggest-bang";
 
 export interface SuggestSettings {
   customUrl: string | null;
@@ -12,31 +13,6 @@ export interface SuggestSettings {
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const COOKIE_RE = /(?:^|;\s*)suggest=([^;]*)/;
 const SF_RE = /(?:^|;\s*)sf=([^;]*)/;
-type BangSuggestModule = typeof import("./suggest-bang");
-
-let bangSuggestPromise: Promise<BangSuggestModule> | null = null;
-let bangSuggestWarmupScheduled = false;
-
-function loadBangSuggest(): Promise<BangSuggestModule> {
-  if (!bangSuggestPromise) {
-    bangSuggestPromise = import("./suggest-bang");
-  }
-  return bangSuggestPromise;
-}
-
-export function preloadBangSuggest(): Promise<void> {
-  return loadBangSuggest().then(() => undefined);
-}
-
-export function scheduleBangSuggestWarmup(): void {
-  if (bangSuggestWarmupScheduled || bangSuggestPromise) {
-    return;
-  }
-  bangSuggestWarmupScheduled = true;
-  setTimeout(() => {
-    void preloadBangSuggest();
-  }, 0);
-}
 
 function empty(query: string): Response {
   return new Response(JSON.stringify([query, []]), { headers: JSON_HEADERS });
@@ -173,8 +149,7 @@ export async function suggest(
 ): Promise<Response> {
   const bang = parsePartialBang(query);
   if (bang) {
-    const bangSuggest = await loadBangSuggest();
-    return bangSuggest.bangSuggestions(
+    return bangSuggestions(
       query,
       bang.prefix,
       bang.partial,

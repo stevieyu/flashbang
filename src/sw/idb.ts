@@ -1,3 +1,4 @@
+import { BANGS } from "../generated/bangs-min.js";
 import {
   DEFAULT_LUCKY_URL,
   DEFAULT_URL,
@@ -8,13 +9,10 @@ import {
 import { idbWrap, openDB, resetDB } from "../shared/idb";
 import type { RedirectSettings } from "./redirect";
 
-type BangMap = Record<string, string>;
-
 const FRECENCY_COOKIE_ENTRIES = 8;
 const PERSIST_DEBOUNCE_MS = 1000;
 const PERSIST_FLUSH_THRESHOLD = 32;
 
-let bangsPromise: Promise<BangMap> | null = null;
 let cachedRedirect: RedirectSettings | null = null;
 let redirectSettingsPromise: Promise<RedirectSettings> | null = null;
 let frecencyCounts: Record<string, number> | null = null;
@@ -23,15 +21,6 @@ let frecencyCookie: string = "";
 let lastDecayTs: number = 0;
 let pendingPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingPersistUpdates = 0;
-
-function loadBangs(): Promise<BangMap> {
-  if (!bangsPromise) {
-    bangsPromise = import("../generated/bangs-min.js").then(
-      (mod) => mod.BANGS as BangMap
-    );
-  }
-  return bangsPromise;
-}
 
 export function getCachedSettings(): RedirectSettings | null {
   return cachedRedirect;
@@ -45,7 +34,7 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
   if (!redirectSettingsPromise) {
     redirectSettingsPromise = (async () => {
       try {
-        const [db, bangs] = await Promise.all([openDB(), loadBangs()]);
+        const db = await openDB();
         const tx = db.transaction(["settings", "custom-bangs"], "readonly");
         const store = tx.objectStore("settings");
         const [result, luckyProviderResult, luckyUrlResult, all] =
@@ -60,7 +49,7 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
             ),
           ]);
         const defaultBang = result?.value || "g";
-        const defaultUrl = bangs[defaultBang] || DEFAULT_URL;
+        const defaultUrl = BANGS[defaultBang] || DEFAULT_URL;
         const luckyProvider = luckyProviderResult?.value ?? "default";
         let luckyUrl: string | null;
         switch (luckyProvider) {

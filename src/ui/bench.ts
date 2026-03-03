@@ -15,9 +15,7 @@ async function ensureSW(): Promise<void> {
     return;
   }
 
-  const reg = await navigator.serviceWorker.register("/sw.js", {
-    type: "module",
-  });
+  const reg = await navigator.serviceWorker.register("/sw.js");
 
   if (reg.active) {
     if (!navigator.serviceWorker.controller) {
