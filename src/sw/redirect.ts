@@ -1,6 +1,7 @@
 import { BANGS } from "../generated/bangs-min.js";
 import { CH_EXCL } from "../shared/chars";
 import { CH_0, CH_2, CH_PERCENT, CH_PLUS } from "../shared/raw-query";
+import { resolveTemplateParts } from "../shared/template";
 
 export interface RedirectSettings {
   custom: Record<string, string>;
@@ -37,8 +38,6 @@ function findRawSpace(s: string, from: number): [number, number] {
 const RE_PLUS = /\+/g;
 const RE_ENCODED_SLASH = /%2[Ff]/g;
 const RE_ENCODED_EXCL = /%21/g;
-type TemplateParts = readonly [string, string];
-const TEMPLATE_CACHE = new Map<string, TemplateParts | null>();
 
 function rawFixup(raw: string): string {
   const plusPos = raw.indexOf("+");
@@ -55,20 +54,6 @@ function rawFixup(raw: string): string {
     return raw.replace(RE_PLUS, "%20");
   }
   return raw.replace(RE_PLUS, "%20").replace(RE_ENCODED_SLASH, "/");
-}
-
-function resolveTemplateParts(url: string): TemplateParts | null {
-  const cached = TEMPLATE_CACHE.get(url);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const idx = url.indexOf("{}");
-  const parts =
-    idx === -1
-      ? null
-      : ([url.substring(0, idx), url.substring(idx + 2)] as const);
-  TEMPLATE_CACHE.set(url, parts);
-  return parts;
 }
 
 function fillTemplate(url: string, rawTerm: string): string {

@@ -9,6 +9,7 @@ import {
 } from "./shared/chars";
 import { SUGGEST_URLS } from "./shared/constants";
 import { readQueryParam } from "./shared/raw-query";
+import { resolveTemplateParts } from "./shared/template";
 import { bangSuggestions } from "./suggest-bang";
 
 export interface SuggestSettings {
@@ -22,8 +23,6 @@ export interface SuggestSettings {
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const COOKIE_RE = /(?:^|;\s*)suggest=([^;]*)/;
 const SF_RE = /(?:^|;\s*)sf=([^;]*)/;
-type TemplateParts = readonly [string, string];
-const TEMPLATE_CACHE = new Map<string, TemplateParts | null>();
 
 function isTrimWs(code: number): boolean {
   return (
@@ -34,20 +33,6 @@ function isTrimWs(code: number): boolean {
     code === CH_FF ||
     code === CH_CR
   );
-}
-
-function resolveTemplateParts(url: string): TemplateParts | null {
-  const cached = TEMPLATE_CACHE.get(url);
-  if (cached !== undefined) {
-    return cached;
-  }
-  const idx = url.indexOf("{}");
-  const parts =
-    idx === -1
-      ? null
-      : ([url.substring(0, idx), url.substring(idx + 2)] as const);
-  TEMPLATE_CACHE.set(url, parts);
-  return parts;
 }
 
 function fillTemplate(url: string, encodedQuery: string): string {
