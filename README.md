@@ -24,7 +24,7 @@ All three support bangs natively — but every query still round-trips through t
 
 ## Features
 
-- **Built for speed** — Advertised as sub-1ms to be conservative, since technically, it could fall anywhere in this range, in my tests I have achieved median of 0.14ms in /bench page on Chrome's Incognito window. That's the overhead Flashbang adds before your browser starts loading the destination — network time to reach the target site is the same regardless of which tool you use. The Service Worker intercepts requests before they hit the network, parses the bang, and responds with a 302 — no page load, no framework, no round-trip to a server. Don't trust our numbers? [Run the benchmark yourself](https://flashbang-dyr.pages.dev/bench) — results vary by machine
+- **Built for speed** — Advertised as sub-1ms to be conservative, since technically, it could fall anywhere in this range, in my tests I have achieved median of `0.14ms` on `/bench` page in Chrome's Incognito window. That's the overhead Flashbang adds before your browser starts loading the destination — network time to reach the target site is the same regardless of which tool you use. The Service Worker intercepts requests before they hit the network, parses the bang, and responds with a 302 — no page load, no framework, no round-trip to a server. Don't trust our numbers? [Run the benchmark yourself](https://flashbang-dyr.pages.dev/bench) — results vary by machine
 - **Private** — No analytics, no tracking. All data stays on your device for the core feature - redirects
 - **14,000+ bangs** — Merged from DuckDuckGo, Kagi, and custom sources. Updated daily via automated CI
 - **Custom bangs** — Add your own bangs through the settings UI. They take priority over built-ins
