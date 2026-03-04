@@ -129,7 +129,7 @@ function rawFixup(s: string, from: number, to: number): string {
       ) {
         const c2 = raw.charCodeAt(i + 2);
         if (c2 === 70 || c2 === 102) {
-          out += raw.substring(seg, i) + "/";
+          out += `${raw.substring(seg, i)}/`;
           seg = i + 3;
           i += 2;
         }
@@ -138,12 +138,12 @@ function rawFixup(s: string, from: number, to: number): string {
     return out + raw.substring(seg);
   }
   const hasSlash = raw.indexOf("%2F") !== -1 || raw.indexOf("%2f") !== -1;
-  let out = raw.substring(0, plusPos) + "%20";
+  let out = `${raw.substring(0, plusPos)}%20`;
   let seg = plusPos + 1;
   for (let i = seg; i < raw.length; i++) {
     const c = raw.charCodeAt(i);
     if (c === CH_PLUS) {
-      out += raw.substring(seg, i) + "%20";
+      out += `${raw.substring(seg, i)}%20`;
       seg = i + 1;
     } else if (
       hasSlash &&
@@ -153,7 +153,7 @@ function rawFixup(s: string, from: number, to: number): string {
     ) {
       const c2 = raw.charCodeAt(i + 2);
       if (c2 === 70 || c2 === 102) {
-        out += raw.substring(seg, i) + "/";
+        out += `${raw.substring(seg, i)}/`;
         seg = i + 3;
         i += 2;
       }
