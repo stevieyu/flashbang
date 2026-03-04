@@ -1,9 +1,6 @@
-const UTF8_DECODER = new TextDecoder();
+import { CH_PERCENT, CH_PLUS } from "./chars";
 
-export const CH_PLUS = 43; // +
-export const CH_PERCENT = 37; // %
-export const CH_2 = 50; // '2'
-export const CH_0 = 48; // '0'
+const UTF8_DECODER = new TextDecoder();
 
 function hexNibble(code: number): number {
   if (code >= 48 && code <= 57) {
