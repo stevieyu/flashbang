@@ -1,4 +1,5 @@
 import { watch } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { minify } from "@minify-html/node";
 import { $ } from "bun";
 import {
@@ -50,7 +51,7 @@ addEventListener("beforeunload", () => __es.close());
 
 async function build() {
   const t = performance.now();
-  await $`mkdir -p dist`;
+  await mkdir("dist", { recursive: true });
 
   await Promise.all([
     Bun.build({
@@ -118,6 +119,8 @@ async function build() {
   );
 
   await Bun.write("dist/robots.txt", "User-agent: *\nAllow: /\n");
+  await Bun.write("dist/manifest.json", Bun.file("src/ui/manifest.json"));
+  await Bun.write("dist/icon.svg", Bun.file("src/ui/icon.svg"));
 
   console.log(`Build done in ${(performance.now() - t).toFixed(0)}ms`);
 }

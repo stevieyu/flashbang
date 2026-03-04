@@ -1,4 +1,4 @@
-import { $ } from "bun";
+import { mkdir } from "node:fs/promises";
 
 interface Bang {
   domain: string;
@@ -240,7 +240,7 @@ if (fromMerged) {
 } else {
   if (!noFetch) {
     console.log("=== Fetch bang sources ===");
-    await $`mkdir -p data`;
+    await mkdir("data", { recursive: true });
     const [kagiRes, ddgRes] = await Promise.all([
       fetch(
         "https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json"
@@ -286,7 +286,7 @@ if (fromMerged) {
 
 console.log("=== Generate ===");
 const outDir = "src/generated";
-await $`mkdir -p ${outDir}`;
+await mkdir(outDir, { recursive: true });
 
 const minJs = generateMin(valid);
 await Bun.write(`${outDir}/bangs-min.js`, minJs);

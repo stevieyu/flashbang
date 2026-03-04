@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
+import { mkdir, rm } from "node:fs/promises";
 import { brotliCompressSync, constants } from "node:zlib";
 import { minify } from "@minify-html/node";
 import { $ } from "bun";
 
-await $`mkdir -p dist`;
+await mkdir("dist", { recursive: true });
 for (const f of new Bun.Glob("*.js").scanSync("dist")) {
-  await $`rm dist/${f}`;
+  await rm(`dist/${f}`);
 }
 
 console.log("=== Bundle app + bench (to discover chunks) ===");
@@ -108,9 +109,9 @@ await Bun.write(
   })
 );
 
-await $`rm dist/styles.css`;
-await $`cp src/ui/manifest.json dist/`;
-await $`cp src/ui/icon.svg dist/`;
+await rm("dist/styles.css");
+await Bun.write("dist/manifest.json", Bun.file("src/ui/manifest.json"));
+await Bun.write("dist/icon.svg", Bun.file("src/ui/icon.svg"));
 await Bun.write("dist/robots.txt", "User-agent: *\nAllow: /\n");
 
 console.log("=== Generate _headers with CSP ===");
@@ -160,4 +161,8 @@ for (const file of new Bun.Glob("*.{html,js,svg,json,txt}").scanSync("dist")) {
 }
 
 console.log("=== Done ===");
-await $`ls -lh dist/`;
+for (const f of new Bun.Glob("*").scanSync("dist")) {
+  const size = Bun.file(`dist/${f}`).size;
+  const kb = (size / 1024).toFixed(1);
+  console.log(`  ${f.padEnd(30)} ${kb} KB`);
+}
