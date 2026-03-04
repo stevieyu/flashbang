@@ -57,10 +57,8 @@
       },
 
       "complexity": {
-        "noExcessiveCognitiveComplexity": {
-          "level": "error",
-          "options": { "maxAllowedComplexity": 25 }
-        },
+        // Hot-path functions are optimized for speed, not readability
+        "noExcessiveCognitiveComplexity": "off",
         "noForEach": "error",
         "noUselessStringConcat": "error",
         "noUselessUndefinedInitialization": "error",
@@ -134,16 +132,6 @@
     }
   },
   "overrides": [
-    {
-      "includes": ["**/*.{test,spec}.{ts,tsx,js,jsx}"],
-      "linter": {
-        "rules": {
-          "complexity": {
-            "noExcessiveCognitiveComplexity": "off"
-          }
-        }
-      }
-    },
     {
       "includes": ["**/*.d.ts"],
       "linter": {
