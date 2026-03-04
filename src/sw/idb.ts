@@ -7,7 +7,14 @@ import {
   MAX_FRECENCY_ENTRIES,
 } from "../shared/constants";
 import { idbWrap, openDB, resetDB } from "../shared/idb";
-import type { RedirectSettings } from "./redirect";
+import type { RedirectSettings, UrlParts } from "./redirect";
+
+function splitUrl(url: string): UrlParts {
+  const idx = url.indexOf("{}");
+  return idx === -1
+    ? [url, null]
+    : [url.substring(0, idx), url.substring(idx + 2)];
+}
 
 const FRECENCY_COOKIE_ENTRIES = 8;
 const PERSIST_DEBOUNCE_MS = 1000;
@@ -49,41 +56,44 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
             ),
           ]);
         const defaultBang = result?.value || "g";
-        const defaultUrl = BANGS[defaultBang] || DEFAULT_URL;
+        const tpl = BANGS[defaultBang];
+        const defaultUrl: UrlParts = tpl || splitUrl(DEFAULT_URL);
         const luckyProvider = luckyProviderResult?.value ?? "default";
-        let luckyUrl: string | null;
+        let luckyUrl: UrlParts | null;
         switch (luckyProvider) {
           case "none":
             luckyUrl = null;
             break;
           case "google":
-            luckyUrl = LUCKY_URLS.g;
+            luckyUrl = splitUrl(LUCKY_URLS.g);
             break;
           case "ddg":
-            luckyUrl = LUCKY_URLS.ddg;
+            luckyUrl = splitUrl(LUCKY_URLS.ddg);
             break;
           case "kagi":
-            luckyUrl = LUCKY_URLS.kagi;
+            luckyUrl = splitUrl(LUCKY_URLS.kagi);
             break;
           case "custom":
-            luckyUrl = luckyUrlResult?.value || null;
+            luckyUrl = luckyUrlResult?.value
+              ? splitUrl(luckyUrlResult.value)
+              : null;
             break;
           default:
-            luckyUrl = LUCKY_URLS[defaultBang] || DEFAULT_LUCKY_URL;
+            luckyUrl = splitUrl(LUCKY_URLS[defaultBang] || DEFAULT_LUCKY_URL);
             break;
         }
 
-        const custom: Record<string, string> = {};
+        const custom: Record<string, UrlParts> = Object.create(null);
         for (const e of all) {
-          custom[e.trigger] = e.url;
+          custom[e.trigger] = splitUrl(e.url);
         }
 
         cachedRedirect = { defaultUrl, custom, luckyUrl };
       } catch {
         cachedRedirect = {
-          defaultUrl: DEFAULT_URL,
-          custom: {},
-          luckyUrl: DEFAULT_LUCKY_URL,
+          defaultUrl: splitUrl(DEFAULT_URL),
+          custom: Object.create(null),
+          luckyUrl: splitUrl(DEFAULT_LUCKY_URL),
         };
       }
 

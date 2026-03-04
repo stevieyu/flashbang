@@ -8,12 +8,13 @@ import {
   CH_PERCENT,
   CH_PLUS,
 } from "../shared/chars";
-import { resolveTemplateParts } from "../shared/template";
+
+export type UrlParts = readonly [string, string | null];
 
 export interface RedirectSettings {
-  custom: Record<string, string>;
-  defaultUrl: string;
-  luckyUrl: string | null;
+  custom: Record<string, UrlParts>;
+  defaultUrl: UrlParts;
+  luckyUrl: UrlParts | null;
 }
 
 function spaceAt(s: string, i: number): number {
@@ -162,33 +163,59 @@ function rawFixup(s: string, from: number, to: number): string {
   return out + raw.substring(seg);
 }
 
-function fillTemplate(
-  url: string,
+function fillParts(
+  parts: UrlParts,
   s: string,
   termStart: number,
   termEnd: number
 ): string {
-  const parts = resolveTemplateParts(url);
-  if (!parts) {
-    return url;
+  if (parts[1] === null) {
+    return parts[0];
   }
   return parts[0] + rawFixup(s, termStart, termEnd) + parts[1];
 }
 
-function originOf(url: string): string {
-  const protoEnd = url.indexOf("://");
+function originOfPrefix(prefix: string): string {
+  const protoEnd = prefix.indexOf("://");
   if (protoEnd === -1) {
-    const parts = resolveTemplateParts(url);
-    return parts ? parts[0] + parts[1] : url;
+    return prefix;
   }
-  const pathStart = url.indexOf("/", protoEnd + 3);
-  return pathStart !== -1 ? url.substring(0, pathStart) : url;
+  const pathStart = prefix.indexOf("/", protoEnd + 3);
+  return pathStart !== -1 ? prefix.substring(0, pathStart) : prefix;
 }
 
 function redir(url: string): Response {
   // NOTE: Response.redirect(url, 302) benchmarks faster than constructing
   // new Response(null, { status: 302, headers: { Location: url } }) here.
   return Response.redirect(url, 302);
+}
+
+function resolveBangFill(
+  bang: string,
+  custom: Record<string, UrlParts>,
+  rawQuery: string,
+  termStart: number,
+  termEnd: number
+): string | null {
+  const entry = custom[bang] || BANGS[bang];
+  if (!entry) {
+    return null;
+  }
+  if (entry[1] === null) {
+    return entry[0];
+  }
+  return entry[0] + rawFixup(rawQuery, termStart, termEnd) + entry[1];
+}
+
+function resolveBangOrigin(
+  bang: string,
+  custom: Record<string, UrlParts>
+): string | null {
+  const entry = custom[bang] || BANGS[bang];
+  if (!entry) {
+    return null;
+  }
+  return originOfPrefix(entry[0]);
 }
 
 function resolveRaw(
@@ -234,9 +261,9 @@ function resolveRaw(
   if (c0 === CH_BSLASH && end - start > 1) {
     const termStart = start + 1;
     if (luckyUrl) {
-      return [fillTemplate(luckyUrl, rawQuery, termStart, end), null];
+      return [fillParts(luckyUrl, rawQuery, termStart, end), null];
     }
-    return [fillTemplate(defaultUrl, rawQuery, termStart, end), null];
+    return [fillParts(defaultUrl, rawQuery, termStart, end), null];
   }
 
   let exclStart = -1;
@@ -264,9 +291,9 @@ function resolveRaw(
         return ["/", null];
       }
       if (luckyUrl) {
-        return [fillTemplate(luckyUrl, rawQuery, termStart, end), null];
+        return [fillParts(luckyUrl, rawQuery, termStart, end), null];
       }
-      return [fillTemplate(defaultUrl, rawQuery, termStart, end), null];
+      return [fillParts(defaultUrl, rawQuery, termStart, end), null];
     }
 
     // "!g+cats" or "!g" — prefix bang
@@ -274,16 +301,19 @@ function resolveRaw(
     const bangEnd = sp === -1 ? end : sp;
     const bang = rawQuery.substring(afterExcl, bangEnd).toLowerCase();
 
-    const url = custom[bang] || BANGS[bang];
-    if (!url) {
-      return [fillTemplate(defaultUrl, rawQuery, start, end), null];
-    }
-
     if (sp === -1 || sp + spLen >= end) {
-      return [originOf(url), bang];
+      const origin = resolveBangOrigin(bang, custom);
+      if (!origin) {
+        return [fillParts(defaultUrl, rawQuery, start, end), null];
+      }
+      return [origin, bang];
     }
 
-    return [fillTemplate(url, rawQuery, sp + spLen, end), bang];
+    const filled = resolveBangFill(bang, custom, rawQuery, sp + spLen, end);
+    if (filled === null) {
+      return [fillParts(defaultUrl, rawQuery, start, end), null];
+    }
+    return [filled, bang];
   }
 
   // "query+!" / "query%20!" — trailing bare bang lucky
@@ -296,9 +326,9 @@ function resolveRaw(
         return ["/", null];
       }
       if (luckyUrl) {
-        return [fillTemplate(luckyUrl, rawQuery, start, termEnd), null];
+        return [fillParts(luckyUrl, rawQuery, start, termEnd), null];
       }
-      return [fillTemplate(defaultUrl, rawQuery, start, termEnd), null];
+      return [fillParts(defaultUrl, rawQuery, start, termEnd), null];
     }
     // "query%20!"
     if (
@@ -312,9 +342,9 @@ function resolveRaw(
         return ["/", null];
       }
       if (luckyUrl) {
-        return [fillTemplate(luckyUrl, rawQuery, start, termEnd), null];
+        return [fillParts(luckyUrl, rawQuery, start, termEnd), null];
       }
-      return [fillTemplate(defaultUrl, rawQuery, start, termEnd), null];
+      return [fillParts(defaultUrl, rawQuery, start, termEnd), null];
     }
   }
   // "query+%21" / "query%20%21"
@@ -326,9 +356,9 @@ function resolveRaw(
         return ["/", null];
       }
       if (luckyUrl) {
-        return [fillTemplate(luckyUrl, rawQuery, start, termEnd), null];
+        return [fillParts(luckyUrl, rawQuery, start, termEnd), null];
       }
-      return [fillTemplate(defaultUrl, rawQuery, start, termEnd), null];
+      return [fillParts(defaultUrl, rawQuery, start, termEnd), null];
     }
     if (
       beforeExcl >= start + 3 &&
@@ -341,15 +371,15 @@ function resolveRaw(
         return ["/", null];
       }
       if (luckyUrl) {
-        return [fillTemplate(luckyUrl, rawQuery, start, termEnd), null];
+        return [fillParts(luckyUrl, rawQuery, start, termEnd), null];
       }
-      return [fillTemplate(defaultUrl, rawQuery, start, termEnd), null];
+      return [fillParts(defaultUrl, rawQuery, start, termEnd), null];
     }
   }
 
   const [exclPos, eWidth] = findExcl(rawQuery, start, end);
   if (exclPos === -1) {
-    return [fillTemplate(defaultUrl, rawQuery, start, end), null];
+    return [fillParts(defaultUrl, rawQuery, start, end), null];
   }
 
   // "g!+cats"
@@ -358,15 +388,19 @@ function resolveRaw(
     const spAfter = spaceAt(rawQuery, afterE);
     if (spAfter) {
       const bang = rawQuery.substring(start, exclPos).toLowerCase();
-      const url = custom[bang] || BANGS[bang];
-      if (url) {
-        const termStart = afterE + spAfter;
-        if (termStart >= end) {
-          return [originOf(url), bang];
+      const termStart = afterE + spAfter;
+      if (termStart >= end) {
+        const origin = resolveBangOrigin(bang, custom);
+        if (origin) {
+          return [origin, bang];
         }
-        return [fillTemplate(url, rawQuery, termStart, end), bang];
+      } else {
+        const filled = resolveBangFill(bang, custom, rawQuery, termStart, end);
+        if (filled !== null) {
+          return [filled, bang];
+        }
       }
-      return [fillTemplate(defaultUrl, rawQuery, start, end), null];
+      return [fillParts(defaultUrl, rawQuery, start, end), null];
     }
   }
 
@@ -375,11 +409,11 @@ function resolveRaw(
     const [hasSpace] = findSpace(rawQuery, start, end);
     if (hasSpace === -1) {
       const bang = rawQuery.substring(start, exclPos).toLowerCase();
-      const url = custom[bang] || BANGS[bang];
-      if (url) {
-        return [originOf(url), bang];
+      const origin = resolveBangOrigin(bang, custom);
+      if (origin) {
+        return [origin, bang];
       }
-      return [fillTemplate(defaultUrl, rawQuery, start, end), null];
+      return [fillParts(defaultUrl, rawQuery, start, end), null];
     }
   }
 
@@ -395,11 +429,17 @@ function resolveRaw(
       const bangStr = rawQuery.substring(bangStart, end);
       if (bangStr.indexOf("+") === -1 && !bangStr.includes("%20")) {
         const bang = bangStr.toLowerCase();
-        const url = custom[bang] || BANGS[bang];
-        if (url) {
-          return [fillTemplate(url, rawQuery, start, spExclPos), bang];
+        const filled = resolveBangFill(
+          bang,
+          custom,
+          rawQuery,
+          start,
+          spExclPos
+        );
+        if (filled !== null) {
+          return [filled, bang];
         }
-        return [fillTemplate(defaultUrl, rawQuery, start, end), null];
+        return [fillParts(defaultUrl, rawQuery, start, end), null];
       }
     }
   }
@@ -419,16 +459,22 @@ function resolveRaw(
       const bangStart2 = lastSpPos + lastSpLen;
       if (bangStart2 < bangExclEnd) {
         const bang = rawQuery.substring(bangStart2, bangExclEnd).toLowerCase();
-        const url = custom[bang] || BANGS[bang];
-        if (url) {
-          return [fillTemplate(url, rawQuery, start, lastSpPos), bang];
+        const filled = resolveBangFill(
+          bang,
+          custom,
+          rawQuery,
+          start,
+          lastSpPos
+        );
+        if (filled !== null) {
+          return [filled, bang];
         }
-        return [fillTemplate(defaultUrl, rawQuery, start, end), null];
+        return [fillParts(defaultUrl, rawQuery, start, end), null];
       }
     }
   }
 
-  return [fillTemplate(defaultUrl, rawQuery, start, end), null];
+  return [fillParts(defaultUrl, rawQuery, start, end), null];
 }
 
 export function redirectRaw(

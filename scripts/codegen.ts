@@ -190,13 +190,26 @@ function wrapJsonParse(json: string): string {
   return `JSON.parse('${escaped}')`;
 }
 
+function splitTemplate(url: string): [string, string | null] {
+  const idx = url.indexOf("{}");
+  if (idx === -1) {
+    return [url, null];
+  }
+  return [url.substring(0, idx), url.substring(idx + 2)];
+}
+
 function generateMin(bangs: Bang[]): string {
   let json = "{";
   for (let i = 0; i < bangs.length; i++) {
     if (i > 0) {
       json += ",";
     }
-    json += `"${jsonEscape(bangs[i].trigger)}":"${jsonEscape(bangs[i].url)}"`;
+    const [prefix, suffix] = splitTemplate(bangs[i].url);
+    const val =
+      suffix === null
+        ? `["${jsonEscape(prefix)}",null]`
+        : `["${jsonEscape(prefix)}","${jsonEscape(suffix)}"]`;
+    json += `"${jsonEscape(bangs[i].trigger)}":${val}`;
   }
   json += "}";
 
@@ -340,7 +353,7 @@ console.log(`  bangs-trie.js: ${trieJs.length} bytes`);
 await Promise.all([
   Bun.write(
     `${outDir}/bangs-min.d.ts`,
-    "export declare const BANGS: Record<string, string>;\n"
+    "export declare const BANGS: Record<string, [string, string | null]>;\n"
   ),
   Bun.write(
     `${outDir}/bangs-full.d.ts`,

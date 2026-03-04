@@ -58,7 +58,6 @@ function separator(title: string) {
 separator("1. DATA SIZE & STRUCTURE ANALYSIS");
 
 const keys = Object.keys(BANGS);
-const _urls = Object.values(BANGS) as string[];
 
 console.log(`\nBang count: ${keys.length.toLocaleString()}`);
 console.log(
@@ -306,9 +305,12 @@ separator("5. FULL REDIRECT PIPELINE");
 const { redirectRaw } = await import("../src/sw/redirect");
 
 const settings = {
-  defaultUrl: "https://www.google.com/search?q={}",
-  luckyUrl: "https://duckduckgo.com/?q=\\{}",
-  custom: {} as Record<string, string>,
+  defaultUrl: ["https://www.google.com/search?q=", ""] as const,
+  luckyUrl: ["https://duckduckgo.com/?q=\\", ""] as const,
+  custom: Object.create(null) as Record<
+    string,
+    readonly [string, string | null]
+  >,
 };
 
 const queries = [
@@ -512,7 +514,12 @@ const EVAL_RUNS = 20;
 
 const evalMinTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
-  const code = minFile.replace("export const BANGS=", "var __BANGS=");
+  const code = minFile
+    .replace("export const BANGS=", "var __BANGS=")
+    .replace(
+      "Object.setPrototypeOf(BANGS,null)",
+      "Object.setPrototypeOf(__BANGS,null)"
+    );
   const t0 = Bun.nanoseconds();
   // Intentional: eval-equivalent to benchmark JS parse+eval time
   new Function(code)();
@@ -526,7 +533,12 @@ console.log(`  p99:    ${fmt(p99(evalMinTimes))}`);
 
 const evalFullTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
-  const code = fullFile.replace("export const BANGS=", "var __BANGS=");
+  const code = fullFile
+    .replace("export const BANGS=", "var __BANGS=")
+    .replace(
+      "Object.setPrototypeOf(BANGS,null)",
+      "Object.setPrototypeOf(__BANGS,null)"
+    );
   const t0 = Bun.nanoseconds();
   // Intentional: eval-equivalent to benchmark JS parse+eval time
   new Function(code)();
