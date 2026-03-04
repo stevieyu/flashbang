@@ -159,32 +159,66 @@ function jsEscape(s: string): string {
   return out;
 }
 
+function jsonEscape(s: string): string {
+  let out = "";
+  for (const c of s) {
+    switch (c) {
+      case '"':
+        out += '\\"';
+        break;
+      case "\\":
+        out += "\\\\";
+        break;
+      case "\n":
+        out += "\\n";
+        break;
+      case "\r":
+        out += "\\r";
+        break;
+      default:
+        out += c;
+    }
+  }
+  return out;
+}
+
+// NOTE: JSON.parse is ~2x faster than a JS object literal for large objects
+// because V8 uses a dedicated C++ fast path that skips the full parser/compiler.
+// See https://v8.dev/blog/cost-of-javascript-2019#json
+//
+// Object.setPrototypeOf(BANGS, null) replaces the old {__proto__:null} literal
+// approach. A null prototype eliminates the prototype chain walk on lookups,
+// so BANGS[trigger] resolves in a single step.
+function wrapJsonParse(json: string): string {
+  const escaped = json.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
+  return `JSON.parse('${escaped}')`;
+}
+
 function generateMin(bangs: Bang[]): string {
-  let js = "export const BANGS={__proto__:null,";
+  let json = "{";
   for (let i = 0; i < bangs.length; i++) {
     if (i > 0) {
-      js += ",";
+      json += ",";
     }
-    js += `'${jsEscape(bangs[i].trigger)}':'${jsEscape(bangs[i].url)}'`;
+    json += `"${jsonEscape(bangs[i].trigger)}":"${jsonEscape(bangs[i].url)}"`;
   }
-  js += "};";
-  return js;
+  json += "}";
+  return `export const BANGS=${wrapJsonParse(json)};Object.setPrototypeOf(BANGS,null);`;
 }
 
 function generateFull(bangs: Bang[]): string {
-  let js = "export const BANGS={__proto__:null,";
+  let json = "{";
   for (let i = 0; i < bangs.length; i++) {
     if (i > 0) {
-      js += ",";
+      json += ",";
     }
     const b = bangs[i];
-    js += `'${jsEscape(b.trigger)}':{s:'${jsEscape(b.name)}',d:'${jsEscape(b.domain)}',u:'${jsEscape(b.url)}',r:${b.relevance}}`;
+    const val = `{"s":${JSON.stringify(b.name)},"d":${JSON.stringify(b.domain)},"u":${JSON.stringify(b.url)},"r":${b.relevance}}`;
+    json += `"${jsonEscape(b.trigger)}":${val}`;
   }
-  js += "};";
-  return js;
+  json += "}";
+  return `export const BANGS=${wrapJsonParse(json)};Object.setPrototypeOf(BANGS,null);`;
 }
-
-// --- Radix trie for suggestions ---
 
 import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 
@@ -193,7 +227,6 @@ type TrieNode = BuildNode<Bang>;
 function serializeNode(node: TrieNode): string {
   const parts: string[] = [];
 
-  // children array, sorted by maxRelevance descending for best-first traversal
   const sorted = [...node.children.entries()].sort(
     (a, b) => b[1].maxRelevance - a[1].maxRelevance
   );
@@ -207,10 +240,8 @@ function serializeNode(node: TrieNode): string {
   childrenStr += "]";
   parts.push(`c:${childrenStr}`);
 
-  // max relevance
   parts.push(`m:${node.maxRelevance}`);
 
-  // terminal data
   if (node.terminal) {
     const t = node.terminal;
     parts.push(
