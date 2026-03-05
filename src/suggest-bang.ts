@@ -11,7 +11,6 @@ interface Candidate {
   trigger: string;
   name: string;
   domain: string;
-  url: string;
   score: number;
 }
 
@@ -114,7 +113,6 @@ function topK(
           trigger: node.t.k,
           name: node.t.s,
           domain: node.t.d,
-          url: node.t.u,
           score,
         });
       }
@@ -152,7 +150,6 @@ export function bangSuggestions(
         trigger,
         name: "",
         domain: "",
-        url: "",
         score: effectiveScore(0, frecent, trigger),
       });
     }
@@ -189,15 +186,9 @@ export function bangSuggestions(
 
   for (const c of candidates) {
     completions.push(`${prefix}!${c.trigger}`);
-    if (c.url) {
+    if (c.domain) {
       descriptions.push(`${c.name} \u2014 ${c.domain}`);
-      const protoEnd = c.url.indexOf("://");
-      if (protoEnd === -1) {
-        urls.push(c.url);
-      } else {
-        const pathStart = c.url.indexOf("/", protoEnd + 3);
-        urls.push(pathStart === -1 ? c.url : c.url.substring(0, pathStart));
-      }
+      urls.push(`https://${c.domain}`);
     } else {
       descriptions.push("");
       urls.push("");
@@ -212,7 +203,7 @@ export function bangSuggestions(
       urls,
       {
         "google:suggestdetail": candidates.map((c) =>
-          c.url
+          c.domain
             ? {
                 a: `${c.name} \u2014 ${c.domain}`,
                 i: `https://${c.domain}/favicon.ico`,

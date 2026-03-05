@@ -54,7 +54,7 @@ flashbang/
 │   │   └── trie.ts            # Radix trie lookup
 │   ├── generated/             # Output of codegen (gitignored, generated from data/bangs.json)
 │   │   ├── bangs-min.js       # trigger→URL map for Service Worker
-│   │   ├── bangs-full.js      # trigger→{name, domain, url, relevance} for UI & suggestions
+│   │   ├── bangs-meta.js      # trigger→{name, domain} for UI
 │   │   ├── bangs-trie.js      # radix trie for prefix-matched bang suggestions
 │   │   └── *.d.ts             # TypeScript declarations for each generated .js file
 │   ├── sw/
@@ -107,7 +107,7 @@ Tests live alongside the source files they cover:
 2. **Merge + validate** — Parses DDG, Kagi, and custom sources. Merges by trigger (deduplicates), validates URLs, and saves the merged result to `data/bangs.json`
 3. **Generate** — Produces three JS files in `src/generated/` from the merged data:
    - `bangs-min.js` — trigger→URL map for the Service Worker
-   - `bangs-full.js` — trigger→{name, domain, url, relevance} for the UI and suggestions
+   - `bangs-meta.js` — trigger→{name, domain} for the UI
    - `bangs-trie.js` — radix trie for prefix-matched bang suggestions
 
 The `--from-merged` flag skips steps 1–2 and generates directly from the committed `data/bangs.json`. This is what CI builds use — no network fetch needed.
@@ -130,7 +130,7 @@ On **self-hosted** (Docker/Railway via `start.ts`), the Bun server sets headers 
 `bun run build` bundles the app:
 
 1. **Bundle Service Worker** — Bun bundles `src/sw/sw.ts` with `bangs-min.js` into `dist/sw.js`. Code splitting lazy-loads `suggest.ts` on first suggestion request
-2. **Bundle UI** — Bun bundles `src/ui/app.ts` (and its module imports) with `bangs-full.js` into `dist/app.js`
+2. **Bundle UI** — Bun bundles `src/ui/app.ts` (and its module imports) with `bangs-meta.js` into `dist/app.js`
 3. **Generate CSS** — UnoCSS scans `src/ui/**/*.ts` and HTML files, emitting atomic utility classes
 4. **Inline & minify HTML** — CSS is inlined into `<style>`, HTML is minified with `@minify-html/node`
 5. **Pre-compress** — All static assets are compressed with Brotli (max quality) and written as `.br` files alongside the originals. The production server serves these automatically when the client supports it, falling back to uncompressed

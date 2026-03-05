@@ -14,7 +14,6 @@ interface TestBang {
   k: string;
   s: string;
   d: string;
-  u: string;
   r: number;
 }
 
@@ -40,76 +39,16 @@ function buildTestTrie(bangs: TestBang[]): TrieNode {
 }
 
 const TEST_BANGS: TestBang[] = [
-  {
-    k: "b",
-    s: "Bing",
-    d: "www.bing.com",
-    u: "https://www.bing.com/search?q={}",
-    r: 300,
-  },
-  {
-    k: "brave",
-    s: "Brave",
-    d: "search.brave.com",
-    u: "https://search.brave.com/search?q={}",
-    r: 200,
-  },
-  {
-    k: "ddg",
-    s: "DuckDuckGo",
-    d: "duckduckgo.com",
-    u: "https://duckduckgo.com/?q={}",
-    r: 800,
-  },
-  {
-    k: "g",
-    s: "Google",
-    d: "www.google.com",
-    u: "https://www.google.com/search?q={}",
-    r: 1000,
-  },
-  {
-    k: "gh",
-    s: "GitHub",
-    d: "github.com",
-    u: "https://github.com/search?q={}",
-    r: 500,
-  },
-  {
-    k: "ghi",
-    s: "GitHub Issues",
-    d: "github.com",
-    u: "https://github.com/search?q={}&type=issues",
-    r: 100,
-  },
-  {
-    k: "ghp",
-    s: "GitHub PRs",
-    d: "github.com",
-    u: "https://github.com/search?q={}&type=pullrequests",
-    r: 50,
-  },
-  {
-    k: "mdn",
-    s: "MDN",
-    d: "developer.mozilla.org",
-    u: "https://developer.mozilla.org/en-US/search?q={}",
-    r: 400,
-  },
-  {
-    k: "w",
-    s: "Wikipedia",
-    d: "en.wikipedia.org",
-    u: "https://en.wikipedia.org/wiki/Special:Search?search={}",
-    r: 900,
-  },
-  {
-    k: "yt",
-    s: "YouTube",
-    d: "www.youtube.com",
-    u: "https://www.youtube.com/results?search_query={}",
-    r: 700,
-  },
+  { k: "b", s: "Bing", d: "www.bing.com", r: 300 },
+  { k: "brave", s: "Brave", d: "search.brave.com", r: 200 },
+  { k: "ddg", s: "DuckDuckGo", d: "duckduckgo.com", r: 800 },
+  { k: "g", s: "Google", d: "www.google.com", r: 1000 },
+  { k: "gh", s: "GitHub", d: "github.com", r: 500 },
+  { k: "ghi", s: "GitHub Issues", d: "github.com", r: 100 },
+  { k: "ghp", s: "GitHub PRs", d: "github.com", r: 50 },
+  { k: "mdn", s: "MDN", d: "developer.mozilla.org", r: 400 },
+  { k: "w", s: "Wikipedia", d: "en.wikipedia.org", r: 900 },
+  { k: "yt", s: "YouTube", d: "www.youtube.com", r: 700 },
 ];
 
 const TEST_TRIE = buildTestTrie(TEST_BANGS);

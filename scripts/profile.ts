@@ -64,7 +64,7 @@ console.log(
   `bangs-min.js:  ${fmtBytes(866_773)}  (trigger→URL only, used by SW)`
 );
 console.log(
-  `bangs-full.js: ${fmtBytes(1_575_411)}  (trigger→{name,domain,url,r}, used by UI)`
+  `bangs-meta.js: ${fmtBytes(1_575_411)}  (trigger→{name,domain,url,r}, used by UI)`
 );
 
 const trieFile = await Bun.file("src/generated/bangs-trie.js").text();
@@ -508,7 +508,7 @@ console.log(`Warm plain-then-bang request: ${fmt(warmThenBangNs)}`);
 separator("9. MODULE PARSE/EVAL TIME");
 
 const minFile = await Bun.file("src/generated/bangs-min.js").text();
-const fullFile = await Bun.file("src/generated/bangs-full.js").text();
+const fullFile = await Bun.file("src/generated/bangs-meta.js").text();
 
 const EVAL_RUNS = 20;
 
@@ -546,7 +546,7 @@ for (let i = 0; i < EVAL_RUNS; i++) {
   evalFullTimes.push(elapsed);
 }
 
-console.log(`\nbangs-full.js eval time (${fmtBytes(fullFile.length)}):`);
+console.log(`\nbangs-meta.js eval time (${fmtBytes(fullFile.length)}):`);
 console.log(`  Median: ${fmt(median(evalFullTimes))}`);
 console.log(`  p99:    ${fmt(p99(evalFullTimes))}`);
 
@@ -575,7 +575,7 @@ console.log(`
 │ Component                           │ Time       │ Category     │
 ├─────────────────────────────────────┼────────────┼──────────────┤
 │ Module eval (bangs-min.js)          │ ${fmt(median(evalMinTimes)).padStart(10)} │ Cold start   │
-│ Module eval (bangs-full.js)         │ ${fmt(median(evalFullTimes)).padStart(10)} │ Cold start   │
+│ Module eval (bangs-meta.js)         │ ${fmt(median(evalFullTimes)).padStart(10)} │ Cold start   │
 │ Module eval (bangs-trie.js)         │ ${fmt(median(evalTrieTimes)).padStart(10)} │ Cold start   │
 ├─────────────────────────────────────┼────────────┼──────────────┤
 │ Object lookup (BANGS[key])          │ ${fmt(median(lookupTimes)).padStart(10)} │ Per redirect │

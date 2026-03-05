@@ -47,8 +47,8 @@ export async function initSettings(db: DB) {
 
   setSuggestCookie(savedProvider, defaultBang, savedUrl, custom);
 
-  const mod = await import("../generated/bangs-full.js");
-  const full: Record<string, { s: string; d: string; u: string }> = mod.BANGS;
+  const mod = await import("../generated/bangs-meta.js");
+  const full: Record<string, { s: string; d: string }> = mod.BANGS;
   $("#bang-status").textContent = full[defaultBang]?.s || "Unknown";
   $("#bang-count").textContent =
     `${Object.keys(full).length.toLocaleString()} bangs available`;
@@ -113,8 +113,7 @@ export async function initSettings(db: DB) {
   });
 
   let timer: ReturnType<typeof setTimeout>;
-  let cachedEntries: [string, { s: string; d: string; u: string }][] | null =
-    null;
+  let cachedEntries: [string, { s: string; d: string }][] | null = null;
   $<HTMLInputElement>("#bang-search").addEventListener("input", (e) => {
     clearTimeout(timer);
     const q = (e.target as HTMLInputElement).value.trim().toLowerCase();

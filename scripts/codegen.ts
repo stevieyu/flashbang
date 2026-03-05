@@ -25,8 +25,12 @@ interface RawKagiEntry {
   u: string;
 }
 
-function normalizeUrl(u: string): string {
-  return u.replaceAll("{{{s}}}", "{}");
+function normalizeUrl(u: string, base: string): string {
+  let url = u.replaceAll("{{{s}}}", "{}");
+  if (!url.startsWith("http")) {
+    url = `${base}${url.startsWith("/") ? "" : "/"}${url}`;
+  }
+  return url;
 }
 
 function parseDdg(raw: string): Bang[] {
@@ -34,7 +38,7 @@ function parseDdg(raw: string): Bang[] {
   const bangs: Bang[] = [];
 
   for (const entry of entries) {
-    const url = normalizeUrl(entry.u);
+    const url = normalizeUrl(entry.u, "https://duckduckgo.com");
     const relevance = entry.r ?? 0;
 
     bangs.push({
@@ -66,7 +70,7 @@ function parseKagi(raw: string): Bang[] {
   const bangs: Bang[] = [];
 
   for (const entry of entries) {
-    const url = normalizeUrl(entry.u);
+    const url = normalizeUrl(entry.u, "https://kagi.com");
 
     bangs.push({
       trigger: entry.t.toLowerCase(),
@@ -230,18 +234,18 @@ function generateMin(bangs: Bang[]): string {
   );
 }
 
-function generateFull(bangs: Bang[]): string {
+function generateMeta(bangs: Bang[]): string {
   let json = "{";
   for (let i = 0; i < bangs.length; i++) {
     if (i > 0) {
       json += ",";
     }
     const b = bangs[i];
-    json += `"${jsonEscape(b.trigger)}":{"s":"${jsonEscape(b.name)}","d":"${jsonEscape(b.domain)}","u":"${jsonEscape(b.url)}","r":${b.relevance}}`;
+    json += `"${jsonEscape(b.trigger)}":{"s":"${jsonEscape(b.name)}","d":"${jsonEscape(b.domain)}"}`;
   }
   json += "}";
   // NOTE: Null prototype as mentioned above improves miss performance why not
-  // add it for full bangs
+  // add it for meta bangs
   return `export const BANGS=${json};Object.setPrototypeOf(BANGS,null);`;
 }
 
@@ -270,7 +274,7 @@ function serializeNode(node: TrieNode): string {
   if (node.terminal) {
     const t = node.terminal;
     parts.push(
-      `t:{k:'${jsEscape(t.trigger)}',s:'${jsEscape(t.name)}',d:'${jsEscape(t.domain)}',u:'${jsEscape(t.url)}',r:${t.relevance}}`
+      `t:{k:'${jsEscape(t.trigger)}',s:'${jsEscape(t.name)}',d:'${jsEscape(t.domain)}',r:${t.relevance}}`
     );
   } else {
     parts.push("t:null");
@@ -348,9 +352,9 @@ const minJs = generateMin(valid);
 await Bun.write(`${outDir}/bangs-min.js`, minJs);
 console.log(`  bangs-min.js: ${minJs.length} bytes`);
 
-const fullJs = generateFull(valid);
-await Bun.write(`${outDir}/bangs-full.js`, fullJs);
-console.log(`  bangs-full.js: ${fullJs.length} bytes`);
+const metaJs = generateMeta(valid);
+await Bun.write(`${outDir}/bangs-meta.js`, metaJs);
+console.log(`  bangs-meta.js: ${metaJs.length} bytes`);
 
 const trieRoot = buildRadixTrie(
   valid,
@@ -367,8 +371,8 @@ await Promise.all([
     "export declare const BANGS: Record<string, [string, string | null]>;\n"
   ),
   Bun.write(
-    `${outDir}/bangs-full.d.ts`,
-    "export declare const BANGS: Record<string, { s: string; d: string; u: string; r: number }>;\n"
+    `${outDir}/bangs-meta.d.ts`,
+    "export declare const BANGS: Record<string, { s: string; d: string }>;\n"
   ),
   Bun.write(
     `${outDir}/bangs-trie.d.ts`,
@@ -376,7 +380,7 @@ await Promise.all([
       "export interface TrieNode {",
       "  c: [string, TrieNode][];",
       "  m: number;",
-      "  t: { k: string; s: string; d: string; u: string; r: number } | null;",
+      "  t: { k: string; s: string; d: string; r: number } | null;",
       "}",
       "export declare const TRIE: TrieNode;",
       "",
