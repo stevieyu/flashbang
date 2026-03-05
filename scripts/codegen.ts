@@ -159,32 +159,6 @@ function jsEscape(s: string): string {
   return out;
 }
 
-// NOTE: jsonEscape is used by generateFull() which emits a plain object literal
-// (loaded in the page UI where strict CSP must remain). generateMin() uses
-// jsEscape + engine detection instead (V8 → Function(), SpiderMonkey → JSON.parse,
-// JSC → JSON.parse). See generateMin() for the engine-detection strategy.
-function jsonEscape(s: string): string {
-  let out = "";
-  for (const c of s) {
-    switch (c) {
-      case '"':
-        out += '\\"';
-        break;
-      case "\\":
-        out += "\\\\";
-        break;
-      case "\n":
-        out += "\\n";
-        break;
-      case "\r":
-        out += "\\r";
-        break;
-      default:
-        out += c;
-    }
-  }
-  return out;
-}
 
 function splitTemplate(url: string): [string, string | null] {
   const idx = url.indexOf("{}");
@@ -195,19 +169,12 @@ function splitTemplate(url: string): [string, string | null] {
 }
 
 function generateMin(bangs: Bang[]): string {
-  let json = "{";
-  for (let i = 0; i < bangs.length; i++) {
-    if (i > 0) {
-      json += ",";
-    }
-    const [prefix, suffix] = splitTemplate(bangs[i].url);
-    const val =
-      suffix === null
-        ? `["${jsonEscape(prefix)}",null]`
-        : `["${jsonEscape(prefix)}","${jsonEscape(suffix)}"]`;
-    json += `"${jsonEscape(bangs[i].trigger)}":${val}`;
+  const obj: Record<string, [string, string | null]> = {};
+  for (const bang of bangs) {
+    const [prefix, suffix] = splitTemplate(bang.url);
+    obj[bang.trigger] = [prefix, suffix];
   }
-  json += "}";
+  const json = JSON.stringify(obj);
 
   const escaped = jsEscape(json);
 
@@ -227,16 +194,11 @@ function generateMin(bangs: Bang[]): string {
 }
 
 function generateFull(bangs: Bang[]): string {
-  let json = "{";
-  for (let i = 0; i < bangs.length; i++) {
-    if (i > 0) {
-      json += ",";
-    }
-    const b = bangs[i];
-    const val = `{"s":${JSON.stringify(b.name)},"d":${JSON.stringify(b.domain)},"u":${JSON.stringify(b.url)},"r":${b.relevance}}`;
-    json += `"${jsonEscape(b.trigger)}":${val}`;
+  const obj: Record<string, { s: string; d: string; u: string; r: number }> = {};
+  for (const bang of bangs) {
+    obj[bang.trigger] = { s: bang.name, d: bang.domain, u: bang.url, r: bang.relevance };
   }
-  json += "}";
+  const json = JSON.stringify(obj);
   // NOTE: Null prototype as mentioned above improves miss performance why not
   // add it for full bangs
   return `export const BANGS=${json};Object.setPrototypeOf(BANGS,null);`;
