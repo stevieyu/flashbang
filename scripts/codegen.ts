@@ -221,6 +221,7 @@ function generateMin(bangs: Bang[]): string {
     `:(0,Function)('return '+_d)();` +
     // NOTE: Null prototype: -40% miss improvement on V8, -15% SM, -6% JSC
     // Hit cost is tiny (+3-5%) and benefit outweighs the cons.
+    // Extremely important when using Function() in JSC without it huge slow down
     "Object.setPrototypeOf(BANGS,null);"
   );
 }
