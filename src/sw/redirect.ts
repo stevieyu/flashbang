@@ -5,6 +5,8 @@ import {
   CH_2,
   CH_BSLASH,
   CH_EXCL,
+  CH_F,
+  CH_f,
   CH_PERCENT,
   CH_PLUS,
 } from "../shared/chars";
@@ -129,7 +131,7 @@ function rawFixup(s: string, from: number, to: number): string {
         raw.charCodeAt(i + 1) === CH_2
       ) {
         const c2 = raw.charCodeAt(i + 2);
-        if (c2 === 70 || c2 === 102) {
+        if (c2 === CH_F || c2 === CH_f) {
           out += `${raw.substring(seg, i)}/`;
           seg = i + 3;
           i += 2;
@@ -175,6 +177,19 @@ function fillParts(
   return parts[0] + rawFixup(s, termStart, termEnd) + parts[1];
 }
 
+function luckyOrDefault(
+  luckyUrl: UrlParts | null,
+  defaultUrl: UrlParts,
+  rawQuery: string,
+  termStart: number,
+  termEnd: number
+): [string, null] {
+  return [
+    fillParts(luckyUrl ?? defaultUrl, rawQuery, termStart, termEnd),
+    null,
+  ];
+}
+
 function originOfPrefix(prefix: string): string {
   const protoEnd = prefix.indexOf("://");
   if (protoEnd === -1) {
@@ -218,6 +233,45 @@ function resolveBangOrigin(
   return originOfPrefix(entry[0]);
 }
 
+function findTrailingBareBang(
+  s: string,
+  start: number,
+  end: number,
+  lastChar: number
+): number {
+  if (lastChar === CH_EXCL) {
+    // "query+!"
+    if (s.charCodeAt(end - 2) === CH_PLUS) {
+      return end - 2;
+    }
+    // "query%20!"
+    if (
+      end - start >= 4 &&
+      s.charCodeAt(end - 4) === CH_PERCENT &&
+      s.charCodeAt(end - 3) === CH_2 &&
+      s.charCodeAt(end - 2) === CH_0
+    ) {
+      return end - 4;
+    }
+  }
+  // "query+%21" / "query%20%21"
+  if (end - start >= 3 && isEncodedExclAt(s, end - 3)) {
+    const beforeExcl = end - 3;
+    if (s.charCodeAt(beforeExcl - 1) === CH_PLUS) {
+      return beforeExcl - 1;
+    }
+    if (
+      beforeExcl >= start + 3 &&
+      s.charCodeAt(beforeExcl - 3) === CH_PERCENT &&
+      s.charCodeAt(beforeExcl - 2) === CH_2 &&
+      s.charCodeAt(beforeExcl - 1) === CH_0
+    ) {
+      return beforeExcl - 3;
+    }
+  }
+  return -1;
+}
+
 function resolveRaw(
   rawQuery: string,
   { defaultUrl, custom, luckyUrl }: RedirectSettings
@@ -259,11 +313,7 @@ function resolveRaw(
 
   // "\" — feeling lucky
   if (c0 === CH_BSLASH && end - start > 1) {
-    const termStart = start + 1;
-    if (luckyUrl) {
-      return [fillParts(luckyUrl, rawQuery, termStart, end), null];
-    }
-    return [fillParts(defaultUrl, rawQuery, termStart, end), null];
+    return luckyOrDefault(luckyUrl, defaultUrl, rawQuery, start + 1, end);
   }
 
   let exclStart = -1;
@@ -284,16 +334,13 @@ function resolveRaw(
     }
 
     // "!+query" / "!%20query" — bare bang lucky
-    const sp1 = spaceAt(rawQuery, afterExcl);
-    if (sp1) {
-      const termStart = afterExcl + sp1;
+    const spaceWidth = spaceAt(rawQuery, afterExcl);
+    if (spaceWidth) {
+      const termStart = afterExcl + spaceWidth;
       if (termStart >= end) {
         return ["/", null];
       }
-      if (luckyUrl) {
-        return [fillParts(luckyUrl, rawQuery, termStart, end), null];
-      }
-      return [fillParts(defaultUrl, rawQuery, termStart, end), null];
+      return luckyOrDefault(luckyUrl, defaultUrl, rawQuery, termStart, end);
     }
 
     // "!g+cats" or "!g" — prefix bang
@@ -316,79 +363,34 @@ function resolveRaw(
     return [filled, bang];
   }
 
-  // "query+!" / "query%20!" — trailing bare bang lucky
+  // "query+!" / "query%20!" / "query+%21" / "query%20%21" — trailing bare bang lucky
   const lastChar = rawQuery.charCodeAt(end - 1);
-  if (lastChar === CH_EXCL) {
-    // "query+!"
-    if (rawQuery.charCodeAt(end - 2) === CH_PLUS) {
-      const termEnd = end - 2;
-      if (termEnd <= start) {
-        return ["/", null];
-      }
-      if (luckyUrl) {
-        return [fillParts(luckyUrl, rawQuery, start, termEnd), null];
-      }
-      return [fillParts(defaultUrl, rawQuery, start, termEnd), null];
+  const trailingTermEnd = findTrailingBareBang(rawQuery, start, end, lastChar);
+  if (trailingTermEnd !== -1) {
+    if (trailingTermEnd <= start) {
+      return ["/", null];
     }
-    // "query%20!"
-    if (
-      end - start >= 4 &&
-      rawQuery.charCodeAt(end - 4) === CH_PERCENT &&
-      rawQuery.charCodeAt(end - 3) === CH_2 &&
-      rawQuery.charCodeAt(end - 2) === CH_0
-    ) {
-      const termEnd = end - 4;
-      if (termEnd <= start) {
-        return ["/", null];
-      }
-      if (luckyUrl) {
-        return [fillParts(luckyUrl, rawQuery, start, termEnd), null];
-      }
-      return [fillParts(defaultUrl, rawQuery, start, termEnd), null];
-    }
-  }
-  // "query+%21" / "query%20%21"
-  if (end - start >= 3 && isEncodedExclAt(rawQuery, end - 3)) {
-    const beforeExcl = end - 3;
-    if (rawQuery.charCodeAt(beforeExcl - 1) === CH_PLUS) {
-      const termEnd = beforeExcl - 1;
-      if (termEnd <= start) {
-        return ["/", null];
-      }
-      if (luckyUrl) {
-        return [fillParts(luckyUrl, rawQuery, start, termEnd), null];
-      }
-      return [fillParts(defaultUrl, rawQuery, start, termEnd), null];
-    }
-    if (
-      beforeExcl >= start + 3 &&
-      rawQuery.charCodeAt(beforeExcl - 3) === CH_PERCENT &&
-      rawQuery.charCodeAt(beforeExcl - 2) === CH_2 &&
-      rawQuery.charCodeAt(beforeExcl - 1) === CH_0
-    ) {
-      const termEnd = beforeExcl - 3;
-      if (termEnd <= start) {
-        return ["/", null];
-      }
-      if (luckyUrl) {
-        return [fillParts(luckyUrl, rawQuery, start, termEnd), null];
-      }
-      return [fillParts(defaultUrl, rawQuery, start, termEnd), null];
-    }
+    return luckyOrDefault(
+      luckyUrl,
+      defaultUrl,
+      rawQuery,
+      start,
+      trailingTermEnd
+    );
   }
 
-  const [exclPos, eWidth] = findExcl(rawQuery, start, end);
+  const [exclPos, exclCharWidth] = findExcl(rawQuery, start, end);
   if (exclPos === -1) {
     return [fillParts(defaultUrl, rawQuery, start, end), null];
   }
 
   // "g!+cats"
-  const afterE = exclPos + eWidth;
-  if (afterE < end) {
-    const spAfter = spaceAt(rawQuery, afterE);
+  const afterExcl = exclPos + exclCharWidth;
+  if (afterExcl < end) {
+    const spAfter = spaceAt(rawQuery, afterExcl);
     if (spAfter) {
       const bang = rawQuery.substring(start, exclPos).toLowerCase();
-      const termStart = afterE + spAfter;
+      const termStart = afterExcl + spAfter;
       if (termStart >= end) {
         const origin = resolveBangOrigin(bang, custom);
         if (origin) {
@@ -405,7 +407,7 @@ function resolveRaw(
   }
 
   // "g!"
-  if (afterE >= end || (lastChar === CH_EXCL && afterE === end)) {
+  if (afterExcl >= end || (lastChar === CH_EXCL && afterExcl === end)) {
     const [hasSpace] = findSpace(rawQuery, start, end);
     if (hasSpace === -1) {
       const bang = rawQuery.substring(start, exclPos).toLowerCase();
@@ -418,13 +420,11 @@ function resolveRaw(
   }
 
   // "cats+!g"
-  const [spExclPos, spExclLen, seWidth] = findLastSpaceExcl(
-    rawQuery,
-    start,
-    end
-  );
-  if (spExclPos !== -1) {
-    const bangStart = spExclPos + spExclLen + seWidth;
+  const [spaceBeforeBangPos, spaceBeforeBangWidth, suffixExclWidth] =
+    findLastSpaceExcl(rawQuery, start, end);
+  if (spaceBeforeBangPos !== -1) {
+    const bangStart =
+      spaceBeforeBangPos + spaceBeforeBangWidth + suffixExclWidth;
     if (bangStart < end) {
       const bangStr = rawQuery.substring(bangStart, end);
       if (bangStr.indexOf("+") === -1 && !bangStr.includes("%20")) {
@@ -434,7 +434,7 @@ function resolveRaw(
           custom,
           rawQuery,
           start,
-          spExclPos
+          spaceBeforeBangPos
         );
         if (filled !== null) {
           return [filled, bang];
@@ -447,7 +447,7 @@ function resolveRaw(
   // "cats+g!"
   if (
     lastChar === CH_EXCL ||
-    (end >= 3 && isEncodedExclAt(rawQuery, end - eWidth))
+    (end >= 3 && isEncodedExclAt(rawQuery, end - exclCharWidth))
   ) {
     const bangExclEnd = lastChar === CH_EXCL ? end - 1 : end - 3;
     const [lastSpPos, lastSpLen] = findLastSpace(
@@ -456,9 +456,11 @@ function resolveRaw(
       bangExclEnd - 1
     );
     if (lastSpPos !== -1) {
-      const bangStart2 = lastSpPos + lastSpLen;
-      if (bangStart2 < bangExclEnd) {
-        const bang = rawQuery.substring(bangStart2, bangExclEnd).toLowerCase();
+      const suffixBangStart = lastSpPos + lastSpLen;
+      if (suffixBangStart < bangExclEnd) {
+        const bang = rawQuery
+          .substring(suffixBangStart, bangExclEnd)
+          .toLowerCase();
         const filled = resolveBangFill(
           bang,
           custom,
