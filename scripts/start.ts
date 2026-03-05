@@ -1,3 +1,4 @@
+import { normalize } from "node:path";
 import {
   handleOpenSearchRequest,
   handleSuggestRequest,
@@ -82,14 +83,24 @@ Bun.serve({
     }
 
     const path = pathname === "/" ? "/index.html" : pathname;
-    const fromDist = await serveCompressed(req, `dist${path}`);
+    const normalized = normalize(`dist${path}`);
+    if (!normalized.startsWith("dist/")) {
+      return new Response("Not found", {
+        status: 404,
+        headers: SECURITY_HEADERS,
+      });
+    }
+    const fromDist = await serveCompressed(req, normalized);
     if (fromDist) {
       return fromDist;
     }
 
-    const fromHtml = await serveCompressed(req, `dist${path}.html`);
-    if (fromHtml) {
-      return fromHtml;
+    const htmlNormalized = normalize(`dist${path}.html`);
+    if (htmlNormalized.startsWith("dist/")) {
+      const fromHtml = await serveCompressed(req, htmlNormalized);
+      if (fromHtml) {
+        return fromHtml;
+      }
     }
 
     return (await serveCompressed(req, "dist/index.html"))!;

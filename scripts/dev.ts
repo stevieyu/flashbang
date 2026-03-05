@@ -1,5 +1,6 @@
 import { watch } from "node:fs";
 import { mkdir } from "node:fs/promises";
+import { normalize } from "node:path";
 import { minify } from "@minify-html/node";
 import { $ } from "bun";
 import {
@@ -233,16 +234,26 @@ Bun.serve({
     }
 
     const path = pathname === "/" ? "/index.html" : pathname;
-    const file = Bun.file(`dist${path}`);
+    const normalized = normalize(`dist${path}`);
+    if (!normalized.startsWith("dist/")) {
+      return new Response("Not found", {
+        status: 404,
+        headers: SECURITY_HEADERS,
+      });
+    }
+    const file = Bun.file(normalized);
     if (await file.exists()) {
       if (path.endsWith(".html")) {
         return htmlResponse(await file.text());
       }
       return new Response(file, { headers: SECURITY_HEADERS });
     }
-    const htmlFile = Bun.file(`dist${path}.html`);
-    if (await htmlFile.exists()) {
-      return htmlResponse(await htmlFile.text());
+    const htmlNormalized = normalize(`dist${path}.html`);
+    if (htmlNormalized.startsWith("dist/")) {
+      const htmlFile = Bun.file(htmlNormalized);
+      if (await htmlFile.exists()) {
+        return htmlResponse(await htmlFile.text());
+      }
     }
     return htmlResponse(await Bun.file("dist/index.html").text());
   },
