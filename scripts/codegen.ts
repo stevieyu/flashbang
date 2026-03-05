@@ -159,6 +159,10 @@ function jsEscape(s: string): string {
   return out;
 }
 
+// NOTE: We build the object as a JS literal, not JSON.parse('...').
+// Despite V8's 2019 blog post (https://v8.dev/blog/cost-of-javascript-2019#json)
+// claiming JSON.parse is faster, engines have changed significantly since then
+// and our benchmarks show a plain object literal is faster on V8 and JSC.
 function jsonEscape(s: string): string {
   let out = "";
   for (const c of s) {
@@ -180,14 +184,6 @@ function jsonEscape(s: string): string {
     }
   }
   return out;
-}
-
-// NOTE: JSON.parse could be up to ~2x faster than a JS object literal for large objects
-// because V8 uses a dedicated C++ fast path that skips the full parser/compiler.
-// See https://v8.dev/blog/cost-of-javascript-2019#json
-function wrapJsonParse(json: string): string {
-  const escaped = json.replaceAll("\\", "\\\\").replaceAll("'", "\\'");
-  return `JSON.parse('${escaped}')`;
 }
 
 function splitTemplate(url: string): [string, string | null] {
@@ -215,7 +211,7 @@ function generateMin(bangs: Bang[]): string {
 
   // NOTE: A null prototype eliminates the prototype chain walk on lookups,
   // so BANGS[trigger] resolves in a single step.
-  return `export const BANGS=${wrapJsonParse(json)};Object.setPrototypeOf(BANGS,null);`;
+  return `export const BANGS=${json};Object.setPrototypeOf(BANGS,null);`;
 }
 
 function generateFull(bangs: Bang[]): string {
@@ -231,7 +227,7 @@ function generateFull(bangs: Bang[]): string {
   json += "}";
   // NOTE: A null prototype eliminates the prototype chain walk on lookups,
   // so BANGS[trigger] resolves in a single step.
-  return `export const BANGS=${wrapJsonParse(json)};Object.setPrototypeOf(BANGS,null);`;
+  return `export const BANGS=${json};Object.setPrototypeOf(BANGS,null);`;
 }
 
 import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
