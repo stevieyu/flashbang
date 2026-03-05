@@ -136,7 +136,6 @@ function validate(bangs: Bang[]): Bang[] {
   });
 }
 
-
 function splitTemplate(url: string): [string, string | null] {
   const idx = url.indexOf("{}");
   if (idx === -1) {
@@ -169,9 +168,15 @@ function generateMin(bangs: Bang[]): string {
 }
 
 function generateFull(bangs: Bang[]): string {
-  const obj: Record<string, { s: string; d: string; u: string; r: number }> = {};
+  const obj: Record<string, { s: string; d: string; u: string; r: number }> =
+    {};
   for (const bang of bangs) {
-    obj[bang.trigger] = { s: bang.name, d: bang.domain, u: bang.url, r: bang.relevance };
+    obj[bang.trigger] = {
+      s: bang.name,
+      d: bang.domain,
+      u: bang.url,
+      r: bang.relevance,
+    };
   }
   const json = JSON.stringify(obj);
   // NOTE: Null prototype as mentioned above improves miss performance why not

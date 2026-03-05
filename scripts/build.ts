@@ -147,7 +147,8 @@ const pageCsp = [
 ].join("; ");
 // SW needs unsafe-eval for Function() (engine-detected fast parse in bangs-min.js).
 // /sw.js MUST come after /* so it overrides — CF Pages _headers last match wins.
-const swCsp = "default-src 'self'; script-src 'self' 'unsafe-eval'; connect-src 'self'";
+const swCsp =
+  "default-src 'self'; script-src 'self' 'unsafe-eval'; connect-src 'self'";
 await Bun.write(
   "dist/_headers",
   `/*\n  Content-Security-Policy: ${pageCsp}\n  X-Content-Type-Options: nosniff\n  X-Frame-Options: DENY\n  Referrer-Policy: strict-origin-when-cross-origin\n\n/sw.js\n  Content-Security-Policy: ${swCsp}\n\n/opensearch.xml\n  Content-Type: application/opensearchdescription+xml\n`
