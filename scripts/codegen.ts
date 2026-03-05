@@ -214,7 +214,9 @@ function generateMin(bangs: Bang[]): string {
   json += "}";
 
   return (
-    `const _d='${jsEscape(json)}';` +
+    // NOTE: 'let' prevents the bundler from inlining _d into both ternary
+    // branches, which would duplicate the ~900KB string and double output size.
+    `let _d='${jsEscape(json)}';` +
     // NOTE: InternalError is SpiderMonkey-only; everything else gets Function().
     `export const BANGS=typeof InternalError!=='undefined'` +
     // NOTE: SpiderMonkey JSON.parse (Function() is 3.5x slower there)
