@@ -1,5 +1,6 @@
+import { DB_VERSION } from "./constants";
+
 const DB_NAME = "flashbang";
-const DB_VERSION = 1;
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -7,12 +8,11 @@ export function openDB(): Promise<IDBDatabase> {
   if (!dbPromise) {
     dbPromise = new Promise((ok, err) => {
       const r = indexedDB.open(DB_NAME, DB_VERSION);
-      r.onupgradeneeded = () => {
+      r.onupgradeneeded = (event) => {
         const db = r.result;
-        if (!db.objectStoreNames.contains("settings")) {
+        const oldVersion = event.oldVersion;
+        if (oldVersion < 1) {
           db.createObjectStore("settings", { keyPath: "key" });
-        }
-        if (!db.objectStoreNames.contains("custom-bangs")) {
           db.createObjectStore("custom-bangs", { keyPath: "trigger" });
         }
       };
