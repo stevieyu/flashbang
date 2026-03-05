@@ -136,29 +136,6 @@ function validate(bangs: Bang[]): Bang[] {
   });
 }
 
-function jsEscape(s: string): string {
-  let out = "";
-  for (const c of s) {
-    switch (c) {
-      case "\\":
-        out += "\\\\";
-        break;
-      case "'":
-        out += "\\'";
-        break;
-      case "\n":
-        out += "\\n";
-        break;
-      case "\r":
-        out += "\\r";
-        break;
-      default:
-        out += c;
-    }
-  }
-  return out;
-}
-
 
 function splitTemplate(url: string): [string, string | null] {
   const idx = url.indexOf("{}");
@@ -176,10 +153,8 @@ function generateMin(bangs: Bang[]): string {
   }
   const json = JSON.stringify(obj);
 
-  const escaped = jsEscape(json);
-
   return (
-    `const _d='${escaped}';` +
+    `const _d=${JSON.stringify(json)};` +
     // NOTE: InternalError is SpiderMonkey-only; everything else gets Function().
     `export const BANGS=typeof InternalError!=='undefined'` +
     // NOTE: SpiderMonkey JSON.parse (Function() is 3.5x slower there)
@@ -219,7 +194,7 @@ function serializeNode(node: TrieNode): string {
     if (i > 0) {
       childrenStr += ",";
     }
-    childrenStr += `['${jsEscape(sorted[i][0])}',${serializeNode(sorted[i][1])}]`;
+    childrenStr += `[${JSON.stringify(sorted[i][0])},${serializeNode(sorted[i][1])}]`;
   }
   childrenStr += "]";
   parts.push(`c:${childrenStr}`);
@@ -229,7 +204,7 @@ function serializeNode(node: TrieNode): string {
   if (node.terminal) {
     const t = node.terminal;
     parts.push(
-      `t:{k:'${jsEscape(t.trigger)}',s:'${jsEscape(t.name)}',d:'${jsEscape(t.domain)}',u:'${jsEscape(t.url)}',r:${t.relevance}}`
+      `t:{k:${JSON.stringify(t.trigger)},s:${JSON.stringify(t.name)},d:${JSON.stringify(t.domain)},u:${JSON.stringify(t.url)},r:${t.relevance}}`
     );
   } else {
     parts.push("t:null");
