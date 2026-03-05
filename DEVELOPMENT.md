@@ -42,7 +42,8 @@ flashbang/
 │   ├── suggest-bang.ts        # Bang suggestion matching and scoring
 │   ├── opensearch.ts          # OpenSearch XML generation
 │   ├── server/
-│   │   └── handlers.ts       # Production server request handlers
+│   │   ├── handlers.ts       # Production server request handlers
+│   │   └── headers.ts        # CSP and security headers (shared across all targets)
 │   ├── shared/
 │   │   ├── chars.ts           # Character classification helpers
 │   │   ├── constants.ts       # Shared constants
@@ -112,6 +113,17 @@ Tests live alongside the source files they cover:
 The `--from-merged` flag skips steps 1–2 and generates directly from the committed `data/bangs.json`. This is what CI builds use — no network fetch needed.
 
 The bang data is split into two tiers so the Service Worker loads only what it needs for fast redirects, while the UI gets the full metadata for searching and display.
+
+## Content Security Policy
+
+CSP headers are defined in `src/server/headers.ts` — the single source of truth for all deployment targets. The page CSP and SW CSP differ:
+
+- **Page CSP** — No `unsafe-eval`. The `script-src` value varies by target: `build.ts` uses inline script hashes, while `dev.ts`/`start.ts` use `'unsafe-inline'`
+- **SW CSP** — Includes `unsafe-eval` because `bangs-min.js` uses `Function()` for engine-detected fast parsing (V8/JSC). This is a deliberate performance tradeoff
+
+On **Cloudflare Pages**, CSP is set per-path in `_headers` (not `/*`) to avoid CF Pages' additive header merging — `/*` would combine with `/sw.js`, and the browser enforces the intersection. Instead, CSP is set individually on `/`, `/index.html`, `/home.html`, `/bench.html`, and `/sw.js`.
+
+On **self-hosted** (Docker/Railway via `start.ts`), the Bun server sets headers per-request, serving `SW_HEADERS` for `/sw.js` and page headers for everything else.
 
 ## Build pipeline
 

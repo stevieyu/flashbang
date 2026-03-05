@@ -3,15 +3,10 @@ import {
   handleOpenSearchRequest,
   handleSuggestRequest,
 } from "../src/server/handlers";
+import { pageHeaders, SW_HEADERS } from "../src/server/headers";
 import { readPathname } from "../src/shared/raw-url";
 
-const SECURITY_HEADERS: Record<string, string> = {
-  "Content-Security-Policy":
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
-  "X-Content-Type-Options": "nosniff",
-  "X-Frame-Options": "DENY",
-  "Referrer-Policy": "strict-origin-when-cross-origin",
-};
+const SECURITY_HEADERS = pageHeaders("'unsafe-inline'");
 
 const distIndex = Bun.file("dist/index.html");
 if (!(await distIndex.exists())) {
@@ -73,6 +68,11 @@ Bun.serve({
         res.headers.set(k, v);
       }
       return res;
+    }
+
+    if (pathname === "/sw.js") {
+      const file = Bun.file("dist/sw.js");
+      return new Response(file, { headers: SW_HEADERS });
     }
 
     if (pathname === "/bench") {

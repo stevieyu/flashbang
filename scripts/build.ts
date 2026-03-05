@@ -132,30 +132,16 @@ const scriptHashes = [
   ...extractScriptHashes(distHome),
   ...extractScriptHashes(distBench),
 ];
-const pageCsp = [
-  "default-src 'self'",
-  `script-src 'self' ${scriptHashes.join(" ")}`,
-  "style-src 'self' 'unsafe-inline'",
-  "connect-src 'self'",
-  "img-src 'self' data:",
-  "font-src 'self'",
-  "worker-src 'self'",
-  "manifest-src 'self'",
-  "frame-ancestors 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-].join("; ");
-// SW needs unsafe-eval for Function() (engine-detected fast parse in bangs-min.js).
+const { pageHeaders, SW_CSP } = await import("../src/server/headers");
+const { "Content-Security-Policy": pageCsp, ...baseHeaders } = pageHeaders(
+  scriptHashes.join(" ")
+);
 // CSP is set per-path (not /*) to avoid CF Pages additive header merging.
-const swCsp =
-  "default-src 'self'; script-src 'self' 'unsafe-eval'; connect-src 'self'";
-const securityHeaders = [
-  "X-Content-Type-Options: nosniff",
-  "X-Frame-Options: DENY",
-  "Referrer-Policy: strict-origin-when-cross-origin",
-].join("\n  ");
+const securityHeaders = Object.entries(baseHeaders)
+  .map(([k, v]) => `${k}: ${v}`)
+  .join("\n  ");
 const pageCspHeader = `Content-Security-Policy: ${pageCsp}`;
-const swCspHeader = `Content-Security-Policy: ${swCsp}`;
+const swCspHeader = `Content-Security-Policy: ${SW_CSP}`;
 await Bun.write(
   "dist/_headers",
   [
