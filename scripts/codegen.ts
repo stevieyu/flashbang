@@ -136,6 +136,60 @@ function validate(bangs: Bang[]): Bang[] {
   });
 }
 
+// NOTE: Custom escape functions produce smaller output than JSON.stringify,
+// which emits \uXXXX for characters that don't need escaping in practice.
+// Using single-quoted JS strings in generateMin also avoids the double-escape
+// problem where JSON.stringify(jsonString) escapes every " to \", nearly
+// doubling the output size.
+
+/** Escape for embedding in a single-quoted JS string literal. */
+function jsEscape(s: string): string {
+  let out = "";
+  for (const c of s) {
+    switch (c) {
+      case "\\":
+        out += "\\\\";
+        break;
+      case "'":
+        out += "\\'";
+        break;
+      case "\n":
+        out += "\\n";
+        break;
+      case "\r":
+        out += "\\r";
+        break;
+      default:
+        out += c;
+    }
+  }
+  return out;
+}
+
+/** Escape for embedding in a double-quoted JSON string. */
+function jsonEscape(s: string): string {
+  let out = "";
+  for (const c of s) {
+    switch (c) {
+      case '"':
+        out += '\\"';
+        break;
+      case "\\":
+        out += "\\\\";
+        break;
+      case "\n":
+        out += "\\n";
+        break;
+      case "\r":
+        out += "\\r";
+        break;
+      default:
+        out += c;
+    }
+  }
+  return out;
+}
+
 function splitTemplate(url: string): [string, string | null] {
   const idx = url.indexOf("{}");
   if (idx === -1) {
@@ -145,15 +199,22 @@ function splitTemplate(url: string): [string, string | null] {
 }
 
 function generateMin(bangs: Bang[]): string {
-  const obj: Record<string, [string, string | null]> = {};
-  for (const bang of bangs) {
-    const [prefix, suffix] = splitTemplate(bang.url);
-    obj[bang.trigger] = [prefix, suffix];
+  let json = "{";
+  for (let i = 0; i < bangs.length; i++) {
+    if (i > 0) {
+      json += ",";
+    }
+    const [prefix, suffix] = splitTemplate(bangs[i].url);
+    const val =
+      suffix === null
+        ? `["${jsonEscape(prefix)}",null]`
+        : `["${jsonEscape(prefix)}","${jsonEscape(suffix)}"]`;
+    json += `"${jsonEscape(bangs[i].trigger)}":${val}`;
   }
-  const json = JSON.stringify(obj);
+  json += "}";
 
   return (
-    `const _d=${JSON.stringify(json)};` +
+    `const _d='${jsEscape(json)}';` +
     // NOTE: InternalError is SpiderMonkey-only; everything else gets Function().
     `export const BANGS=typeof InternalError!=='undefined'` +
     // NOTE: SpiderMonkey JSON.parse (Function() is 3.5x slower there)
@@ -168,17 +229,15 @@ function generateMin(bangs: Bang[]): string {
 }
 
 function generateFull(bangs: Bang[]): string {
-  const obj: Record<string, { s: string; d: string; u: string; r: number }> =
-    {};
-  for (const bang of bangs) {
-    obj[bang.trigger] = {
-      s: bang.name,
-      d: bang.domain,
-      u: bang.url,
-      r: bang.relevance,
-    };
+  let json = "{";
+  for (let i = 0; i < bangs.length; i++) {
+    if (i > 0) {
+      json += ",";
+    }
+    const b = bangs[i];
+    json += `"${jsonEscape(b.trigger)}":{"s":"${jsonEscape(b.name)}","d":"${jsonEscape(b.domain)}","u":"${jsonEscape(b.url)}","r":${b.relevance}}`;
   }
-  const json = JSON.stringify(obj);
+  json += "}";
   // NOTE: Null prototype as mentioned above improves miss performance why not
   // add it for full bangs
   return `export const BANGS=${json};Object.setPrototypeOf(BANGS,null);`;
@@ -199,7 +258,7 @@ function serializeNode(node: TrieNode): string {
     if (i > 0) {
       childrenStr += ",";
     }
-    childrenStr += `[${JSON.stringify(sorted[i][0])},${serializeNode(sorted[i][1])}]`;
+    childrenStr += `['${jsEscape(sorted[i][0])}',${serializeNode(sorted[i][1])}]`;
   }
   childrenStr += "]";
   parts.push(`c:${childrenStr}`);
@@ -209,7 +268,7 @@ function serializeNode(node: TrieNode): string {
   if (node.terminal) {
     const t = node.terminal;
     parts.push(
-      `t:{k:${JSON.stringify(t.trigger)},s:${JSON.stringify(t.name)},d:${JSON.stringify(t.domain)},u:${JSON.stringify(t.url)},r:${t.relevance}}`
+      `t:{k:'${jsEscape(t.trigger)}',s:'${jsEscape(t.name)}',d:'${jsEscape(t.domain)}',u:'${jsEscape(t.url)}',r:${t.relevance}}`
     );
   } else {
     parts.push("t:null");
