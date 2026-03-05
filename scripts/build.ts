@@ -146,12 +146,41 @@ const pageCsp = [
   "form-action 'self'",
 ].join("; ");
 // SW needs unsafe-eval for Function() (engine-detected fast parse in bangs-min.js).
-// /sw.js MUST come after /* so it overrides — CF Pages _headers last match wins.
+// CSP is set per-path (not /*) to avoid CF Pages additive header merging.
 const swCsp =
   "default-src 'self'; script-src 'self' 'unsafe-eval'; connect-src 'self'";
+const securityHeaders = [
+  "X-Content-Type-Options: nosniff",
+  "X-Frame-Options: DENY",
+  "Referrer-Policy: strict-origin-when-cross-origin",
+].join("\n  ");
+const pageCspHeader = `Content-Security-Policy: ${pageCsp}`;
+const swCspHeader = `Content-Security-Policy: ${swCsp}`;
 await Bun.write(
   "dist/_headers",
-  `/*\n  Content-Security-Policy: ${pageCsp}\n  X-Content-Type-Options: nosniff\n  X-Frame-Options: DENY\n  Referrer-Policy: strict-origin-when-cross-origin\n\n/sw.js\n  Content-Security-Policy: ${swCsp}\n\n/opensearch.xml\n  Content-Type: application/opensearchdescription+xml\n`
+  [
+    "/*",
+    `  ${securityHeaders}`,
+    "",
+    "/",
+    `  ${pageCspHeader}`,
+    "",
+    "/index.html",
+    `  ${pageCspHeader}`,
+    "",
+    "/home.html",
+    `  ${pageCspHeader}`,
+    "",
+    "/bench.html",
+    `  ${pageCspHeader}`,
+    "",
+    "/sw.js",
+    `  ${swCspHeader}`,
+    "",
+    "/opensearch.xml",
+    "  Content-Type: application/opensearchdescription+xml",
+    "",
+  ].join("\n")
 );
 
 console.log("=== Pre-compress static assets ===");
