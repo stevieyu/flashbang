@@ -145,9 +145,11 @@ const csp = [
   "base-uri 'self'",
   "form-action 'self'",
 ].join("; ");
+const swCsp =
+  "default-src 'none'; script-src 'self' 'unsafe-eval'; connect-src *";
 await Bun.write(
   "dist/_headers",
-  `/*\n  Content-Security-Policy: ${csp}\n  X-Content-Type-Options: nosniff\n  X-Frame-Options: DENY\n  Referrer-Policy: strict-origin-when-cross-origin\n\n/opensearch.xml\n  Content-Type: application/opensearchdescription+xml\n`
+  `/sw.js\n  Content-Security-Policy: ${swCsp}\n\n/*\n  Content-Security-Policy: ${csp}\n  X-Content-Type-Options: nosniff\n  X-Frame-Options: DENY\n  Referrer-Policy: strict-origin-when-cross-origin\n\n/opensearch.xml\n  Content-Type: application/opensearchdescription+xml\n`
 );
 
 console.log("=== Pre-compress static assets ===");

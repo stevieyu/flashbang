@@ -159,10 +159,10 @@ function jsEscape(s: string): string {
   return out;
 }
 
-// NOTE: We build the object as a JS literal, not JSON.parse('...').
-// Despite V8's 2019 blog post (https://v8.dev/blog/cost-of-javascript-2019#json)
-// claiming JSON.parse is faster, engines have changed significantly since then
-// and our benchmarks show a plain object literal is faster on V8 and JSC.
+// NOTE: jsonEscape is used by generateFull() which emits a plain object literal
+// (loaded in the page UI where strict CSP must remain). generateMin() uses
+// jsEscape + engine detection instead (V8 → Function(), SpiderMonkey → JSON.parse,
+// JSC → JSON.parse). See generateMin() for the engine-detection strategy.
 function jsonEscape(s: string): string {
   let out = "";
   for (const c of s) {
@@ -209,9 +209,23 @@ function generateMin(bangs: Bang[]): string {
   }
   json += "}";
 
-  // NOTE: A null prototype eliminates the prototype chain walk on lookups,
-  // so BANGS[trigger] resolves in a single step.
-  return `export const BANGS=${json};Object.setPrototypeOf(BANGS,null);`;
+  const escaped = jsEscape(json);
+
+  return (
+    `const _d='${escaped}';` +
+    // NOTE: - SpiderMonkey (InternalError exists) → JSON.parse (same speed, no eval needed)
+    `export const BANGS=typeof InternalError!=='undefined'` +
+    "?JSON.parse(_d)" +
+    // NOTE: - V8 (Error.captureStackTrace exists) → Function() constructor
+    `:typeof Error.captureStackTrace==='function'` +
+    // NOTE: Function() requires 'unsafe-eval' CSP, which is only on /sw.js (no DOM).
+    `?(0,Function)('return '+_d)()` +
+    // NOTE: JSC (fallback) → JSON.parse (faster than Function() on JSC)
+    ":JSON.parse(_d);" +
+    // NOTE: Null prototype: profiled miss improvement is -40% on V8, -15% on SM, -6% on JSC.
+    // Hit cost is tiny (+3-5%) and benefit outweights the cons
+    "Object.setPrototypeOf(BANGS,null);"
+  );
 }
 
 function generateFull(bangs: Bang[]): string {
@@ -225,8 +239,8 @@ function generateFull(bangs: Bang[]): string {
     json += `"${jsonEscape(b.trigger)}":${val}`;
   }
   json += "}";
-  // NOTE: A null prototype eliminates the prototype chain walk on lookups,
-  // so BANGS[trigger] resolves in a single step.
+  // NOTE: Null prototype as mentioned above improves miss performance why not
+  // add it for full bangs
   return `export const BANGS=${json};Object.setPrototypeOf(BANGS,null);`;
 }
 
