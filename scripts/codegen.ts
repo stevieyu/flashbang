@@ -213,17 +213,14 @@ function generateMin(bangs: Bang[]): string {
 
   return (
     `const _d='${escaped}';` +
-    // NOTE: - SpiderMonkey (InternalError exists) → JSON.parse (same speed, no eval needed)
+    // NOTE: InternalError is SpiderMonkey-only; everything else gets Function().
     `export const BANGS=typeof InternalError!=='undefined'` +
+    // NOTE: SpiderMonkey JSON.parse (Function() is 3.5x slower there)
     "?JSON.parse(_d)" +
-    // NOTE: - V8 (Error.captureStackTrace exists) → Function() constructor
-    `:typeof Error.captureStackTrace==='function'` +
-    // NOTE: Function() requires 'unsafe-eval' CSP, which is only on /sw.js (no DOM).
-    `?(0,Function)('return '+_d)()` +
-    // NOTE: JSC (fallback) → JSON.parse (faster than Function() on JSC)
-    ":JSON.parse(_d);" +
-    // NOTE: Null prototype: profiled miss improvement is -40% on V8, -15% on SM, -6% on JSC.
-    // Hit cost is tiny (+3-5%) and benefit outweights the cons
+    // NOTE: V8/JSC → Function() (~4x faster on V8, ~2x faster on JSC)
+    `:(0,Function)('return '+_d)();` +
+    // NOTE: Null prototype: -40% miss improvement on V8, -15% SM, -6% JSC
+    // Hit cost is tiny (+3-5%) and benefit outweighs the cons.
     "Object.setPrototypeOf(BANGS,null);"
   );
 }
