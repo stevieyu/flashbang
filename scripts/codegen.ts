@@ -312,7 +312,7 @@ if (fromMerged) {
   console.log(`Kagi: ${kagiBangs.length} bangs parsed`);
   allSources.push(["kagi", kagiBangs]);
 
-  const customData = await Bun.file("config/custom.json").json();
+  const customData = await Bun.file("data/custom-bangs.json").json();
   const customBangs = parseCustom(customData);
   console.log(`Custom: ${customBangs.length} bangs parsed`);
   allSources.push(["custom", customBangs]);

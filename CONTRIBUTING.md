@@ -15,7 +15,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for setup instructions and available comman
 
 ## Adding bangs
 
-Custom bangs live in [`config/custom.json`](config/custom.json). Each entry looks like:
+Custom bangs live in [`data/custom-bangs.json`](data/custom-bangs.json). Each entry looks like:
 
 ```json
 "mdn": {

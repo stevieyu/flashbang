@@ -26,8 +26,6 @@ flashbang/
 ├── functions/
 │   ├── suggest.ts            # Cloudflare Pages Function for /suggest
 │   └── opensearch.xml.ts     # Cloudflare Pages Function for /opensearch.xml
-├── config/
-│   └── custom.json           # Custom bang definitions
 ├── scripts/
 │   ├── codegen.ts            # Fetch sources, parse, merge, generate bang maps
 │   ├── build.ts              # Bundle + minify pipeline
@@ -36,6 +34,7 @@ flashbang/
 │   └── start.ts              # Production server (serves pre-built dist/)
 ├── data/
 │   ├── bangs.json            # Merged bang data (committed, updated by CI daily)
+│   ├── custom-bangs.json     # Custom bang definitions
 │   ├── ddg.json              # DuckDuckGo source (gitignored, fetched by codegen)
 │   └── kagi.json             # Kagi source (gitignored, fetched by codegen)
 ├── src/
@@ -55,7 +54,8 @@ flashbang/
 │   ├── generated/             # Output of codegen (gitignored, generated from data/bangs.json)
 │   │   ├── bangs-min.js       # trigger→URL map for Service Worker
 │   │   ├── bangs-full.js      # trigger→{name, domain, url, relevance} for UI & suggestions
-│   │   └── bangs-trie.js      # radix trie for prefix-matched bang suggestions
+│   │   ├── bangs-trie.js      # radix trie for prefix-matched bang suggestions
+│   │   └── *.d.ts             # TypeScript declarations for each generated .js file
 │   ├── sw/
 │   │   ├── sw.ts              # Service Worker lifecycle & fetch handler
 │   │   ├── redirect.ts        # Bang parsing & redirect logic (zero-copy raw + decoded paths)

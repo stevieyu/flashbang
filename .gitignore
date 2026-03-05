@@ -1,6 +1,7 @@
 dist/
 data/*
 !data/bangs.json
+!data/custom-bangs.json
 node_modules/
 build/target/
 src/generated/
