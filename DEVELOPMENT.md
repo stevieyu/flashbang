@@ -168,6 +168,8 @@ The Dockerfile uses a multi-stage build to produce a minimal runtime image:
 1. **Build stage** — Installs dependencies, runs `codegen --from-merged` to generate bang maps from `data/bangs.json`, then runs `build` to bundle and pre-compress all assets
 2. **Runtime stage** — Copies only the built `dist/`, the production server script, and the modules it imports (suggestions, OpenSearch, bang data). No source code or dev dependencies in the final image
 
+The production server exposes `GET /health`, and the runtime image defines a Docker `HEALTHCHECK` against that endpoint.
+
 ```sh
 docker build -t flashbang .
 docker run -p 3000:3000 flashbang
@@ -197,3 +199,5 @@ A daily cron workflow (`.github/workflows/update-bangs.yaml`) fetches fresh bang
 The release workflow (`.github/workflows/release.yaml`) handles the rest:
 runs tests, builds the project, and creates a GitHub Release. Release notes
 are maintained on GitHub Releases directly.
+
+Before pushing the multi-arch image to GHCR, the release workflow builds a local image, runs it, and requires Docker's built-in container health status to become `healthy`.

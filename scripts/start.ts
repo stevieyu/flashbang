@@ -54,6 +54,10 @@ Bun.serve({
   async fetch(req) {
     const pathname = readPathname(req.url);
 
+    if (pathname === "/health") {
+      return new Response("ok");
+    }
+
     if (pathname === "/suggest") {
       const res = await handleSuggestRequest(req);
       for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
