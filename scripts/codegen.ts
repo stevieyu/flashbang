@@ -410,8 +410,6 @@ function buildMinifiedTrieRuntimeHelpers(): string {
     loader: "ts",
     target: "browser",
     minifyWhitespace: true,
-    minifySyntax: true,
-    minifyIdentifiers: false,
   });
   const minified = transpiler.transformSync(TRIE_RUNTIME_HELPERS_SOURCE).trim();
   if (!minified.includes("function _b64i32(")) {
