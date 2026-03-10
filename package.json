@@ -14,6 +14,7 @@
     "check": "biome check",
     "typecheck": "tsc --noEmit --skipLibCheck",
     "fix": "biome check --write",
+    "profile": "bun scripts/profile.ts",
     "clean": "bun -e \"import{rmSync}from'fs';rmSync('dist',{recursive:true,force:true})\"",
     "test": "bun test"
   },

@@ -15,6 +15,7 @@ bun run build      # bundle, minify + pre-compress with Brotli
 bun run dev        # bundle + dev server with file watching & live reload (auto-runs codegen if needed)
 bun run start      # serve pre-built dist/ (run `bun run build` first)
 bun run typecheck  # type-check with tsc (no emit)
+bun run profile    # run performance profile benchmarks
 bun test           # run tests
 bun run clean      # remove dist/
 ```
