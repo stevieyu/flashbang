@@ -283,10 +283,8 @@ interface PackedI32Data {
   offsets: number[];
 }
 
-const TRIE_RUNTIME_HELPERS_ENTRY = "virtual:trie-runtime-helpers.ts";
-const TRIE_RUNTIME_HELPERS_NAMESPACE = "trie-runtime-helpers";
 const TRIE_RUNTIME_HELPERS_SOURCE = `
-export function _b64bytes(s: string): Uint8Array {
+function _b64bytes(s: string): Uint8Array {
   if (typeof atob === "function") {
     const bin = atob(s);
     const len = bin.length;
@@ -303,7 +301,7 @@ export function _b64bytes(s: string): Uint8Array {
   throw new Error("No base64 decoder available");
 }
 
-export function _b64i32(s: string): Int32Array {
+function _b64i32(s: string): Int32Array {
   const b = _b64bytes(s);
   if ((b.byteOffset & 3) === 0) {
     return new Int32Array(b.buffer, b.byteOffset, b.byteLength >>> 2);
@@ -406,54 +404,20 @@ function packI32Sections(sections: number[][]): PackedI32Data {
   };
 }
 
-async function buildMinifiedTrieRuntimeHelpers(): Promise<string> {
-  const build = await Bun.build({
-    entrypoints: [TRIE_RUNTIME_HELPERS_ENTRY],
-    format: "esm",
-    minify: { whitespace: true, syntax: true, identifiers: false },
-    plugins: [
-      {
-        name: "virtual-trie-runtime-helpers",
-        setup(builder) {
-          builder.onResolve(
-            { filter: /^virtual:trie-runtime-helpers\.ts$/ },
-            () => ({
-              path: TRIE_RUNTIME_HELPERS_ENTRY,
-              namespace: TRIE_RUNTIME_HELPERS_NAMESPACE,
-            })
-          );
-          builder.onLoad(
-            {
-              filter: /^virtual:trie-runtime-helpers\.ts$/,
-              namespace: TRIE_RUNTIME_HELPERS_NAMESPACE,
-            },
-            () => ({
-              contents: TRIE_RUNTIME_HELPERS_SOURCE,
-              loader: "ts",
-            })
-          );
-        },
-      },
-    ],
+function buildMinifiedTrieRuntimeHelpers(): string {
+  // Keep this path in-memory for Docker/CI and Bun 1.2.x compatibility.
+  const transpiler = new Bun.Transpiler({
+    loader: "ts",
     target: "browser",
-    write: false,
-  } as Parameters<typeof Bun.build>[0]);
-
-  if (!build.success || build.outputs.length !== 1) {
-    const messages = build.logs.map((log) => log.message).join("; ");
-    throw new Error(
-      `Failed to build trie runtime helpers: ${
-        messages || "unexpected Bun.build output"
-      }`
-    );
+    minifyWhitespace: true,
+    minifySyntax: true,
+    minifyIdentifiers: false,
+  });
+  const minified = transpiler.transformSync(TRIE_RUNTIME_HELPERS_SOURCE).trim();
+  if (!minified.includes("function _b64i32(")) {
+    throw new Error("Failed to build trie runtime helpers");
   }
-
-  const minified = await build.outputs[0].text();
-  const withoutExport = minified.replace(/export\{[^}]+\};?\s*$/, "");
-  if (withoutExport === minified) {
-    throw new Error("Failed to strip export clause from trie runtime helpers");
-  }
-  return withoutExport;
+  return minified;
 }
 
 function generateTrie(data: FlatTrieData, trieRuntimeHelpers: string): string {
@@ -565,7 +529,7 @@ const trieRoot = buildRadixTrie(
   (b) => b.relevance
 );
 const trieData = flattenTrie(trieRoot);
-const trieRuntimeHelpers = await buildMinifiedTrieRuntimeHelpers();
+const trieRuntimeHelpers = buildMinifiedTrieRuntimeHelpers();
 const trieJs = generateTrie(trieData, trieRuntimeHelpers);
 await Bun.write(`${outDir}/bangs-trie.js`, trieJs);
 console.log(`  bangs-trie.js: ${trieJs.length} bytes`);
