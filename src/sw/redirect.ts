@@ -526,9 +526,14 @@ export function redirectRaw(
   return [redir(url), resolvedTrigger];
 }
 
+function encodeForRedirect(query: string): string {
+  return encodeURIComponent(query).replace(/%5C/g, "\\");
+}
+
+export function redirectUrl(query: string, settings: RedirectSettings): string {
+  return resolveRaw(encodeForRedirect(query), settings);
+}
+
 export function redirect(query: string, settings: RedirectSettings): Response {
-  return redirectRaw(
-    encodeURIComponent(query).replace(/%5C/g, "\\"),
-    settings
-  )[0];
+  return redir(redirectUrl(query, settings));
 }

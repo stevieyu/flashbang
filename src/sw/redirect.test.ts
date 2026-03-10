@@ -19,6 +19,7 @@ import {
   type RedirectSettings,
   redirect,
   redirectRaw as redirectRawTuple,
+  redirectUrl,
 } from "./redirect";
 
 function redirectRaw(rawQuery: string, settings: RedirectSettings): Response {
@@ -477,6 +478,34 @@ describe("redirectRaw ↔ redirect cross-validation", () => {
     test(`"${decoded}" ↔ "${raw}" produce identical Location`, () => {
       const s = settings();
       expect(loc(redirectRaw(raw, s))).toBe(loc(redirect(decoded, s)));
+    });
+  }
+});
+
+describe("redirectUrl ↔ redirect parity", () => {
+  const queries = [
+    "!g cats",
+    "!G CATS",
+    "!g",
+    "g! cats",
+    "g!",
+    "cats !g",
+    "cats g!",
+    "\\cats",
+    "! cats",
+    "cats !",
+    "cats",
+    "!g hello world",
+    "!g a/b/c",
+    "!",
+    "!gh",
+    "!zzz cats",
+  ];
+
+  for (const query of queries) {
+    test(`"${query}" returns same Location as redirect()`, () => {
+      const s = settings();
+      expect(redirectUrl(query, s)).toBe(loc(redirect(query, s)));
     });
   }
 });

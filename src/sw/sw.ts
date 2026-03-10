@@ -9,7 +9,7 @@ import {
   readRedirectSettings,
   trackBangUsage,
 } from "./idb";
-import { type RedirectSettings, redirect, redirectRaw } from "./redirect";
+import { type RedirectSettings, redirectRaw, redirectUrl } from "./redirect";
 
 declare const __CACHE_VERSION__: string;
 declare const __EXTRA_ASSETS__: string[];
@@ -55,9 +55,8 @@ self.addEventListener("message", (e: ExtendableMessageEvent) => {
   if (e.data?.type === "redirect" && e.data.query) {
     const q = e.data.query as string;
     const resolve = (s: RedirectSettings) => {
-      const resp = redirect(q, s);
       (e.source as Client)?.postMessage({
-        url: resp.headers.get("Location"),
+        url: redirectUrl(q, s),
       });
     };
     const cached = getCachedSettings();
