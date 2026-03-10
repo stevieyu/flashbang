@@ -51,6 +51,10 @@ function separator(title: string) {
   console.log("=".repeat(70));
 }
 
+function fmtBytesExact(b: number): string {
+  return `${fmtBytes(b)} (${b.toLocaleString()}B)`;
+}
+
 // ---------------------------------------------------------------------------
 // 1. FILE SIZES & DATA STATS
 // ---------------------------------------------------------------------------
@@ -58,21 +62,30 @@ function separator(title: string) {
 separator("1. DATA SIZE & STRUCTURE ANALYSIS");
 
 const keys = Object.keys(BANGS);
+const minPath = "src/generated/bangs-min.js";
+const metaPath = "src/generated/bangs-meta.js";
+const triePath = "src/generated/bangs-trie.js";
+
+const minBytes = Bun.file(minPath).size;
+const metaBytes = Bun.file(metaPath).size;
+const trieBytes = Bun.file(triePath).size;
+const totalGeneratedBytes = minBytes + metaBytes + trieBytes;
 
 console.log(`\nBang count: ${keys.length.toLocaleString()}`);
 console.log(
-  `bangs-min.js:  ${fmtBytes(866_773)}  (trigger→URL only, used by SW)`
+  `bangs-min.js:  ${fmtBytesExact(minBytes)}  (trigger→URL parts, used by SW)`
 );
 console.log(
-  `bangs-meta.js: ${fmtBytes(1_575_411)}  (trigger→{name,domain,url,r}, used by UI)`
+  `bangs-meta.js: ${fmtBytesExact(metaBytes)}  (trigger→{s,d}, used by UI)`
 );
 
-const trieFile = await Bun.file("src/generated/bangs-trie.js").text();
+const trieFile = await Bun.file(triePath).text();
 console.log(
-  `bangs-trie.js: ${fmtBytes(trieFile.length)}  (radix trie, used by suggest)`
+  `bangs-trie.js: ${fmtBytesExact(trieBytes)}  (radix trie, used by suggest)`
 );
+console.log(`Total generated: ${fmtBytesExact(totalGeneratedBytes)}`);
 console.log(
-  `Total generated: ${fmtBytes(866_773 + 1_575_411 + trieFile.length)}`
+  `Avg bytes per bang: ${Math.round(totalGeneratedBytes / keys.length).toLocaleString()}B`
 );
 
 // ---------------------------------------------------------------------------
@@ -143,21 +156,44 @@ for (let i = 0; i < 10_000; i++) {
 }
 
 const LOOKUP_ITERS = 1_000_000;
+const lookupBaselineTimes: number[] = [];
 const lookupTimes: number[] = [];
+const lookupHitCounts: number[] = [];
 
 for (let run = 0; run < 10; run++) {
-  const t0 = Bun.nanoseconds();
+  const offset = run % allSamples.length;
+
+  let t0 = Bun.nanoseconds();
+  let baselineLen = 0;
   for (let i = 0; i < LOOKUP_ITERS; i++) {
-    void BANGS[allSamples[i % allSamples.length]];
+    baselineLen += allSamples[(i + offset) % allSamples.length].length;
   }
+  lookupBaselineTimes.push((Bun.nanoseconds() - t0) / LOOKUP_ITERS);
+
+  t0 = Bun.nanoseconds();
+  let hitCount = 0;
+  for (let i = 0; i < LOOKUP_ITERS; i++) {
+    if (BANGS[allSamples[(i + offset + baselineLen) % allSamples.length]]) {
+      hitCount++;
+    }
+  }
+  lookupHitCounts.push(hitCount);
   const elapsed = Bun.nanoseconds() - t0;
   lookupTimes.push(elapsed / LOOKUP_ITERS);
 }
 
+const lookupRawMedian = median(lookupTimes);
+const lookupBaselineMedian = median(lookupBaselineTimes);
+const lookupNetMedian = Math.max(0, lookupRawMedian - lookupBaselineMedian);
+const lookupHitRatioPct = (median(lookupHitCounts) / LOOKUP_ITERS) * 100;
+
 console.log("\nObject property lookup (BANGS[key]):");
 console.log(`  ${LOOKUP_ITERS.toLocaleString()} iterations × 10 runs`);
-console.log(`  Median: ${fmt(median(lookupTimes))}/lookup`);
-console.log(`  p99:    ${fmt(p99(lookupTimes))}/lookup`);
+console.log(`  Median (raw):      ${fmt(lookupRawMedian)}/lookup`);
+console.log(`  p99 (raw):         ${fmt(p99(lookupTimes))}/lookup`);
+console.log(`  Loop baseline:     ${fmt(lookupBaselineMedian)}/iter`);
+console.log(`  Estimated lookup:  ${fmt(lookupNetMedian)}/lookup`);
+console.log(`  Sample hit ratio:  ${lookupHitRatioPct.toFixed(1)}%`);
 
 // ---------------------------------------------------------------------------
 // 4. TRIE-BASED SUGGESTION PERFORMANCE
@@ -328,6 +364,7 @@ const queries = [
 ];
 
 const REDIRECT_ITERS = 500_000;
+const redirectStats = new Map<string, { medianNs: number; p99Ns: number }>();
 
 for (let i = 0; i < 10_000; i++) {
   redirectRaw(queries[i % queries.length].raw, settings);
@@ -351,8 +388,19 @@ for (const q of queries) {
     const elapsed = Bun.nanoseconds() - t0;
     times.push(elapsed / REDIRECT_ITERS);
   }
+  const med = median(times);
+  const tail = p99(times);
+  redirectStats.set(q.label, { medianNs: med, p99Ns: tail });
   console.log(
-    `  ${q.label.padEnd(22)} ${fmt(median(times)).padStart(10)} ${fmt(p99(times)).padStart(10)}`
+    `  ${q.label.padEnd(22)} ${fmt(med).padStart(10)} ${fmt(tail).padStart(10)}`
+  );
+}
+
+const bangRedirect = redirectStats.get("Prefix bang");
+const nonBangRedirect = redirectStats.get("No bang (default)");
+if (!(bangRedirect && nonBangRedirect)) {
+  throw new Error(
+    "redirect profile samples missing expected labels: Prefix bang / No bang (default)"
   );
 }
 
@@ -507,8 +555,8 @@ console.log(`Warm plain-then-bang request: ${fmt(warmThenBangNs)}`);
 
 separator("9. MODULE PARSE/EVAL TIME");
 
-const minFile = await Bun.file("src/generated/bangs-min.js").text();
-const fullFile = await Bun.file("src/generated/bangs-meta.js").text();
+const minFile = await Bun.file(minPath).text();
+const fullFile = await Bun.file(metaPath).text();
 
 const EVAL_RUNS = 20;
 
@@ -527,7 +575,7 @@ for (let i = 0; i < EVAL_RUNS; i++) {
   evalMinTimes.push(elapsed);
 }
 
-console.log(`\nbangs-min.js eval time (${fmtBytes(minFile.length)}):`);
+console.log(`\nbangs-min.js eval time (${fmtBytesExact(minBytes)}):`);
 console.log(`  Median: ${fmt(median(evalMinTimes))}`);
 console.log(`  p99:    ${fmt(p99(evalMinTimes))}`);
 
@@ -546,7 +594,7 @@ for (let i = 0; i < EVAL_RUNS; i++) {
   evalFullTimes.push(elapsed);
 }
 
-console.log(`\nbangs-meta.js eval time (${fmtBytes(fullFile.length)}):`);
+console.log(`\nbangs-meta.js eval time (${fmtBytesExact(metaBytes)}):`);
 console.log(`  Median: ${fmt(median(evalFullTimes))}`);
 console.log(`  p99:    ${fmt(p99(evalFullTimes))}`);
 
@@ -560,7 +608,7 @@ for (let i = 0; i < EVAL_RUNS; i++) {
   evalTrieTimes.push(elapsed);
 }
 
-console.log(`\nbangs-trie.js eval time (${fmtBytes(trieFile.length)}):`);
+console.log(`\nbangs-trie.js eval time (${fmtBytesExact(trieBytes)}):`);
 console.log(`  Median: ${fmt(median(evalTrieTimes))}`);
 console.log(`  p99:    ${fmt(p99(evalTrieTimes))}`);
 
@@ -586,7 +634,7 @@ console.log(`
 │ First-hit suggest (bang)            │ ${fmt(coldBangNs).padStart(10)} │ Cold start   │
 │ Warm plain-then-bang                │ ${fmt(warmThenBangNs).padStart(10)} │ Cold start   │
 ├─────────────────────────────────────┼────────────┼──────────────┤
-│ Full redirect (bang query)          │  see above │ Per redirect │
-│ Full redirect (non-bang query)      │  see above │ Per redirect │
+│ Full redirect (bang query)          │ ${fmt(bangRedirect.medianNs).padStart(10)} │ Per redirect │
+│ Full redirect (non-bang query)      │ ${fmt(nonBangRedirect.medianNs).padStart(10)} │ Per redirect │
 └─────────────────────────────────────┴────────────┴──────────────┘
 `);
