@@ -21,10 +21,13 @@ interface FlatTrieFixture {
   LABELS: string;
   NODES: Int32Array;
   ROOT: number;
-  TERM_D: string[];
-  TERM_K: string[];
+  TERM_D_BLOB: string;
+  TERM_D_OFF: Int32Array;
+  TERM_K_BLOB: string;
+  TERM_K_OFF: Int32Array;
   TERM_R: Int32Array;
-  TERM_S: string[];
+  TERM_S_BLOB: string;
+  TERM_S_OFF: Int32Array;
 }
 
 const NODE_EDGE_START = 0;
@@ -99,13 +102,36 @@ function buildTestTrie(bangs: TestBang[]): FlatTrieFixture {
     throw new Error(`Unexpected test trie root index ${rootIdx}`);
   }
 
+  function packStrings(items: string[]): {
+    blob: string;
+    offsets: Int32Array;
+  } {
+    const parts = new Array<string>(items.length);
+    const offsets = new Int32Array(items.length + 1);
+    let cursor = 0;
+    for (let i = 0; i < items.length; i++) {
+      const value = items[i];
+      parts[i] = value;
+      cursor += value.length;
+      offsets[i + 1] = cursor;
+    }
+    return { blob: parts.join(""), offsets };
+  }
+
+  const packedK = packStrings(termK);
+  const packedS = packStrings(termS);
+  const packedD = packStrings(termD);
+
   return {
     LABELS: labels,
     NODES: Int32Array.from(nodes),
     EDGES: Int32Array.from(edges),
-    TERM_K: termK,
-    TERM_S: termS,
-    TERM_D: termD,
+    TERM_K_BLOB: packedK.blob,
+    TERM_K_OFF: packedK.offsets,
+    TERM_S_BLOB: packedS.blob,
+    TERM_S_OFF: packedS.offsets,
+    TERM_D_BLOB: packedD.blob,
+    TERM_D_OFF: packedD.offsets,
     TERM_R: Int32Array.from(termR),
     ROOT: rootIdx,
   };

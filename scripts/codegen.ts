@@ -1,3 +1,4 @@
+import { Buffer } from "node:buffer";
 import { mkdir } from "node:fs/promises";
 
 interface Bang {
@@ -272,6 +273,16 @@ interface FlatTrieData {
   termS: string[];
 }
 
+interface PackedStringData {
+  blob: string;
+  offsets: number[];
+}
+
+interface PackedI32Data {
+  base64: string;
+  offsets: number[];
+}
+
 function flattenTrie(root: TrieNode): FlatTrieData {
   const nodes: number[] = [];
   const edges: number[] = [];
@@ -335,39 +346,69 @@ function flattenTrie(root: TrieNode): FlatTrieData {
   return { labels, nodes, edges, termK, termS, termD, termR };
 }
 
-function serializeStringArray(items: string[]): string {
-  let out = "[";
+function packStrings(items: string[]): PackedStringData {
+  const parts = new Array<string>(items.length);
+  const offsets = new Array<number>(items.length + 1);
+  offsets[0] = 0;
+  let cursor = 0;
   for (let i = 0; i < items.length; i++) {
-    if (i > 0) {
-      out += ",";
-    }
-    out += `'${jsEscape(items[i])}'`;
+    const value = items[i];
+    parts[i] = value;
+    cursor += value.length;
+    offsets[i + 1] = cursor;
   }
-  out += "]";
-  return out;
+  return { blob: parts.join(""), offsets };
 }
 
-function serializeNumberArray(items: number[]): string {
-  let out = "[";
-  for (let i = 0; i < items.length; i++) {
-    if (i > 0) {
-      out += ",";
-    }
-    out += String(items[i]);
+function packI32Sections(sections: number[][]): PackedI32Data {
+  const offsets = new Array<number>(sections.length + 1);
+  offsets[0] = 0;
+  for (let i = 0; i < sections.length; i++) {
+    offsets[i + 1] = offsets[i] + sections[i].length;
   }
-  out += "]";
-  return out;
+
+  const merged = new Int32Array(offsets[offsets.length - 1]);
+  for (let i = 0; i < sections.length; i++) {
+    merged.set(sections[i], offsets[i]);
+  }
+
+  return {
+    base64: Buffer.from(new Uint8Array(merged.buffer)).toString("base64"),
+    offsets,
+  };
 }
 
 function generateTrie(data: FlatTrieData): string {
+  const termK = packStrings(data.termK);
+  const termS = packStrings(data.termS);
+  const termD = packStrings(data.termD);
+  const i32 = packI32Sections([
+    data.nodes,
+    data.edges,
+    data.termR,
+    termK.offsets,
+    termS.offsets,
+    termD.offsets,
+  ]);
+  const [nodesStart, nodesEnd, edgesEnd, termREnd, termKOffEnd, termSOffEnd] =
+    i32.offsets;
+
   return (
+    // NOTE: base64-decoded typed arrays avoid tokenizing huge numeric literals.
+    // All numeric arrays share one backing buffer to minimize decode overhead.
+    "function _b64bytes(s){if(typeof atob==='function'){const bin=atob(s);const len=bin.length;const out=new Uint8Array(len);for(let i=0;i<len;i++){out[i]=bin.charCodeAt(i)}return out;}if(typeof Buffer!=='undefined'){const b=Buffer.from(s,'base64');return new Uint8Array(b.buffer,b.byteOffset,b.byteLength)}throw new Error('No base64 decoder available')}" +
+    "function _b64i32(s){const b=_b64bytes(s);if((b.byteOffset&3)===0){return new Int32Array(b.buffer,b.byteOffset,b.byteLength>>>2)}const a=new Uint8Array(b.byteLength);a.set(b);return new Int32Array(a.buffer)}" +
     `export const LABELS='${jsEscape(data.labels)}';` +
-    `export const NODES=new Int32Array(${serializeNumberArray(data.nodes)});` +
-    `export const EDGES=new Int32Array(${serializeNumberArray(data.edges)});` +
-    `export const TERM_K=${serializeStringArray(data.termK)};` +
-    `export const TERM_S=${serializeStringArray(data.termS)};` +
-    `export const TERM_D=${serializeStringArray(data.termD)};` +
-    `export const TERM_R=new Int32Array(${serializeNumberArray(data.termR)});` +
+    `const _I32=_b64i32('${i32.base64}');` +
+    `export const NODES=_I32.subarray(${nodesStart},${nodesEnd});` +
+    `export const EDGES=_I32.subarray(${nodesEnd},${edgesEnd});` +
+    `export const TERM_R=_I32.subarray(${edgesEnd},${termREnd});` +
+    `export const TERM_K_BLOB='${jsEscape(termK.blob)}';` +
+    `export const TERM_K_OFF=_I32.subarray(${termREnd},${termKOffEnd});` +
+    `export const TERM_S_BLOB='${jsEscape(termS.blob)}';` +
+    `export const TERM_S_OFF=_I32.subarray(${termKOffEnd},${termSOffEnd});` +
+    `export const TERM_D_BLOB='${jsEscape(termD.blob)}';` +
+    `export const TERM_D_OFF=_I32.subarray(${termSOffEnd},${i32.offsets[6]});` +
     "export const ROOT=0;"
   );
 }
@@ -466,10 +507,13 @@ await Promise.all([
       "export declare const LABELS: string;",
       "export declare const NODES: Int32Array;",
       "export declare const EDGES: Int32Array;",
-      "export declare const TERM_K: string[];",
-      "export declare const TERM_S: string[];",
-      "export declare const TERM_D: string[];",
       "export declare const TERM_R: Int32Array;",
+      "export declare const TERM_K_BLOB: string;",
+      "export declare const TERM_K_OFF: Int32Array;",
+      "export declare const TERM_S_BLOB: string;",
+      "export declare const TERM_S_OFF: Int32Array;",
+      "export declare const TERM_D_BLOB: string;",
+      "export declare const TERM_D_OFF: Int32Array;",
       "export declare const ROOT: number;",
       "",
     ].join("\n")

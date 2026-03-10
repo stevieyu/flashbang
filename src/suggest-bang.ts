@@ -3,10 +3,13 @@ import {
   LABELS,
   NODES,
   ROOT,
-  TERM_D,
-  TERM_K,
+  TERM_D_BLOB,
+  TERM_D_OFF,
+  TERM_K_BLOB,
+  TERM_K_OFF,
   TERM_R,
-  TERM_S,
+  TERM_S_BLOB,
+  TERM_S_OFF,
 } from "./generated/bangs-trie.js";
 import {
   FRECENCY_BOOST_CAP,
@@ -33,6 +36,25 @@ const EDGE_LABEL_START = 0;
 const EDGE_LABEL_LENGTH = 1;
 const EDGE_CHILD_INDEX = 2;
 const EDGE_STRIDE = 3;
+
+const TERM_K_CACHE = new Array<string | undefined>(TERM_R.length);
+const TERM_S_CACHE = new Array<string | undefined>(TERM_R.length);
+const TERM_D_CACHE = new Array<string | undefined>(TERM_R.length);
+
+function readPackedStringCached(
+  blob: string,
+  offsets: Int32Array,
+  cache: (string | undefined)[],
+  index: number
+): string {
+  const cached = cache[index];
+  if (cached !== undefined) {
+    return cached;
+  }
+  const value = blob.slice(offsets[index], offsets[index + 1]);
+  cache[index] = value;
+  return value;
+}
 
 function effectiveScore(
   relevance: number,
@@ -144,13 +166,28 @@ function topK(
     const nodeOff = node * NODE_STRIDE;
     const terminalIndex = NODES[nodeOff + NODE_TERMINAL_INDEX];
     if (terminalIndex >= 0) {
-      const trigger = TERM_K[terminalIndex];
+      const trigger = readPackedStringCached(
+        TERM_K_BLOB,
+        TERM_K_OFF,
+        TERM_K_CACHE,
+        terminalIndex
+      );
       const score = effectiveScore(TERM_R[terminalIndex], frecent, trigger);
       if (results.length < TOP_K || score > threshold) {
         addCandidate({
           trigger,
-          name: TERM_S[terminalIndex],
-          domain: TERM_D[terminalIndex],
+          name: readPackedStringCached(
+            TERM_S_BLOB,
+            TERM_S_OFF,
+            TERM_S_CACHE,
+            terminalIndex
+          ),
+          domain: readPackedStringCached(
+            TERM_D_BLOB,
+            TERM_D_OFF,
+            TERM_D_CACHE,
+            terminalIndex
+          ),
           score,
         });
       }
