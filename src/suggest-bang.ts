@@ -134,6 +134,45 @@ function topK(
   return results;
 }
 
+function responseFromCandidates(
+  query: string,
+  prefix: string,
+  candidates: Candidate[]
+): Response {
+  const len = candidates.length;
+  const completions = new Array<string>(len);
+  const descriptions = new Array<string>(len);
+  const urls = new Array<string>(len);
+  const details = new Array<Record<string, string>>(len);
+
+  for (let i = 0; i < len; i++) {
+    const c = candidates[i];
+    completions[i] = `${prefix}!${c.trigger}`;
+    if (c.domain) {
+      const label = `${c.name} \u2014 ${c.domain}`;
+      const base = `https://${c.domain}`;
+      descriptions[i] = label;
+      urls[i] = base;
+      details[i] = { a: label, i: `${base}/favicon.ico` };
+    } else {
+      descriptions[i] = "";
+      urls[i] = "";
+      details[i] = {};
+    }
+  }
+
+  return new Response(
+    JSON.stringify([
+      query,
+      completions,
+      descriptions,
+      urls,
+      { "google:suggestdetail": details },
+    ]),
+    { headers: JSON_HEADERS }
+  );
+}
+
 export function bangSuggestions(
   query: string,
   prefix: string,
@@ -162,56 +201,13 @@ export function bangSuggestions(
       });
     }
     customMatches.sort((a, b) => b.score - a.score);
-    const top = customMatches.slice(0, TOP_K);
-    return new Response(
-      JSON.stringify([
-        query,
-        top.map((c) => `${prefix}!${c.trigger}`),
-        top.map(() => ""),
-        top.map(() => ""),
-        {
-          "google:suggestdetail": top.map(() => ({})),
-        },
-      ]),
-      { headers: JSON_HEADERS }
-    );
+    if (customMatches.length > TOP_K) {
+      customMatches.length = TOP_K;
+    }
+    return responseFromCandidates(query, prefix, customMatches);
   }
 
   const [subtree] = result;
   const candidates = topK(subtree, frecent, customMatches);
-
-  const completions: string[] = [];
-  const descriptions: string[] = [];
-  const urls: string[] = [];
-
-  for (const c of candidates) {
-    completions.push(`${prefix}!${c.trigger}`);
-    if (c.domain) {
-      descriptions.push(`${c.name} \u2014 ${c.domain}`);
-      urls.push(`https://${c.domain}`);
-    } else {
-      descriptions.push("");
-      urls.push("");
-    }
-  }
-
-  return new Response(
-    JSON.stringify([
-      query,
-      completions,
-      descriptions,
-      urls,
-      {
-        "google:suggestdetail": candidates.map((c) =>
-          c.domain
-            ? {
-                a: `${c.name} \u2014 ${c.domain}`,
-                i: `https://${c.domain}/favicon.ico`,
-              }
-            : {}
-        ),
-      },
-    ]),
-    { headers: JSON_HEADERS }
-  );
+  return responseFromCandidates(query, prefix, candidates);
 }

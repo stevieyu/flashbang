@@ -57,7 +57,7 @@ mock.module("./generated/bangs-trie.js", () => ({
   TRIE: TEST_TRIE,
 }));
 
-import { readQueryParam } from "./shared/raw-query";
+import { readQueryParam, readTwoQueryParams } from "./shared/raw-query";
 import {
   parseCookie,
   parseSettings,
@@ -298,7 +298,51 @@ describe("readQueryParam", () => {
   });
 });
 
+describe("readTwoQueryParams", () => {
+  test("returns both values from one query string", () => {
+    expect(
+      readTwoQueryParams(
+        "http://localhost/suggest?q=alpha&sp=ddg&x=1",
+        "q",
+        "sp"
+      )
+    ).toEqual(["alpha", "ddg"]);
+  });
+
+  test("returns empty string for valueless keys", () => {
+    expect(
+      readTwoQueryParams("http://localhost/suggest?q&sp=", "q", "sp")
+    ).toEqual(["", ""]);
+  });
+
+  test("returns null for missing keys", () => {
+    expect(
+      readTwoQueryParams("http://localhost/suggest?a=1", "q", "sp")
+    ).toEqual([null, null]);
+  });
+
+  test("uses first occurrence for repeated keys", () => {
+    expect(
+      readTwoQueryParams(
+        "http://localhost/suggest?q=first&q=second&sp=ddg&sp=bing",
+        "q",
+        "sp"
+      )
+    ).toEqual(["first", "ddg"]);
+  });
+});
+
 describe("parseSettingsFromRawUrl", () => {
+  test("sp override applies without reading sp from URL", () => {
+    const s = parseSettingsFromRawUrl(
+      "http://localhost/suggest?q=cats",
+      req("suggest=google,g,"),
+      "bing"
+    );
+    expect(s.provider).toBe("bing");
+    expect(s.trigger).toBe("g");
+  });
+
   test("sp query param overrides cookie provider", () => {
     const s = parseSettingsFromRawUrl(
       "http://localhost/suggest?q=cats&sp=ddg",

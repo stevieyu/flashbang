@@ -85,3 +85,56 @@ export function readQueryParam(rawUrl: string, key: string): string | null {
 
   return null;
 }
+
+export function readTwoQueryParams(
+  rawUrl: string,
+  keyA: string,
+  keyB: string
+): readonly [string | null, string | null] {
+  if (keyA === keyB) {
+    const value = readQueryParam(rawUrl, keyA);
+    return [value, value];
+  }
+
+  const qPos = rawUrl.indexOf("?");
+  if (qPos === -1) {
+    return [null, null];
+  }
+  const hPos = rawUrl.indexOf("#", qPos + 1);
+  const end = hPos === -1 ? rawUrl.length : hPos;
+  const keyALen = keyA.length;
+  const keyBLen = keyB.length;
+
+  let a: string | null = null;
+  let b: string | null = null;
+  let i = qPos + 1;
+
+  while (i < end && (a === null || b === null)) {
+    let amp = rawUrl.indexOf("&", i);
+    if (amp === -1 || amp > end) {
+      amp = end;
+    }
+    const eq = rawUrl.indexOf("=", i);
+    const keyEnd = eq === -1 || eq > amp ? amp : eq;
+
+    if (a === null && keyEnd - i === keyALen && rawUrl.startsWith(keyA, i)) {
+      a =
+        eq === -1 || eq > amp
+          ? ""
+          : decodeQueryComponent(rawUrl.substring(eq + 1, amp));
+    } else if (
+      b === null &&
+      keyEnd - i === keyBLen &&
+      rawUrl.startsWith(keyB, i)
+    ) {
+      b =
+        eq === -1 || eq > amp
+          ? ""
+          : decodeQueryComponent(rawUrl.substring(eq + 1, amp));
+    }
+
+    i = amp + 1;
+  }
+
+  return [a, b];
+}

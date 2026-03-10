@@ -21,8 +21,6 @@ export interface SuggestSettings {
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
-const COOKIE_RE = /(?:^|;\s*)suggest=([^;]*)/;
-const SF_RE = /(?:^|;\s*)sf=([^;]*)/;
 
 function isTrimWs(code: number): boolean {
   return (
@@ -121,15 +119,27 @@ function resolveEndpoint(provider: string, trigger: string): string | null {
 
 function parseFrecency(raw: string): Record<string, number> {
   const frecent: Record<string, number> = {};
-  for (const pair of raw.split(".")) {
-    const sep = pair.lastIndexOf(":");
-    if (sep > 0) {
-      const count = parseInt(pair.substring(sep + 1), 10);
+  let i = 0;
+
+  while (i <= raw.length) {
+    let dot = raw.indexOf(".", i);
+    if (dot === -1) {
+      dot = raw.length;
+    }
+    const sep = raw.lastIndexOf(":", dot - 1);
+    if (sep > i) {
+      const count = parseInt(raw.substring(sep + 1, dot), 10);
       if (count > 0) {
-        frecent[pair.substring(0, sep)] = count;
+        frecent[raw.substring(i, sep)] = count;
       }
     }
+
+    if (dot === raw.length) {
+      break;
+    }
+    i = dot + 1;
   }
+
   return frecent;
 }
 
@@ -143,29 +153,48 @@ function safeDecodeURIComponent(value: string): string | null {
 
 export function parseCookie(request: Request): SuggestSettings {
   const header = request.headers.get("Cookie") || "";
-  const match = header.match(COOKIE_RE);
-  if (!match) {
-    return {
-      provider: "default",
-      trigger: "g",
-      customUrl: null,
-      frecent: {},
-      custom: [],
-    };
+  const suggestRaw = readCookieValue(header, "suggest");
+  if (suggestRaw === null) {
+    return defaultSettings();
   }
 
-  const sections = match[1].split("|");
-  const [provider, trigger, customUrl] = (sections[0] || "").split(",");
+  let firstSectionEnd = suggestRaw.indexOf("|");
+  if (firstSectionEnd === -1) {
+    firstSectionEnd = suggestRaw.length;
+  }
+  const secondPipe =
+    firstSectionEnd === suggestRaw.length
+      ? -1
+      : suggestRaw.indexOf("|", firstSectionEnd + 1);
+  const customSection =
+    secondPipe === -1 ? "" : suggestRaw.substring(secondPipe + 1);
 
-  const sfMatch = header.match(SF_RE);
-  const frecent: Record<string, number> = sfMatch?.[1]
-    ? parseFrecency(sfMatch[1])
-    : {};
+  const firstSection = suggestRaw.substring(0, firstSectionEnd);
+  let provider = "";
+  let trigger = "";
+  let customUrl = "";
 
-  // Parse custom section: "test8.mysite.proj"
-  const custom = sections[2]
-    ? sections[2].split(".").filter((s) => s.length > 0)
-    : [];
+  const comma1 = firstSection.indexOf(",");
+  if (comma1 === -1) {
+    provider = firstSection;
+  } else {
+    provider = firstSection.substring(0, comma1);
+    const comma2 = firstSection.indexOf(",", comma1 + 1);
+    if (comma2 === -1) {
+      trigger = firstSection.substring(comma1 + 1);
+    } else {
+      trigger = firstSection.substring(comma1 + 1, comma2);
+      const comma3 = firstSection.indexOf(",", comma2 + 1);
+      customUrl =
+        comma3 === -1
+          ? firstSection.substring(comma2 + 1)
+          : firstSection.substring(comma2 + 1, comma3);
+    }
+  }
+
+  const sfRaw = readCookieValue(header, "sf");
+  const frecent: Record<string, number> = sfRaw ? parseFrecency(sfRaw) : {};
+  const custom = parseCustomTriggers(customSection);
 
   return {
     provider: provider || "default",
@@ -176,16 +205,93 @@ export function parseCookie(request: Request): SuggestSettings {
   };
 }
 
+function defaultSettings(): SuggestSettings {
+  return {
+    provider: "default",
+    trigger: "g",
+    customUrl: null,
+    frecent: {},
+    custom: [],
+  };
+}
+
+function readCookieValue(header: string, name: string): string | null {
+  const nameLen = name.length;
+  const len = header.length;
+  let i = 0;
+
+  while (i < len) {
+    while (i < len) {
+      const c = header.charCodeAt(i);
+      if (c === 59 || isTrimWs(c)) {
+        i++;
+        continue;
+      }
+      break;
+    }
+
+    if (i >= len) {
+      break;
+    }
+
+    let end = header.indexOf(";", i);
+    if (end === -1) {
+      end = len;
+    }
+    const eq = header.indexOf("=", i);
+
+    if (eq !== -1 && eq < end) {
+      let keyEnd = eq;
+      while (keyEnd > i && isTrimWs(header.charCodeAt(keyEnd - 1))) {
+        keyEnd--;
+      }
+      if (keyEnd - i === nameLen && header.startsWith(name, i)) {
+        return header.substring(eq + 1, end);
+      }
+    }
+
+    i = end + 1;
+  }
+
+  return null;
+}
+
+function parseCustomTriggers(raw: string): string[] {
+  if (!raw) {
+    return [];
+  }
+
+  const out: string[] = [];
+  let i = 0;
+
+  while (i <= raw.length) {
+    let dot = raw.indexOf(".", i);
+    if (dot === -1) {
+      dot = raw.length;
+    }
+    if (dot > i) {
+      out.push(raw.substring(i, dot));
+    }
+    if (dot === raw.length) {
+      break;
+    }
+    i = dot + 1;
+  }
+
+  return out;
+}
+
 export function parseSettings(url: URL, request: Request): SuggestSettings {
   return parseSettingsFromRawUrl(url.href, request);
 }
 
 export function parseSettingsFromRawUrl(
   rawUrl: string,
-  request: Request
+  request: Request,
+  spOverride?: string | null
 ): SuggestSettings {
   const settings = parseCookie(request);
-  const sp = readQueryParam(rawUrl, "sp");
+  const sp = spOverride ?? readQueryParam(rawUrl, "sp");
   if (sp) {
     settings.provider = sp;
   }
