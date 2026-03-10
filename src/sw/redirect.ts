@@ -42,45 +42,42 @@ function isEncodedExclAt(s: string, i: number): boolean {
   );
 }
 
-function findExcl(s: string, start: number, end: number): [number, number] {
+function findExcl(s: string, start: number, end: number): number {
   for (let i = start; i < end; i++) {
     if (s.charCodeAt(i) === CH_EXCL) {
-      return [i, 1];
+      return (i << 2) | 1;
     }
     if (i + 2 < end && isEncodedExclAt(s, i)) {
-      return [i, 3];
+      return (i << 2) | 3;
     }
   }
-  return [-1, 0];
+  return -1;
 }
 
-function findSpace(s: string, from: number, end: number): [number, number] {
+function findSpace(s: string, from: number, end: number): number {
   for (let i = from; i < end; i++) {
     const n = spaceAt(s, i);
     if (n) {
-      return [i, n];
+      return (i << 2) | n;
     }
   }
-  return [-1, 0];
+  return -1;
 }
 
-function findLastSpaceExcl(
-  s: string,
-  start: number,
-  end: number
-): [number, number, number] {
+function findLastSpaceExcl(s: string, start: number, end: number): number {
   for (let i = end - 1; i >= start; i--) {
     const c = s.charCodeAt(i);
-    let exclLen = 0;
+    let exclWidth = 0;
     if (c === CH_EXCL) {
-      exclLen = 1;
+      exclWidth = 1;
     } else if (i + 2 < end && isEncodedExclAt(s, i)) {
-      exclLen = 3;
-    } else {
+      exclWidth = 3;
+    }
+    if (!exclWidth) {
       continue;
     }
     if (i >= start + 1 && s.charCodeAt(i - 1) === CH_PLUS) {
-      return [i - 1, 1, exclLen];
+      return ((i - 1) << 4) | (1 << 2) | exclWidth;
     }
     if (
       i >= start + 3 &&
@@ -88,20 +85,16 @@ function findLastSpaceExcl(
       s.charCodeAt(i - 2) === CH_2 &&
       s.charCodeAt(i - 1) === CH_0
     ) {
-      return [i - 3, 3, exclLen];
+      return ((i - 3) << 4) | (3 << 2) | exclWidth;
     }
   }
-  return [-1, 0, 0];
+  return -1;
 }
 
-function findLastSpace(
-  s: string,
-  start: number,
-  before: number
-): [number, number] {
+function findLastSpace(s: string, start: number, before: number): number {
   for (let i = before; i >= start; i--) {
     if (s.charCodeAt(i) === CH_PLUS) {
-      return [i, 1];
+      return (i << 2) | 1;
     }
     if (
       s.charCodeAt(i) === CH_PERCENT &&
@@ -109,10 +102,10 @@ function findLastSpace(
       s.charCodeAt(i + 1) === CH_2 &&
       s.charCodeAt(i + 2) === CH_0
     ) {
-      return [i, 3];
+      return (i << 2) | 3;
     }
   }
-  return [-1, 0];
+  return -1;
 }
 
 function rawFixup(s: string, from: number, to: number): string {
@@ -183,11 +176,8 @@ function luckyOrDefault(
   rawQuery: string,
   termStart: number,
   termEnd: number
-): [string, null] {
-  return [
-    fillParts(luckyUrl ?? defaultUrl, rawQuery, termStart, termEnd),
-    null,
-  ];
+): string {
+  return fillParts(luckyUrl ?? defaultUrl, rawQuery, termStart, termEnd);
 }
 
 function originOfPrefix(prefix: string): string {
@@ -197,6 +187,24 @@ function originOfPrefix(prefix: string): string {
   }
   const pathStart = prefix.indexOf("/", protoEnd + 3);
   return pathStart !== -1 ? prefix.substring(0, pathStart) : prefix;
+}
+
+const builtInOriginCache: Record<string, string> = Object.create(null);
+const customOriginCache = new WeakMap<
+  Record<string, UrlParts>,
+  Record<string, string>
+>();
+
+function getCustomOriginCache(
+  custom: Record<string, UrlParts>
+): Record<string, string> {
+  const existing = customOriginCache.get(custom);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const fresh: Record<string, string> = Object.create(null);
+  customOriginCache.set(custom, fresh);
+  return fresh;
 }
 
 function redir(url: string): Response {
@@ -226,11 +234,29 @@ function resolveBangOrigin(
   bang: string,
   custom: Record<string, UrlParts>
 ): string | null {
-  const entry = custom[bang] || BANGS[bang];
+  const customEntry = custom[bang];
+  if (customEntry) {
+    const cached = getCustomOriginCache(custom);
+    const origin = cached[bang];
+    if (origin !== undefined) {
+      return origin;
+    }
+    const computed = originOfPrefix(customEntry[0]);
+    cached[bang] = computed;
+    return computed;
+  }
+
+  const builtIn = builtInOriginCache[bang];
+  if (builtIn !== undefined) {
+    return builtIn;
+  }
+  const entry = BANGS[bang];
   if (!entry) {
     return null;
   }
-  return originOfPrefix(entry[0]);
+  const origin = originOfPrefix(entry[0]);
+  builtInOriginCache[bang] = origin;
+  return origin;
 }
 
 function findTrailingBareBang(
@@ -272,10 +298,13 @@ function findTrailingBareBang(
   return -1;
 }
 
+let resolvedTrigger: string | null = null;
+
 function resolveRaw(
   rawQuery: string,
   { defaultUrl, custom, luckyUrl }: RedirectSettings
-): [string, string | null] {
+): string {
+  resolvedTrigger = null;
   const len = rawQuery.length;
 
   let start = 0;
@@ -306,7 +335,7 @@ function resolveRaw(
   }
 
   if (start >= end) {
-    return ["/", null];
+    return "/";
   }
 
   const c0 = rawQuery.charCodeAt(start);
@@ -330,7 +359,7 @@ function resolveRaw(
     const afterExcl = exclStart + exclWidth;
 
     if (afterExcl >= end) {
-      return ["/", null];
+      return "/";
     }
 
     // "!+query" / "!%20query" — bare bang lucky
@@ -338,29 +367,33 @@ function resolveRaw(
     if (spaceWidth) {
       const termStart = afterExcl + spaceWidth;
       if (termStart >= end) {
-        return ["/", null];
+        return "/";
       }
       return luckyOrDefault(luckyUrl, defaultUrl, rawQuery, termStart, end);
     }
 
     // "!g+cats" or "!g" — prefix bang
-    const [sp, spLen] = findSpace(rawQuery, afterExcl, end);
+    const spPacked = findSpace(rawQuery, afterExcl, end);
+    const sp = spPacked === -1 ? -1 : spPacked >> 2;
+    const spLen = spPacked === -1 ? 0 : spPacked & 0b11;
     const bangEnd = sp === -1 ? end : sp;
     const bang = rawQuery.substring(afterExcl, bangEnd).toLowerCase();
 
     if (sp === -1 || sp + spLen >= end) {
       const origin = resolveBangOrigin(bang, custom);
       if (!origin) {
-        return [fillParts(defaultUrl, rawQuery, start, end), null];
+        return fillParts(defaultUrl, rawQuery, start, end);
       }
-      return [origin, bang];
+      resolvedTrigger = bang;
+      return origin;
     }
 
     const filled = resolveBangFill(bang, custom, rawQuery, sp + spLen, end);
     if (filled === null) {
-      return [fillParts(defaultUrl, rawQuery, start, end), null];
+      return fillParts(defaultUrl, rawQuery, start, end);
     }
-    return [filled, bang];
+    resolvedTrigger = bang;
+    return filled;
   }
 
   // "query+!" / "query%20!" / "query+%21" / "query%20%21" — trailing bare bang lucky
@@ -368,7 +401,7 @@ function resolveRaw(
   const trailingTermEnd = findTrailingBareBang(rawQuery, start, end, lastChar);
   if (trailingTermEnd !== -1) {
     if (trailingTermEnd <= start) {
-      return ["/", null];
+      return "/";
     }
     return luckyOrDefault(
       luckyUrl,
@@ -379,10 +412,12 @@ function resolveRaw(
     );
   }
 
-  const [exclPos, exclCharWidth] = findExcl(rawQuery, start, end);
-  if (exclPos === -1) {
-    return [fillParts(defaultUrl, rawQuery, start, end), null];
+  const exclPacked = findExcl(rawQuery, start, end);
+  if (exclPacked === -1) {
+    return fillParts(defaultUrl, rawQuery, start, end);
   }
+  const exclPos = exclPacked >> 2;
+  const exclCharWidth = exclPacked & 0b11;
 
   // "g!+cats"
   const afterExcl = exclPos + exclCharWidth;
@@ -394,35 +429,39 @@ function resolveRaw(
       if (termStart >= end) {
         const origin = resolveBangOrigin(bang, custom);
         if (origin) {
-          return [origin, bang];
+          resolvedTrigger = bang;
+          return origin;
         }
       } else {
         const filled = resolveBangFill(bang, custom, rawQuery, termStart, end);
         if (filled !== null) {
-          return [filled, bang];
+          resolvedTrigger = bang;
+          return filled;
         }
       }
-      return [fillParts(defaultUrl, rawQuery, start, end), null];
+      return fillParts(defaultUrl, rawQuery, start, end);
     }
   }
 
   // "g!"
   if (afterExcl >= end || (lastChar === CH_EXCL && afterExcl === end)) {
-    const [hasSpace] = findSpace(rawQuery, start, end);
-    if (hasSpace === -1) {
+    if (findSpace(rawQuery, start, end) === -1) {
       const bang = rawQuery.substring(start, exclPos).toLowerCase();
       const origin = resolveBangOrigin(bang, custom);
       if (origin) {
-        return [origin, bang];
+        resolvedTrigger = bang;
+        return origin;
       }
-      return [fillParts(defaultUrl, rawQuery, start, end), null];
+      return fillParts(defaultUrl, rawQuery, start, end);
     }
   }
 
   // "cats+!g"
-  const [spaceBeforeBangPos, spaceBeforeBangWidth, suffixExclWidth] =
-    findLastSpaceExcl(rawQuery, start, end);
-  if (spaceBeforeBangPos !== -1) {
+  const suffixPacked = findLastSpaceExcl(rawQuery, start, end);
+  if (suffixPacked !== -1) {
+    const spaceBeforeBangPos = suffixPacked >> 4;
+    const spaceBeforeBangWidth = (suffixPacked >> 2) & 0b11;
+    const suffixExclWidth = suffixPacked & 0b11;
     const bangStart =
       spaceBeforeBangPos + spaceBeforeBangWidth + suffixExclWidth;
     if (bangStart < end) {
@@ -437,9 +476,10 @@ function resolveRaw(
           spaceBeforeBangPos
         );
         if (filled !== null) {
-          return [filled, bang];
+          resolvedTrigger = bang;
+          return filled;
         }
-        return [fillParts(defaultUrl, rawQuery, start, end), null];
+        return fillParts(defaultUrl, rawQuery, start, end);
       }
     }
   }
@@ -450,12 +490,10 @@ function resolveRaw(
     (end >= 3 && isEncodedExclAt(rawQuery, end - exclCharWidth))
   ) {
     const bangExclEnd = lastChar === CH_EXCL ? end - 1 : end - 3;
-    const [lastSpPos, lastSpLen] = findLastSpace(
-      rawQuery,
-      start,
-      bangExclEnd - 1
-    );
-    if (lastSpPos !== -1) {
+    const lastSpPacked = findLastSpace(rawQuery, start, bangExclEnd - 1);
+    if (lastSpPacked !== -1) {
+      const lastSpPos = lastSpPacked >> 2;
+      const lastSpLen = lastSpPacked & 0b11;
       const suffixBangStart = lastSpPos + lastSpLen;
       if (suffixBangStart < bangExclEnd) {
         const bang = rawQuery
@@ -469,22 +507,23 @@ function resolveRaw(
           lastSpPos
         );
         if (filled !== null) {
-          return [filled, bang];
+          resolvedTrigger = bang;
+          return filled;
         }
-        return [fillParts(defaultUrl, rawQuery, start, end), null];
+        return fillParts(defaultUrl, rawQuery, start, end);
       }
     }
   }
 
-  return [fillParts(defaultUrl, rawQuery, start, end), null];
+  return fillParts(defaultUrl, rawQuery, start, end);
 }
 
 export function redirectRaw(
   rawQuery: string,
   settings: RedirectSettings
 ): [Response, string | null] {
-  const [url, bang] = resolveRaw(rawQuery, settings);
-  return [redir(url), bang];
+  const url = resolveRaw(rawQuery, settings);
+  return [redir(url), resolvedTrigger];
 }
 
 export function redirect(query: string, settings: RedirectSettings): Response {
