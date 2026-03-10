@@ -1,4 +1,13 @@
-import { TRIE, type TrieNode } from "./generated/bangs-trie.js";
+import {
+  EDGES,
+  LABELS,
+  NODES,
+  ROOT,
+  TERM_D,
+  TERM_K,
+  TERM_R,
+  TERM_S,
+} from "./generated/bangs-trie.js";
 import {
   FRECENCY_BOOST_CAP,
   FRECENCY_BOOST_MULTIPLIER,
@@ -14,6 +23,17 @@ interface Candidate {
   score: number;
 }
 
+const NODE_EDGE_START = 0;
+const NODE_EDGE_COUNT = 1;
+const NODE_TERMINAL_INDEX = 2;
+const NODE_MAX_RELEVANCE = 3;
+const NODE_STRIDE = 4;
+
+const EDGE_LABEL_START = 0;
+const EDGE_LABEL_LENGTH = 1;
+const EDGE_CHILD_INDEX = 2;
+const EDGE_STRIDE = 3;
+
 function effectiveScore(
   relevance: number,
   frecent: Record<string, number>,
@@ -28,18 +48,27 @@ function effectiveScore(
   );
 }
 
-function walkPrefix(partial: string): [TrieNode, string] | null {
-  let node: TrieNode = TRIE;
+function walkPrefix(partial: string): [number, string] | null {
+  let node = ROOT;
   let pos = 0;
 
   while (pos < partial.length) {
     let found = false;
-    for (const [edge, child] of node.c) {
-      const limit = Math.min(partial.length - pos, edge.length);
+    const nodeOff = node * NODE_STRIDE;
+    const edgeStart = NODES[nodeOff + NODE_EDGE_START];
+    const edgeCount = NODES[nodeOff + NODE_EDGE_COUNT];
+
+    for (let i = 0; i < edgeCount; i++) {
+      const edgeOff = (edgeStart + i) * EDGE_STRIDE;
+      const edgeLabelStart = EDGES[edgeOff + EDGE_LABEL_START];
+      const edgeLabelLen = EDGES[edgeOff + EDGE_LABEL_LENGTH];
+      const child = EDGES[edgeOff + EDGE_CHILD_INDEX];
+      const limit = Math.min(partial.length - pos, edgeLabelLen);
       let match = 0;
       while (
         match < limit &&
-        partial.charCodeAt(pos + match) === edge.charCodeAt(match)
+        partial.charCodeAt(pos + match) ===
+          LABELS.charCodeAt(edgeLabelStart + match)
       ) {
         match++;
       }
@@ -48,11 +77,17 @@ function walkPrefix(partial: string): [TrieNode, string] | null {
         continue;
       }
 
-      if (match < edge.length) {
+      if (match < edgeLabelLen) {
         if (match < partial.length - pos) {
           return null;
         }
-        return [child, edge.substring(match)];
+        return [
+          child,
+          LABELS.substring(
+            edgeLabelStart + match,
+            edgeLabelStart + edgeLabelLen
+          ),
+        ];
       }
 
       node = child;
@@ -71,7 +106,7 @@ function walkPrefix(partial: string): [TrieNode, string] | null {
 
 // DFS with max-relevance pruning. Children are pre-sorted by m descending.
 function topK(
-  subtree: TrieNode,
+  subtree: number,
   frecent: Record<string, number>,
   customMatches: Candidate[]
 ): Candidate[] {
@@ -105,23 +140,31 @@ function topK(
     addCandidate(c);
   }
 
-  function dfs(node: TrieNode): void {
-    if (node.t) {
-      const score = effectiveScore(node.t.r, frecent, node.t.k);
+  function dfs(node: number): void {
+    const nodeOff = node * NODE_STRIDE;
+    const terminalIndex = NODES[nodeOff + NODE_TERMINAL_INDEX];
+    if (terminalIndex >= 0) {
+      const trigger = TERM_K[terminalIndex];
+      const score = effectiveScore(TERM_R[terminalIndex], frecent, trigger);
       if (results.length < TOP_K || score > threshold) {
         addCandidate({
-          trigger: node.t.k,
-          name: node.t.s,
-          domain: node.t.d,
+          trigger,
+          name: TERM_S[terminalIndex],
+          domain: TERM_D[terminalIndex],
           score,
         });
       }
     }
 
-    for (const [, child] of node.c) {
+    const edgeStart = NODES[nodeOff + NODE_EDGE_START];
+    const edgeCount = NODES[nodeOff + NODE_EDGE_COUNT];
+    for (let i = 0; i < edgeCount; i++) {
+      const edgeOff = (edgeStart + i) * EDGE_STRIDE;
+      const child = EDGES[edgeOff + EDGE_CHILD_INDEX];
+      const childMaxRelevance = NODES[child * NODE_STRIDE + NODE_MAX_RELEVANCE];
       if (
         results.length >= TOP_K &&
-        child.m + FRECENCY_BOOST_CAP <= threshold
+        childMaxRelevance + FRECENCY_BOOST_CAP <= threshold
       ) {
         continue;
       }

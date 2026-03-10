@@ -8,8 +8,6 @@
 import { $ } from "bun";
 import { readPathname } from "../src/shared/raw-url";
 
-type TrieNode = import("../src/generated/bangs-trie.js").TrieNode;
-
 const minPath = "src/generated/bangs-min.js";
 const metaPath = "src/generated/bangs-meta.js";
 const triePath = "src/generated/bangs-trie.js";
@@ -135,7 +133,7 @@ await ensureGeneratedBangData();
 
 const [
   { BANGS },
-  { TRIE },
+  { EDGES, LABELS, NODES, ROOT },
   { handleSuggestRequest },
   { bangSuggestions },
   { parseCookie },
@@ -148,6 +146,17 @@ const [
   import("../src/suggest"),
   import("../src/shared/raw-query"),
 ]);
+
+const NODE_EDGE_START = 0;
+const NODE_EDGE_COUNT = 1;
+const NODE_TERMINAL_INDEX = 2;
+const NODE_MAX_RELEVANCE = 3;
+const NODE_STRIDE = 4;
+
+const EDGE_LABEL_START = 0;
+const EDGE_LABEL_LENGTH = 1;
+const EDGE_CHILD_INDEX = 2;
+const EDGE_STRIDE = 3;
 
 const RUNS = 12;
 const COLD_RUNS = 5;
@@ -195,43 +204,55 @@ console.log(
 
 separator("2. TRIE STRUCTURE ANALYSIS");
 
-function trieStats(node: TrieNode): {
+function trieStats(root: number): {
   nodes: number;
   terminals: number;
   edges: number;
   maxDepth: number;
 } {
-  let nodes = 0;
+  const nodeCount = Math.floor(NODES.length / NODE_STRIDE);
   let terminals = 0;
-  let edges = 0;
   let maxDepth = 0;
 
-  function walk(n: TrieNode, depth: number) {
-    nodes++;
-    if (n.t) {
+  for (let i = 0; i < nodeCount; i++) {
+    if (NODES[i * NODE_STRIDE + NODE_TERMINAL_INDEX] >= 0) {
       terminals++;
-    }
-    edges += n.c.length;
-    if (depth > maxDepth) {
-      maxDepth = depth;
-    }
-    for (const [, child] of n.c) {
-      walk(child, depth + 1);
     }
   }
 
-  walk(node, 0);
-  return { nodes, terminals, edges, maxDepth };
+  function walkDepth(node: number, depth: number) {
+    if (depth > maxDepth) {
+      maxDepth = depth;
+    }
+    const nodeOff = node * NODE_STRIDE;
+    const edgeStart = NODES[nodeOff + NODE_EDGE_START];
+    const edgeCount = NODES[nodeOff + NODE_EDGE_COUNT];
+    for (let i = 0; i < edgeCount; i++) {
+      const edgeOff = (edgeStart + i) * EDGE_STRIDE;
+      walkDepth(EDGES[edgeOff + EDGE_CHILD_INDEX], depth + 1);
+    }
+  }
+
+  walkDepth(root, 0);
+
+  return {
+    nodes: nodeCount,
+    terminals,
+    edges: Math.floor(EDGES.length / EDGE_STRIDE),
+    maxDepth,
+  };
 }
 
-const ts = trieStats(TRIE);
-console.log("\nRadix trie structure:");
+const ts = trieStats(ROOT);
+console.log("\nFlat radix trie structure:");
 console.log(`  Nodes:     ${ts.nodes.toLocaleString()}`);
 console.log(`  Terminals: ${ts.terminals.toLocaleString()}`);
 console.log(`  Edges:     ${ts.edges.toLocaleString()}`);
 console.log(`  Max depth: ${ts.maxDepth}`);
-console.log(`  Root children: ${TRIE.c.length}`);
-console.log(`  Max relevance: ${TRIE.m}`);
+console.log(`  Root children: ${NODES[ROOT * NODE_STRIDE + NODE_EDGE_COUNT]}`);
+console.log(
+  `  Max relevance: ${NODES[ROOT * NODE_STRIDE + NODE_MAX_RELEVANCE]}`
+);
 
 // ---------------------------------------------------------------------------
 // 3. BANG LOOKUP PERFORMANCE (Object property access)
@@ -306,29 +327,43 @@ console.log(`  Sample hit ratio:  ${lookupHitRatioPct.toFixed(1)}%`);
 
 separator("4. TRIE-BASED SUGGESTION PERFORMANCE");
 
-function walkPrefix(partial: string): [TrieNode, string] | null {
-  let node: TrieNode = TRIE;
+function walkPrefix(partial: string): [number, string] | null {
+  let node = ROOT;
   let pos = 0;
 
   while (pos < partial.length) {
     let found = false;
-    for (const [edge, child] of node.c) {
-      const limit = Math.min(partial.length - pos, edge.length);
+    const nodeOff = node * NODE_STRIDE;
+    const edgeStart = NODES[nodeOff + NODE_EDGE_START];
+    const edgeCount = NODES[nodeOff + NODE_EDGE_COUNT];
+    for (let i = 0; i < edgeCount; i++) {
+      const edgeOff = (edgeStart + i) * EDGE_STRIDE;
+      const edgeLabelStart = EDGES[edgeOff + EDGE_LABEL_START];
+      const edgeLabelLen = EDGES[edgeOff + EDGE_LABEL_LENGTH];
+      const child = EDGES[edgeOff + EDGE_CHILD_INDEX];
+      const limit = Math.min(partial.length - pos, edgeLabelLen);
       let match = 0;
       while (
         match < limit &&
-        partial.charCodeAt(pos + match) === edge.charCodeAt(match)
+        partial.charCodeAt(pos + match) ===
+          LABELS.charCodeAt(edgeLabelStart + match)
       ) {
         match++;
       }
       if (match === 0) {
         continue;
       }
-      if (match < edge.length) {
+      if (match < edgeLabelLen) {
         if (match < partial.length - pos) {
           return null;
         }
-        return [child, edge.substring(match)];
+        return [
+          child,
+          LABELS.substring(
+            edgeLabelStart + match,
+            edgeLabelStart + edgeLabelLen
+          ),
+        ];
       }
       node = child;
       pos += match;
@@ -343,10 +378,14 @@ function walkPrefix(partial: string): [TrieNode, string] | null {
   return [node, ""];
 }
 
-function countTerminals(node: TrieNode): number {
-  let c = node.t ? 1 : 0;
-  for (const [, child] of node.c) {
-    c += countTerminals(child);
+function countTerminals(node: number): number {
+  const nodeOff = node * NODE_STRIDE;
+  let c = NODES[nodeOff + NODE_TERMINAL_INDEX] >= 0 ? 1 : 0;
+  const edgeStart = NODES[nodeOff + NODE_EDGE_START];
+  const edgeCount = NODES[nodeOff + NODE_EDGE_COUNT];
+  for (let i = 0; i < edgeCount; i++) {
+    const edgeOff = (edgeStart + i) * EDGE_STRIDE;
+    c += countTerminals(EDGES[edgeOff + EDGE_CHILD_INDEX]);
   }
   return c;
 }
@@ -421,6 +460,7 @@ const { redirect, redirectRaw, redirectUrl } = await import(
 const settings = {
   defaultUrl: ["https://www.google.com/search?q=", ""] as const,
   luckyUrl: ["https://duckduckgo.com/?q=\\", ""] as const,
+  hasCustom: false,
   custom: Object.create(null) as Record<
     string,
     readonly [string, string | null]
@@ -859,7 +899,7 @@ const fullEvalCode = fullFile
     "Object.setPrototypeOf(BANGS,null)",
     "Object.setPrototypeOf(__BANGS,null)"
   );
-const trieEvalCode = trieFile.replace("export const TRIE=", "var __TRIE=");
+const trieEvalCode = trieFile.replace(/export const /g, "var ");
 
 const EVAL_RUNS = 20;
 

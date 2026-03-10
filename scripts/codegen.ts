@@ -253,38 +253,123 @@ import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 
 type TrieNode = BuildNode<Bang>;
 
-function serializeNode(node: TrieNode): string {
-  const parts: string[] = [];
+const NODE_EDGE_START = 0;
+const NODE_EDGE_COUNT = 1;
+const NODE_TERMINAL_INDEX = 2;
+const NODE_MAX_RELEVANCE = 3;
+const NODE_STRIDE = 4;
 
-  const sorted = [...node.children.entries()].sort(
-    (a, b) => b[1].maxRelevance - a[1].maxRelevance
-  );
-  let childrenStr = "[";
-  for (let i = 0; i < sorted.length; i++) {
-    if (i > 0) {
-      childrenStr += ",";
-    }
-    childrenStr += `['${jsEscape(sorted[i][0])}',${serializeNode(sorted[i][1])}]`;
-  }
-  childrenStr += "]";
-  parts.push(`c:${childrenStr}`);
+const EDGE_CHILD_INDEX = 2;
+const EDGE_STRIDE = 3;
 
-  parts.push(`m:${node.maxRelevance}`);
-
-  if (node.terminal) {
-    const t = node.terminal;
-    parts.push(
-      `t:{k:'${jsEscape(t.trigger)}',s:'${jsEscape(t.name)}',d:'${jsEscape(t.domain)}',r:${t.relevance}}`
-    );
-  } else {
-    parts.push("t:null");
-  }
-
-  return `{${parts.join(",")}}`;
+interface FlatTrieData {
+  edges: number[];
+  labels: string;
+  nodes: number[];
+  termD: string[];
+  termK: string[];
+  termR: number[];
+  termS: string[];
 }
 
-function generateTrie(root: TrieNode): string {
-  return `export const TRIE=${serializeNode(root)};`;
+function flattenTrie(root: TrieNode): FlatTrieData {
+  const nodes: number[] = [];
+  const edges: number[] = [];
+  let labels = "";
+  const termK: string[] = [];
+  const termS: string[] = [];
+  const termD: string[] = [];
+  const termR: number[] = [];
+
+  function allocNode(): number {
+    const idx = nodes.length / NODE_STRIDE;
+    nodes.push(0, 0, -1, 0);
+    return idx;
+  }
+
+  function visit(node: TrieNode): number {
+    const idx = allocNode();
+    const sortedChildren = [...node.children.entries()].sort(
+      (a, b) => b[1].maxRelevance - a[1].maxRelevance
+    );
+    const edgeStart = edges.length / EDGE_STRIDE;
+    const edgeCount = sortedChildren.length;
+
+    // Reserve this node's edge block contiguously.
+    for (const [label] of sortedChildren) {
+      const labelStart = labels.length;
+      labels += label;
+      edges.push(labelStart, label.length, -1);
+    }
+
+    for (let i = 0; i < sortedChildren.length; i++) {
+      const [, child] = sortedChildren[i];
+      const childIdx = visit(child);
+      edges[(edgeStart + i) * EDGE_STRIDE + EDGE_CHILD_INDEX] = childIdx;
+    }
+
+    let terminalIndex = -1;
+    if (node.terminal) {
+      const t = node.terminal;
+      terminalIndex = termR.length;
+      termK.push(t.trigger);
+      termS.push(t.name);
+      termD.push(t.domain);
+      termR.push(t.relevance);
+    }
+
+    const nodeOff = idx * NODE_STRIDE;
+    nodes[nodeOff + NODE_EDGE_START] = edgeStart;
+    nodes[nodeOff + NODE_EDGE_COUNT] = edgeCount;
+    nodes[nodeOff + NODE_TERMINAL_INDEX] = terminalIndex;
+    nodes[nodeOff + NODE_MAX_RELEVANCE] = node.maxRelevance;
+
+    return idx;
+  }
+
+  const rootIdx = visit(root);
+  if (rootIdx !== 0) {
+    throw new Error(`Unexpected root index ${rootIdx} (expected 0)`);
+  }
+
+  return { labels, nodes, edges, termK, termS, termD, termR };
+}
+
+function serializeStringArray(items: string[]): string {
+  let out = "[";
+  for (let i = 0; i < items.length; i++) {
+    if (i > 0) {
+      out += ",";
+    }
+    out += `'${jsEscape(items[i])}'`;
+  }
+  out += "]";
+  return out;
+}
+
+function serializeNumberArray(items: number[]): string {
+  let out = "[";
+  for (let i = 0; i < items.length; i++) {
+    if (i > 0) {
+      out += ",";
+    }
+    out += String(items[i]);
+  }
+  out += "]";
+  return out;
+}
+
+function generateTrie(data: FlatTrieData): string {
+  return (
+    `export const LABELS='${jsEscape(data.labels)}';` +
+    `export const NODES=new Int32Array(${serializeNumberArray(data.nodes)});` +
+    `export const EDGES=new Int32Array(${serializeNumberArray(data.edges)});` +
+    `export const TERM_K=${serializeStringArray(data.termK)};` +
+    `export const TERM_S=${serializeStringArray(data.termS)};` +
+    `export const TERM_D=${serializeStringArray(data.termD)};` +
+    `export const TERM_R=new Int32Array(${serializeNumberArray(data.termR)});` +
+    "export const ROOT=0;"
+  );
 }
 
 const MERGED_PATH = "data/bangs.json";
@@ -361,7 +446,8 @@ const trieRoot = buildRadixTrie(
   (b) => b.trigger,
   (b) => b.relevance
 );
-const trieJs = generateTrie(trieRoot);
+const trieData = flattenTrie(trieRoot);
+const trieJs = generateTrie(trieData);
 await Bun.write(`${outDir}/bangs-trie.js`, trieJs);
 console.log(`  bangs-trie.js: ${trieJs.length} bytes`);
 
@@ -377,12 +463,14 @@ await Promise.all([
   Bun.write(
     `${outDir}/bangs-trie.d.ts`,
     [
-      "export interface TrieNode {",
-      "  c: [string, TrieNode][];",
-      "  m: number;",
-      "  t: { k: string; s: string; d: string; r: number } | null;",
-      "}",
-      "export declare const TRIE: TrieNode;",
+      "export declare const LABELS: string;",
+      "export declare const NODES: Int32Array;",
+      "export declare const EDGES: Int32Array;",
+      "export declare const TERM_K: string[];",
+      "export declare const TERM_S: string[];",
+      "export declare const TERM_D: string[];",
+      "export declare const TERM_R: Int32Array;",
+      "export declare const ROOT: number;",
       "",
     ].join("\n")
   ),

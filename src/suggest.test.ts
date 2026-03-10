@@ -7,7 +7,6 @@ import {
   spyOn,
   test,
 } from "bun:test";
-import type { TrieNode } from "./generated/bangs-trie";
 import { type BuildNode, buildRadixTrie } from "./shared/trie";
 
 interface TestBang {
@@ -17,25 +16,99 @@ interface TestBang {
   r: number;
 }
 
-function buildTestTrie(bangs: TestBang[]): TrieNode {
+interface FlatTrieFixture {
+  EDGES: Int32Array;
+  LABELS: string;
+  NODES: Int32Array;
+  ROOT: number;
+  TERM_D: string[];
+  TERM_K: string[];
+  TERM_R: Int32Array;
+  TERM_S: string[];
+}
+
+const NODE_EDGE_START = 0;
+const NODE_EDGE_COUNT = 1;
+const NODE_TERMINAL_INDEX = 2;
+const NODE_MAX_RELEVANCE = 3;
+const NODE_STRIDE = 4;
+
+const EDGE_CHILD_INDEX = 2;
+const EDGE_STRIDE = 3;
+
+function buildTestTrie(bangs: TestBang[]): FlatTrieFixture {
   const root = buildRadixTrie(
     bangs,
     (b) => b.k,
     (b) => b.r
   );
 
-  function serialize(node: BuildNode<TestBang>): TrieNode {
+  const nodes: number[] = [];
+  const edges: number[] = [];
+  let labels = "";
+  const termK: string[] = [];
+  const termS: string[] = [];
+  const termD: string[] = [];
+  const termR: number[] = [];
+
+  function allocNode(): number {
+    const idx = nodes.length / NODE_STRIDE;
+    nodes.push(0, 0, -1, 0);
+    return idx;
+  }
+
+  function visit(node: BuildNode<TestBang>): number {
+    const idx = allocNode();
     const sorted = [...node.children.entries()].sort(
       (a, b) => b[1].maxRelevance - a[1].maxRelevance
     );
-    return {
-      c: sorted.map(([edge, child]) => [edge, serialize(child)]),
-      m: node.maxRelevance,
-      t: node.terminal,
-    };
+    const edgeStart = edges.length / EDGE_STRIDE;
+
+    for (const [label] of sorted) {
+      const labelStart = labels.length;
+      labels += label;
+      edges.push(labelStart, label.length, -1);
+    }
+
+    for (let i = 0; i < sorted.length; i++) {
+      const [, child] = sorted[i];
+      const childIdx = visit(child);
+      edges[(edgeStart + i) * EDGE_STRIDE + EDGE_CHILD_INDEX] = childIdx;
+    }
+
+    let terminalIndex = -1;
+    if (node.terminal) {
+      const t = node.terminal;
+      terminalIndex = termR.length;
+      termK.push(t.k);
+      termS.push(t.s);
+      termD.push(t.d);
+      termR.push(t.r);
+    }
+
+    const off = idx * NODE_STRIDE;
+    nodes[off + NODE_EDGE_START] = edgeStart;
+    nodes[off + NODE_EDGE_COUNT] = sorted.length;
+    nodes[off + NODE_TERMINAL_INDEX] = terminalIndex;
+    nodes[off + NODE_MAX_RELEVANCE] = node.maxRelevance;
+    return idx;
   }
 
-  return serialize(root);
+  const rootIdx = visit(root);
+  if (rootIdx !== 0) {
+    throw new Error(`Unexpected test trie root index ${rootIdx}`);
+  }
+
+  return {
+    LABELS: labels,
+    NODES: Int32Array.from(nodes),
+    EDGES: Int32Array.from(edges),
+    TERM_K: termK,
+    TERM_S: termS,
+    TERM_D: termD,
+    TERM_R: Int32Array.from(termR),
+    ROOT: rootIdx,
+  };
 }
 
 const TEST_BANGS: TestBang[] = [
@@ -53,9 +126,7 @@ const TEST_BANGS: TestBang[] = [
 
 const TEST_TRIE = buildTestTrie(TEST_BANGS);
 
-mock.module("./generated/bangs-trie.js", () => ({
-  TRIE: TEST_TRIE,
-}));
+mock.module("./generated/bangs-trie.js", () => TEST_TRIE);
 
 import { readQueryParam, readTwoQueryParams } from "./shared/raw-query";
 import {
