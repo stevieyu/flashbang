@@ -4,10 +4,9 @@ import { brotliCompressSync, constants } from "node:zlib";
 import { minify } from "@minify-html/node";
 import { $ } from "bun";
 
+// Start from a clean dist to avoid stale artifacts (e.g. orphaned .br chunks).
+await rm("dist", { recursive: true, force: true });
 await mkdir("dist", { recursive: true });
-for (const f of new Bun.Glob("*.js").scanSync("dist")) {
-  await rm(`dist/${f}`);
-}
 
 console.log("=== Bundle app + bench (to discover chunks) ===");
 const [appBuild, benchBuild] = await Promise.all([
