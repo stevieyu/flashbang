@@ -106,16 +106,13 @@ function buildTestTrie(bangs: TestBang[]): FlatTrieFixture {
     blob: string;
     offsets: Int32Array;
   } {
-    const parts = new Array<string>(items.length);
     const offsets = new Int32Array(items.length + 1);
     let cursor = 0;
     for (let i = 0; i < items.length; i++) {
-      const value = items[i];
-      parts[i] = value;
-      cursor += value.length;
+      cursor += items[i].length;
       offsets[i + 1] = cursor;
     }
-    return { blob: parts.join(""), offsets };
+    return { blob: items.join(""), offsets };
   }
 
   const packedK = packStrings(termK);
