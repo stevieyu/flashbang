@@ -5,11 +5,41 @@
  * Run: bun scripts/profile.ts
  */
 
-import { BANGS } from "../src/generated/bangs-min.js";
-import type { TrieNode } from "../src/generated/bangs-trie.js";
-import { TRIE } from "../src/generated/bangs-trie.js";
-import { handleSuggestRequest } from "../src/server/handlers";
+import { $ } from "bun";
 import { readPathname } from "../src/shared/raw-url";
+
+type TrieNode = import("../src/generated/bangs-trie.js").TrieNode;
+
+const minPath = "src/generated/bangs-min.js";
+const metaPath = "src/generated/bangs-meta.js";
+const triePath = "src/generated/bangs-trie.js";
+const requiredGeneratedFiles = [minPath, metaPath, triePath];
+
+async function ensureGeneratedBangData() {
+  const missing: string[] = [];
+  for (const path of requiredGeneratedFiles) {
+    if (!(await Bun.file(path).exists())) {
+      missing.push(path);
+    }
+  }
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  console.warn(
+    `Generated bang data not found (${missing.join(", ")}). Running codegen (--from-merged)...`
+  );
+  await $`bun scripts/codegen.ts --from-merged`;
+
+  for (const path of requiredGeneratedFiles) {
+    if (!(await Bun.file(path).exists())) {
+      throw new Error(
+        `Missing generated bang data after codegen: ${requiredGeneratedFiles.join(", ")}`
+      );
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -55,6 +85,14 @@ function fmtBytesExact(b: number): string {
   return `${fmtBytes(b)} (${b.toLocaleString()}B)`;
 }
 
+await ensureGeneratedBangData();
+
+const [{ BANGS }, { TRIE }, { handleSuggestRequest }] = await Promise.all([
+  import("../src/generated/bangs-min.js"),
+  import("../src/generated/bangs-trie.js"),
+  import("../src/server/handlers"),
+]);
+
 // ---------------------------------------------------------------------------
 // 1. FILE SIZES & DATA STATS
 // ---------------------------------------------------------------------------
@@ -62,9 +100,6 @@ function fmtBytesExact(b: number): string {
 separator("1. DATA SIZE & STRUCTURE ANALYSIS");
 
 const keys = Object.keys(BANGS);
-const minPath = "src/generated/bangs-min.js";
-const metaPath = "src/generated/bangs-meta.js";
-const triePath = "src/generated/bangs-trie.js";
 
 const minBytes = Bun.file(minPath).size;
 const metaBytes = Bun.file(metaPath).size;
