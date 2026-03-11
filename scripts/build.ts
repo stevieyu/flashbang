@@ -4,6 +4,32 @@ import { brotliCompressSync, constants } from "node:zlib";
 import { minify } from "@minify-html/node";
 import { $ } from "bun";
 
+const REQUIRED_GENERATED_FILES = [
+  "src/generated/bangs-min.js",
+  "src/generated/bangs-meta.js",
+  "src/generated/bangs-trie.js",
+];
+
+async function ensureGeneratedBangData(): Promise<void> {
+  const missing: string[] = [];
+  for (const file of REQUIRED_GENERATED_FILES) {
+    if (!(await Bun.file(file).exists())) {
+      missing.push(file);
+    }
+  }
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  console.warn(
+    `Missing generated bang data (${missing.join(", ")}). Running codegen --from-merged...`
+  );
+  await $`bun run codegen --from-merged`;
+}
+
+await ensureGeneratedBangData();
+
 // Start from a clean dist to avoid stale artifacts (e.g. orphaned .br chunks).
 await rm("dist", { recursive: true, force: true });
 await mkdir("dist", { recursive: true });
