@@ -20,8 +20,15 @@ jobs:
       - run: bun run check
       - run: bun test
       - run: bun run build
-      - name: Create GitHub Release
-        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
+      - name: Create or update GitHub Release
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; updating metadata."
+            gh release edit "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --latest
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --latest
+          fi
         env:
           GH_TOKEN: ${{ github.token }}
 
