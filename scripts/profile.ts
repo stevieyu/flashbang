@@ -5,39 +5,10 @@
  * Run: bun scripts/profile.ts
  */
 
-import { $ } from "bun";
 import { readPathname } from "../src/shared/raw-url";
+import { ensureGeneratedBangData, GENERATED_BANG_DATA_FILES } from "./codegen";
 
-const minPath = "src/generated/bangs-min.js";
-const metaPath = "src/generated/bangs-meta.js";
-const triePath = "src/generated/bangs-trie.js";
-const requiredGeneratedFiles = [minPath, metaPath, triePath];
-
-async function ensureGeneratedBangData() {
-  const missing: string[] = [];
-  for (const path of requiredGeneratedFiles) {
-    if (!(await Bun.file(path).exists())) {
-      missing.push(path);
-    }
-  }
-
-  if (missing.length === 0) {
-    return;
-  }
-
-  console.warn(
-    `Generated bang data not found (${missing.join(", ")}). Running codegen (--from-merged)...`
-  );
-  await $`bun scripts/codegen.ts --from-merged`;
-
-  for (const path of requiredGeneratedFiles) {
-    if (!(await Bun.file(path).exists())) {
-      throw new Error(
-        `Missing generated bang data after codegen: ${requiredGeneratedFiles.join(", ")}`
-      );
-    }
-  }
-}
+const [minPath, metaPath, triePath] = GENERATED_BANG_DATA_FILES;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -129,7 +100,7 @@ function fmtBytesExact(b: number): string {
   return `${fmtBytes(b)} (${b.toLocaleString()}B)`;
 }
 
-await ensureGeneratedBangData();
+await ensureGeneratedBangData(true);
 
 const [
   { BANGS },

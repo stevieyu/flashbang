@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { mkdir } from "node:fs/promises";
+import { $ } from "bun";
 
 interface Bang {
   domain: string;
@@ -24,6 +25,46 @@ interface RawKagiEntry {
   t: string;
   ts?: string[];
   u: string;
+}
+
+export const GENERATED_BANG_DATA_FILES = [
+  "src/generated/bangs-min.js",
+  "src/generated/bangs-meta.js",
+  "src/generated/bangs-trie.js",
+] as const;
+
+export async function ensureGeneratedBangData(
+  fromMerged = true
+): Promise<void> {
+  const missing: string[] = [];
+  for (const file of GENERATED_BANG_DATA_FILES) {
+    if (!(await Bun.file(file).exists())) {
+      missing.push(file);
+    }
+  }
+
+  if (missing.length === 0) {
+    return;
+  }
+
+  const mode = fromMerged ? " --from-merged" : "";
+  console.warn(
+    `Generated bang data missing (${missing.join(", ")}). Running codegen${mode}...`
+  );
+
+  if (fromMerged) {
+    await $`bun run codegen --from-merged`;
+  } else {
+    await $`bun run codegen`;
+  }
+
+  for (const file of GENERATED_BANG_DATA_FILES) {
+    if (!(await Bun.file(file).exists())) {
+      throw new Error(
+        `Missing generated bang data after codegen: ${GENERATED_BANG_DATA_FILES.join(", ")}`
+      );
+    }
+  }
 }
 
 function normalizeUrl(u: string, base: string): string {
@@ -453,111 +494,127 @@ function generateTrie(data: FlatTrieData, trieRuntimeHelpers: string): string {
 }
 
 const MERGED_PATH = "data/bangs.json";
-const noFetch = process.argv.includes("--no-fetch");
-const fromMerged = process.argv.includes("--from-merged");
-
-let valid: Bang[];
-
-if (fromMerged) {
-  console.log("=== Read merged bangs ===");
-  valid = await Bun.file(MERGED_PATH).json();
-  console.log(`Loaded ${valid.length} bangs from ${MERGED_PATH}`);
-} else {
-  if (!noFetch) {
-    console.log("=== Fetch bang sources ===");
-    await mkdir("data", { recursive: true });
-    const [kagiRes, ddgRes] = await Promise.all([
-      fetch(
-        "https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json"
-      ),
-      fetch("https://duckduckgo.com/bang.js"),
-    ]);
-    await Promise.all([
-      Bun.write("data/kagi.json", kagiRes),
-      Bun.write("data/ddg.json", ddgRes),
-    ]);
-  }
-
-  console.log("=== Parse sources ===");
-
-  const allSources: [string, Bang[]][] = [];
-
-  const ddgRaw = await Bun.file("data/ddg.json").text();
-  const ddgBangs = parseDdg(ddgRaw);
-  console.log(`DDG: ${ddgBangs.length} bangs parsed`);
-  allSources.push(["ddg", ddgBangs]);
-
-  const kagiRaw = await Bun.file("data/kagi.json").text();
-  const kagiBangs = parseKagi(kagiRaw);
-  console.log(`Kagi: ${kagiBangs.length} bangs parsed`);
-  allSources.push(["kagi", kagiBangs]);
-
-  const customData = await Bun.file("data/custom-bangs.json").json();
-  const customBangs = parseCustom(customData);
-  console.log(`Custom: ${customBangs.length} bangs parsed`);
-  allSources.push(["custom", customBangs]);
-
-  console.log("=== Merge + validate ===");
-  const merged = merge(allSources);
-  console.log(`Merged: ${merged.length} unique bangs`);
-
-  valid = validate(merged);
-  console.log(`Valid: ${valid.length} bangs after validation`);
-
-  console.log("=== Save merged bangs ===");
-  await Bun.write(MERGED_PATH, JSON.stringify(valid));
-  console.log(`  ${MERGED_PATH}: ${valid.length} bangs`);
+interface CodegenOptions {
+  fromMerged?: boolean;
+  noFetch?: boolean;
 }
 
-console.log("=== Generate ===");
-const outDir = "src/generated";
-await mkdir(outDir, { recursive: true });
+export async function runCodegen(options: CodegenOptions = {}): Promise<void> {
+  const { fromMerged = false, noFetch = false } = options;
 
-const minJs = generateMin(valid);
-await Bun.write(`${outDir}/bangs-min.js`, minJs);
-console.log(`  bangs-min.js: ${minJs.length} bytes`);
+  let valid: Bang[];
 
-const metaJs = generateMeta(valid);
-await Bun.write(`${outDir}/bangs-meta.js`, metaJs);
-console.log(`  bangs-meta.js: ${metaJs.length} bytes`);
+  if (fromMerged) {
+    console.log("=== Read merged bangs ===");
+    valid = await Bun.file(MERGED_PATH).json();
+    console.log(`Loaded ${valid.length} bangs from ${MERGED_PATH}`);
+  } else {
+    if (!noFetch) {
+      console.log("=== Fetch bang sources ===");
+      await mkdir("data", { recursive: true });
+      const [kagiRes, ddgRes] = await Promise.all([
+        fetch(
+          "https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json"
+        ),
+        fetch("https://duckduckgo.com/bang.js"),
+      ]);
+      await Promise.all([
+        Bun.write("data/kagi.json", kagiRes),
+        Bun.write("data/ddg.json", ddgRes),
+      ]);
+    }
 
-const trieRoot = buildRadixTrie(
-  valid,
-  (b) => b.trigger,
-  (b) => b.relevance
-);
-const trieData = flattenTrie(trieRoot);
-const trieRuntimeHelpers = buildMinifiedTrieRuntimeHelpers();
-const trieJs = generateTrie(trieData, trieRuntimeHelpers);
-await Bun.write(`${outDir}/bangs-trie.js`, trieJs);
-console.log(`  bangs-trie.js: ${trieJs.length} bytes`);
+    console.log("=== Parse sources ===");
 
-await Promise.all([
-  Bun.write(
-    `${outDir}/bangs-min.d.ts`,
-    "export declare const BANGS: Record<string, [string, string | null]>;\n"
-  ),
-  Bun.write(
-    `${outDir}/bangs-meta.d.ts`,
-    "export declare const BANGS: Record<string, { s: string; d: string }>;\n"
-  ),
-  Bun.write(
-    `${outDir}/bangs-trie.d.ts`,
-    [
-      "export declare const LABELS: string;",
-      "export declare const NODES: Int32Array;",
-      "export declare const EDGES: Int32Array;",
-      "export declare const TERM_R: Int32Array;",
-      "export declare const TERM_K_BLOB: string;",
-      "export declare const TERM_K_OFF: Int32Array;",
-      "export declare const TERM_S_BLOB: string;",
-      "export declare const TERM_S_OFF: Int32Array;",
-      "export declare const TERM_D_BLOB: string;",
-      "export declare const TERM_D_OFF: Int32Array;",
-      "export declare const ROOT: number;",
-      "",
-    ].join("\n")
-  ),
-]);
+    const allSources: [string, Bang[]][] = [];
 
-console.log(`Generated ${valid.length} bangs in ${outDir}/`);
+    const ddgRaw = await Bun.file("data/ddg.json").text();
+    const ddgBangs = parseDdg(ddgRaw);
+    console.log(`DDG: ${ddgBangs.length} bangs parsed`);
+    allSources.push(["ddg", ddgBangs]);
+
+    const kagiRaw = await Bun.file("data/kagi.json").text();
+    const kagiBangs = parseKagi(kagiRaw);
+    console.log(`Kagi: ${kagiBangs.length} bangs parsed`);
+    allSources.push(["kagi", kagiBangs]);
+
+    const customData = await Bun.file("data/custom-bangs.json").json();
+    const customBangs = parseCustom(customData);
+    console.log(`Custom: ${customBangs.length} bangs parsed`);
+    allSources.push(["custom", customBangs]);
+
+    console.log("=== Merge + validate ===");
+    const merged = merge(allSources);
+    console.log(`Merged: ${merged.length} unique bangs`);
+
+    valid = validate(merged);
+    console.log(`Valid: ${valid.length} bangs after validation`);
+
+    console.log("=== Save merged bangs ===");
+    await Bun.write(MERGED_PATH, JSON.stringify(valid));
+    console.log(`  ${MERGED_PATH}: ${valid.length} bangs`);
+  }
+
+  console.log("=== Generate ===");
+  const outDir = "src/generated";
+  await mkdir(outDir, { recursive: true });
+
+  const minJs = generateMin(valid);
+  await Bun.write(`${outDir}/bangs-min.js`, minJs);
+  console.log(`  bangs-min.js: ${minJs.length} bytes`);
+
+  const metaJs = generateMeta(valid);
+  await Bun.write(`${outDir}/bangs-meta.js`, metaJs);
+  console.log(`  bangs-meta.js: ${metaJs.length} bytes`);
+
+  const trieRoot = buildRadixTrie(
+    valid,
+    (b) => b.trigger,
+    (b) => b.relevance
+  );
+  const trieData = flattenTrie(trieRoot);
+  const trieRuntimeHelpers = buildMinifiedTrieRuntimeHelpers();
+  const trieJs = generateTrie(trieData, trieRuntimeHelpers);
+  await Bun.write(`${outDir}/bangs-trie.js`, trieJs);
+  console.log(`  bangs-trie.js: ${trieJs.length} bytes`);
+
+  await Promise.all([
+    Bun.write(
+      `${outDir}/bangs-min.d.ts`,
+      "export declare const BANGS: Record<string, [string, string | null]>;\n"
+    ),
+    Bun.write(
+      `${outDir}/bangs-meta.d.ts`,
+      "export declare const BANGS: Record<string, { s: string; d: string }>;\n"
+    ),
+    Bun.write(
+      `${outDir}/bangs-trie.d.ts`,
+      [
+        "export declare const LABELS: string;",
+        "export declare const NODES: Int32Array;",
+        "export declare const EDGES: Int32Array;",
+        "export declare const TERM_R: Int32Array;",
+        "export declare const TERM_K_BLOB: string;",
+        "export declare const TERM_K_OFF: Int32Array;",
+        "export declare const TERM_S_BLOB: string;",
+        "export declare const TERM_S_OFF: Int32Array;",
+        "export declare const TERM_D_BLOB: string;",
+        "export declare const TERM_D_OFF: Int32Array;",
+        "export declare const ROOT: number;",
+        "",
+      ].join("\n")
+    ),
+  ]);
+
+  console.log(`Generated ${valid.length} bangs in ${outDir}/`);
+}
+
+async function main(): Promise<void> {
+  const noFetch = process.argv.includes("--no-fetch");
+  const fromMerged = process.argv.includes("--from-merged");
+  await runCodegen({ fromMerged, noFetch });
+}
+
+if (import.meta.main) {
+  await main();
+}

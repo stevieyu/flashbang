@@ -11,11 +11,11 @@ bun install        # install dependencies
 bun run check      # format + lint check (fails on issues)
 bun run fix        # auto-fix format + lint issues
 bun run codegen    # fetch DDG/Kagi sources, merge, and generate bang maps
-bun run build      # bundle, minify + pre-compress with Brotli
+bun run build      # bundle, minify + pre-compress with Brotli (auto-runs codegen --from-merged if generated bang files are missing)
 bun run dev        # bundle + dev server with file watching & live reload (auto-runs codegen if needed)
 bun run start      # serve pre-built dist/ (run `bun run build` first)
 bun run typecheck  # type-check with tsc (no emit)
-bun run profile    # run performance profile benchmarks
+bun run profile    # run performance profile benchmarks (auto-runs codegen --from-merged if generated bang files are missing)
 bun test           # run tests
 bun run clean      # remove dist/
 ```
@@ -135,6 +135,8 @@ On **self-hosted** (Docker/Railway via `start.ts`), the Bun server sets headers 
 3. **Generate CSS** — UnoCSS scans `src/ui/**/*.ts` and HTML files, emitting atomic utility classes
 4. **Inline & minify HTML** — CSS is inlined into `<style>`, HTML is minified with `@minify-html/node`
 5. **Pre-compress** — All static assets are compressed with Brotli (max quality) and written as `.br` files alongside the originals. The production server serves these automatically when the client supports it, falling back to uncompressed
+
+If generated bang artifacts are missing, both `bun run build` and `bun run profile` automatically run `bun run codegen --from-merged` first.
 
 ## Frecency
 
