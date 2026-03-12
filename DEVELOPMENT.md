@@ -78,7 +78,7 @@ flashbang/
 │       ├── db.ts              # IndexedDB wrapper
 │       ├── liquid-metal.ts    # WebGL2 shader effect
 │       ├── icon.svg           # App icon
-│       ├── _headers           # Cloudflare Pages headers
+│       ├── _headers           # Static host header override (opensearch content-type)
 │       ├── manifest.json      # PWA manifest
 │       └── opensearch.xml     # OpenSearch descriptor
 ├── .dockerignore             # Files excluded from Docker build context
@@ -110,6 +110,7 @@ Tests live alongside the source files they cover:
    - `bangs-min.js` — trigger→URL map for the Service Worker
    - `bangs-meta.js` — trigger→{name, domain} for the UI
    - `bangs-trie.js` — radix trie for prefix-matched bang suggestions
+   - plus matching `*.d.ts` declaration files for all generated modules
 
 The `--from-merged` flag skips steps 1–2 and generates directly from the committed `data/bangs.json`. This is what CI builds use — no network fetch needed.
 
@@ -130,8 +131,8 @@ On **self-hosted** (Docker/Railway via `start.ts`), the Bun server sets headers 
 
 `bun run build` bundles the app:
 
-1. **Bundle Service Worker** — Bun bundles `src/sw/sw.ts` with `bangs-min.js` into `dist/sw.js`. Code splitting lazy-loads `suggest.ts` on first suggestion request
-2. **Bundle UI** — Bun bundles `src/ui/app.ts` (and its module imports) with `bangs-meta.js` into `dist/app.js`
+1. **Bundle Service Worker** — Bun bundles `src/sw/sw.ts` (including `bangs-min.js`) into `dist/sw.js`, with build-time cache constants injected for the precache list
+2. **Bundle UI + bench** — Bun bundles `src/ui/app.ts` (with code splitting) to `dist/app.js` plus small chunks, and bundles `src/ui/bench.ts` to `dist/bench.js`
 3. **Generate CSS** — UnoCSS scans `src/ui/**/*.ts` and HTML files, emitting atomic utility classes
 4. **Inline & minify HTML** — CSS is inlined into `<style>`, HTML is minified with `@minify-html/node`
 5. **Pre-compress** — All static assets are compressed with Brotli (max quality) and written as `.br` files alongside the originals. The production server serves these automatically when the client supports it, falling back to uncompressed
@@ -144,7 +145,7 @@ The Service Worker tracks bang usage to personalize suggestion ordering. The flo
 
 1. **On bang redirect** — `sw.ts` calls `trackBangUsage(trigger)` in `idb.ts`, which increments an in-memory count map and regenerates a compact cookie value (top 8 bangs, format: `g:50.yt:30.w:12`). A fire-and-forget IDB write persists the counts across SW restarts
 2. **Cookie sync** — `sw.ts` calls `cookieStore.set()` to write the `sf` cookie with the current frecency value. This happens on every bang redirect
-3. **Suggest reads frecency** — `suggest.ts` parses the `sf` cookie (or falls back to the `suggest` cookie's frecent section) via `parseCookie()` and passes it to `bangSuggestions()`, which boosts candidates by usage count via `effectiveScore()`
+3. **Suggest reads frecency** — `suggest.ts` parses the `sf` cookie (the sole source of frecency) via `parseCookie()` and passes it to `bangSuggestions()`, which boosts candidates by usage count via `effectiveScore()`
 
 The in-memory cache (`frecencyCounts` + preformatted `frecencyCookie` string in `idb.ts`) follows the same pattern as `cachedRedirect` — loaded from IDB once on SW activate, kept in memory for the lifetime of the SW, and reset on `invalidateCache()`.
 
@@ -169,7 +170,7 @@ The in-memory cache (`frecencyCounts` + preformatted `frecencyCookie` string in 
 The Dockerfile uses a multi-stage build to produce a minimal runtime image:
 
 1. **Build stage** — Installs dependencies, runs `codegen --from-merged` to generate bang maps from `data/bangs.json`, then runs `build` to bundle and pre-compress all assets
-2. **Runtime stage** — Copies only the built `dist/`, the production server script, and the modules it imports (suggestions, OpenSearch, bang data). No source code or dev dependencies in the final image
+2. **Runtime stage** — Copies `dist/`, `scripts/start.ts`, and only the source modules needed at runtime for dynamic `/suggest` and `/opensearch.xml` handling (plus generated trie data). Dev dependencies are not installed in the final image
 
 The production server exposes `GET /health`, and the runtime image defines a Docker `HEALTHCHECK` against that endpoint.
 
@@ -188,9 +189,9 @@ Static assets are served with Brotli pre-compression when the client supports it
 
 ## CI
 
-A CI workflow (`.github/workflows/ci.yaml`) runs on every push and pull request to `master`. It runs lint checks, tests, codegen (`--from-merged`), and a full build to catch issues before merge — no external fetching during CI builds.
+A CI workflow (`.github/workflows/ci.yaml`) runs on every push and pull request to `master`. It runs codegen (`--from-merged`), typecheck, lint/format checks, tests, and a full build to catch issues before merge — no external fetching during CI builds.
 
-A daily cron workflow (`.github/workflows/update-bangs.yaml`) fetches fresh bang sources from DDG and Kagi, merges them, and commits the updated `data/bangs.json`. The push triggers a deploy on Cloudflare Pages / Railway.
+A daily cron workflow (`.github/workflows/update-bangs.yaml`) fetches fresh bang sources from DDG and Kagi, merges them, and commits the updated `data/bangs.json` when there are changes.
 
 ## Releasing
 
@@ -200,7 +201,7 @@ A daily cron workflow (`.github/workflows/update-bangs.yaml`) fetches fresh bang
 4. Push: `git push && git push --tags`
 
 The release workflow (`.github/workflows/release.yaml`) handles the rest:
-runs tests, builds the project, and creates a GitHub Release. Release notes
-are maintained on GitHub Releases directly.
+runs codegen (`--from-merged`), typecheck, lint/format checks, tests, build,
+then creates or updates the GitHub Release.
 
 Before pushing the multi-arch image to GHCR, the release workflow builds a local image, runs it, and requires Docker's built-in container health status to become `healthy`.
