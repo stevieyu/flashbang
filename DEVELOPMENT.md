@@ -61,7 +61,8 @@ flashbang/
 │   ├── sw/
 │   │   ├── sw.ts              # Service Worker lifecycle & fetch handler
 │   │   ├── redirect.ts        # Bang parsing & redirect logic (zero-copy raw + decoded paths)
-│   │   └── idb.ts             # IndexedDB access, settings cache & in-memory frecency
+│   │   ├── idb.ts             # IndexedDB access, settings cache & in-memory frecency
+│   │   └── frecency.ts        # Top-K frecency helpers used by SW
 │   └── ui/
 │       ├── index.html         # HTML template
 │       ├── home.html          # Home page partial
@@ -99,6 +100,7 @@ Tests live alongside the source files they cover:
 - `src/sw/redirect.test.ts` — Bang parsing, routing logic, and URL encoding
 - `src/suggest.test.ts` — Cookie parsing, bang suggestions, and provider proxying
 - `src/shared/raw-url.test.ts` — Raw URL pathname and origin parsing
+- `src/sw/frecency.test.ts` — Top-K frecency ordering and serialization helpers
 
 ## Bang codegen
 
@@ -121,7 +123,7 @@ The bang data is split into two tiers so the Service Worker loads only what it n
 CSP headers are defined in `src/server/headers.ts` — the single source of truth for all deployment targets. The page CSP and SW CSP differ:
 
 - **Page CSP** — No `unsafe-eval`. The `script-src` value varies by target: `build.ts` uses inline script hashes, while `dev.ts`/`start.ts` use `'unsafe-inline'`
-- **SW CSP** — Includes `unsafe-eval` because `bangs-min.js` uses `Function()` for engine-detected fast parsing (V8/JSC). This is a deliberate performance tradeoff
+- **SW CSP** — Strict: `default-src 'self'; script-src 'self'; connect-src 'self'`. No `unsafe-eval`; SW runtime avoids eval.
 
 On **Cloudflare Pages**, CSP is set per-path in `_headers` (not `/*`) to avoid CF Pages' additive header merging — `/*` would combine with `/sw.js`, and the browser enforces the intersection. Instead, CSP is set individually on `/`, `/index.html`, `/home.html`, `/bench.html`, and `/sw.js`.
 
@@ -143,7 +145,7 @@ If generated bang artifacts are missing, both `bun run build` and `bun run profi
 
 The Service Worker tracks bang usage to personalize suggestion ordering. The flow:
 
-1. **On bang redirect** — `sw.ts` calls `trackBangUsage(trigger)` in `idb.ts`, which increments an in-memory count map and regenerates a compact cookie value (top 8 bangs, format: `g:50.yt:30.w:12`). A fire-and-forget IDB write persists the counts across SW restarts
+1. **On bang redirect** — `sw.ts` calls `trackBangUsage(trigger)` in `idb.ts`, which increments an in-memory count map and regenerates a compact cookie value (top 8 bangs, format: `g:50.yt:30.w:12`). Persistence is fire-and-forget and debounced (flush after 1s or 32 updates) to keep redirects fast
 2. **Cookie sync** — `sw.ts` calls `cookieStore.set()` to write the `sf` cookie with the current frecency value. This happens on every bang redirect
 3. **Suggest reads frecency** — `suggest.ts` parses the `sf` cookie (the sole source of frecency) via `parseCookie()` and passes it to `bangSuggestions()`, which boosts candidates by usage count via `effectiveScore()`
 
