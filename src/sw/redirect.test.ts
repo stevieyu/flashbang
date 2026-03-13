@@ -12,7 +12,12 @@ mock.module("../generated/bangs-min.js", () => {
     "https://developer.mozilla.org/en-US/search?q=",
     "&topic=api&topic=js",
   ];
-  return { BANGS };
+  return {
+    BANG_COUNT: Object.keys(BANGS).length,
+    lookupBang(trigger: string) {
+      return BANGS[trigger] ?? null;
+    },
+  };
 });
 
 import {

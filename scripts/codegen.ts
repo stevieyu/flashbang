@@ -244,35 +244,212 @@ function splitTemplate(url: string): [string, string | null] {
   return [url.substring(0, idx), url.substring(idx + 2)];
 }
 
-function generateMin(bangs: Bang[]): string {
-  let json = "{";
-  for (let i = 0; i < bangs.length; i++) {
-    if (i > 0) {
-      json += ",";
-    }
-    const [prefix, suffix] = splitTemplate(bangs[i].url);
-    const val =
-      suffix === null
-        ? `["${jsonEscape(prefix)}",null]`
-        : `["${jsonEscape(prefix)}","${jsonEscape(suffix)}"]`;
-    json += `"${jsonEscape(bangs[i].trigger)}":${val}`;
+interface PackedBlob {
+  blob: string;
+  lengths: number[];
+}
+
+function packBlob(values: readonly string[]): PackedBlob {
+  let blob = "";
+  const lengths = new Array<number>(values.length);
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    blob += v;
+    lengths[i] = v.length;
   }
-  json += "}";
+  return { blob, lengths };
+}
+
+function dedupeStrings(values: readonly string[]): {
+  ids: number[];
+  unique: string[];
+} {
+  const unique: string[] = [];
+  const ids = new Array<number>(values.length);
+  const map = new Map<string, number>();
+
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    const existing = map.get(value);
+    if (existing !== undefined) {
+      ids[i] = existing;
+      continue;
+    }
+    const id = unique.length;
+    unique.push(value);
+    map.set(value, id);
+    ids[i] = id;
+  }
+
+  return { ids, unique };
+}
+
+function hashFNV1a(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function toBase64U8(values: readonly number[]): string {
+  return Buffer.from(Uint8Array.from(values)).toString("base64");
+}
+
+function toBase64U16(values: readonly number[]): string {
+  const arr = Uint16Array.from(values);
+  return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength).toString(
+    "base64"
+  );
+}
+
+function nextPow2(n: number): number {
+  let p = 1;
+  while (p < n) {
+    p <<= 1;
+  }
+  return p;
+}
+
+function generateMin(bangs: Bang[]): string {
+  const entryCount = bangs.length;
+  if (entryCount > 0xffff) {
+    throw new Error(
+      `bangs-min packed format requires <= 65535 entries, got ${entryCount}`
+    );
+  }
+
+  const triggers = new Array<string>(entryCount);
+  const prefixes = new Array<string>(entryCount);
+  const rawSuffixes = new Array<string | null>(entryCount);
+
+  for (let i = 0; i < entryCount; i++) {
+    const bang = bangs[i];
+    const [prefix, suffix] = splitTemplate(bang.url);
+    triggers[i] = bang.trigger;
+    prefixes[i] = prefix;
+    rawSuffixes[i] = suffix;
+  }
+
+  const { ids: prefixIds, unique: uniquePrefixes } = dedupeStrings(prefixes);
+  if (uniquePrefixes.length > 0xffff) {
+    throw new Error(
+      `bangs-min packed format requires <= 65535 unique prefixes, got ${uniquePrefixes.length}`
+    );
+  }
+
+  const uniqueSuffixes: string[] = [];
+  const suffixIdsPlusOne = new Array<number>(entryCount);
+  const suffixMap = new Map<string, number>();
+  for (let i = 0; i < entryCount; i++) {
+    const suffix = rawSuffixes[i];
+    if (suffix === null) {
+      suffixIdsPlusOne[i] = 0;
+      continue;
+    }
+    const existing = suffixMap.get(suffix);
+    if (existing !== undefined) {
+      suffixIdsPlusOne[i] = existing + 1;
+      continue;
+    }
+    const id = uniqueSuffixes.length;
+    if (id >= 0xffff) {
+      throw new Error(
+        `bangs-min packed format requires <= 65535 unique suffixes, got ${id + 1}`
+      );
+    }
+    uniqueSuffixes.push(suffix);
+    suffixMap.set(suffix, id);
+    suffixIdsPlusOne[i] = id + 1;
+  }
+
+  const triggerBlob = packBlob(triggers);
+  const prefixBlob = packBlob(uniquePrefixes);
+  const suffixBlob = packBlob(uniqueSuffixes);
+
+  const triggerMaxLen = triggerBlob.lengths.reduce(
+    (max, len) => (len > max ? len : max),
+    0
+  );
+  const triggerLensKind = triggerMaxLen <= 0xff ? "u8" : "u16";
+  for (const len of prefixBlob.lengths) {
+    if (len > 0xffff) {
+      throw new Error(
+        `bangs-min packed format requires prefix length <= 65535, got ${len}`
+      );
+    }
+  }
+  for (const len of suffixBlob.lengths) {
+    if (len > 0xffff) {
+      throw new Error(
+        `bangs-min packed format requires suffix length <= 65535, got ${len}`
+      );
+    }
+  }
+
+  const HASH_TARGET_LOAD = 0.55;
+  const hashSize = nextPow2(
+    Math.max(2, Math.ceil(entryCount / HASH_TARGET_LOAD))
+  );
+  if (hashSize > 0xffff) {
+    throw new Error(
+      `bangs-min packed format requires hash table size <= 65535, got ${hashSize}`
+    );
+  }
+
+  const hashTable = new Uint16Array(hashSize);
+  const hashMask = hashSize - 1;
+  for (let idx = 0; idx < entryCount; idx++) {
+    let slot = hashFNV1a(triggers[idx]) & hashMask;
+    while (hashTable[slot] !== 0) {
+      slot = (slot + 1) & hashMask;
+    }
+    hashTable[slot] = idx + 1;
+  }
+
+  const triggerLensB64 =
+    triggerLensKind === "u8"
+      ? toBase64U8(triggerBlob.lengths)
+      : toBase64U16(triggerBlob.lengths);
+  const prefixLensB64 = toBase64U16(prefixBlob.lengths);
+  const suffixLensB64 = toBase64U16(suffixBlob.lengths);
+  const prefixIdsB64 = toBase64U16(prefixIds);
+  const suffixIdsB64 = toBase64U16(suffixIdsPlusOne);
+  const hashTableB64 = Buffer.from(hashTable.buffer).toString("base64");
+
+  const runtimeHelpers =
+    "function _b64bytes(s){if(typeof atob==='function'){const b=atob(s);const n=b.length;const o=new Uint8Array(n);for(let i=0;i<n;i++){o[i]=b.charCodeAt(i)}return o}if(typeof Buffer!=='undefined'){const b=Buffer.from(s,'base64');return new Uint8Array(b.buffer,b.byteOffset,b.byteLength)}throw new Error('No base64 decoder available')}" +
+    "function _b64u8(s){return _b64bytes(s)}" +
+    "function _b64u16(s){const b=_b64bytes(s);if((b.byteOffset&1)===0){return new Uint16Array(b.buffer,b.byteOffset,b.byteLength>>>1)}const c=new Uint8Array(b.byteLength);c.set(b);return new Uint16Array(c.buffer)}" +
+    "function _off(lengths){const n=lengths.length;const o=new Uint32Array(n+1);let p=0;for(let i=0;i<n;i++){o[i]=p;p+=lengths[i]}o[n]=p;return o}" +
+    "function _hash(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}";
 
   return (
-    // NOTE: 'let' prevents the bundler from inlining _d into both ternary
-    // branches, which would duplicate the ~900KB string and double output size.
-    `let _d='${jsEscape(json)}';` +
-    // NOTE: InternalError is SpiderMonkey-only; everything else gets Function().
-    `export const BANGS=typeof InternalError!=='undefined'` +
-    // NOTE: SpiderMonkey JSON.parse (Function() is 3.5x slower there)
-    "?JSON.parse(_d)" +
-    // NOTE: V8/JSC → Function() (~4x faster on V8, ~2x faster on JSC)
-    `:(0,Function)('return '+_d)();` +
-    // NOTE: Null prototype: -40% miss improvement on V8, -15% SM, -6% JSC
-    // Hit cost is tiny (+3-5%) and benefit outweighs the cons.
-    // Extremely important when using Function() in JSC without it huge slow down
-    "Object.setPrototypeOf(BANGS,null);"
+    runtimeHelpers +
+    `const _TB='${jsEscape(triggerBlob.blob)}';` +
+    `const _TL=${triggerLensKind === "u8" ? `_b64u8('${triggerLensB64}')` : `_b64u16('${triggerLensB64}')`};` +
+    "const _TO=_off(_TL);" +
+    `const _PB='${jsEscape(prefixBlob.blob)}';` +
+    `const _PL=_b64u16('${prefixLensB64}');` +
+    "const _PO=_off(_PL);" +
+    `const _SB='${jsEscape(suffixBlob.blob)}';` +
+    `const _SL=_b64u16('${suffixLensB64}');` +
+    "const _SO=_off(_SL);" +
+    `const _EP=_b64u16('${prefixIdsB64}');` +
+    `const _ES=_b64u16('${suffixIdsB64}');` +
+    `const _HT=_b64u16('${hashTableB64}');` +
+    `const _HM=${hashMask};` +
+    `const _PC=new Array(${uniquePrefixes.length});` +
+    `const _PR=new Uint8Array(${uniquePrefixes.length});` +
+    `const _SC=new Array(${uniqueSuffixes.length});` +
+    `const _SR=new Uint8Array(${uniqueSuffixes.length});` +
+    `const _TC=new Array(${entryCount});` +
+    "function _eq(i,s){const a=_TO[i];const b=_TO[i+1];const n=b-a;if(s.length!==n){return false}for(let j=0;j<n;j++){if(_TB.charCodeAt(a+j)!==s.charCodeAt(j)){return false}}return true}" +
+    "function _prefix(id){if(_PR[id]){return _PC[id]}const s=_PB.substring(_PO[id],_PO[id+1]);_PC[id]=s;_PR[id]=1;return s}" +
+    "function _suffix(id){if(_SR[id]){return _SC[id]}const s=_SB.substring(_SO[id],_SO[id+1]);_SC[id]=s;_SR[id]=1;return s}" +
+    `export const BANG_COUNT=${entryCount};` +
+    "export function lookupBang(trigger){let slot=_hash(trigger)&_HM;for(let i=0;i<_HT.length;i++){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_eq(idx,trigger)){let t=_TC[idx];if(t!==undefined){return t}const pid=_EP[idx];const sid=_ES[idx];t=sid===0?[_prefix(pid),null]:[_prefix(pid),_suffix(sid-1)];_TC[idx]=t;return t}slot=(slot+1)&_HM}return null}"
   );
 }
 
@@ -581,7 +758,11 @@ export async function runCodegen(options: CodegenOptions = {}): Promise<void> {
   await Promise.all([
     Bun.write(
       `${outDir}/bangs-min.d.ts`,
-      "export declare const BANGS: Record<string, [string, string | null]>;\n"
+      [
+        "export declare const BANG_COUNT: number;",
+        "export declare function lookupBang(trigger: string): readonly [string, string | null] | null;",
+        "",
+      ].join("\n")
     ),
     Bun.write(
       `${outDir}/bangs-meta.d.ts`,

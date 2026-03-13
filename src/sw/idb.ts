@@ -1,4 +1,4 @@
-import { BANGS } from "../generated/bangs-min.js";
+import { lookupBang } from "../generated/bangs-min.js";
 import {
   DEFAULT_LUCKY_URL,
   DEFAULT_URL,
@@ -63,7 +63,7 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
             ),
           ]);
         const defaultBang = result?.value || "g";
-        const tpl = BANGS[defaultBang];
+        const tpl = lookupBang(defaultBang);
         const defaultUrl: UrlParts = tpl || splitUrl(DEFAULT_URL);
         const luckyProvider = luckyProviderResult?.value ?? "default";
         let luckyUrl: UrlParts | null;

@@ -103,7 +103,7 @@ function fmtBytesExact(b: number): string {
 await ensureGeneratedBangData(true);
 
 const [
-  { BANGS },
+  { BANG_COUNT, lookupBang },
   { EDGES, LABELS, NODES, ROOT },
   { handleSuggestRequest },
   { bangSuggestions },
@@ -147,14 +147,12 @@ console.log(
 
 separator("1. DATA SIZE & STRUCTURE ANALYSIS");
 
-const keys = Object.keys(BANGS);
-
 const minBytes = Bun.file(minPath).size;
 const metaBytes = Bun.file(metaPath).size;
 const trieBytes = Bun.file(triePath).size;
 const totalGeneratedBytes = minBytes + metaBytes + trieBytes;
 
-console.log(`\nBang count: ${keys.length.toLocaleString()}`);
+console.log(`\nBang count: ${BANG_COUNT.toLocaleString()}`);
 console.log(
   `bangs-min.js:  ${fmtBytesExact(minBytes)}  (trigger→URL parts, used by SW)`
 );
@@ -168,7 +166,7 @@ console.log(
 );
 console.log(`Total generated: ${fmtBytesExact(totalGeneratedBytes)}`);
 console.log(
-  `Avg bytes per bang: ${Math.round(totalGeneratedBytes / keys.length).toLocaleString()}B`
+  `Avg bytes per bang: ${Math.round(totalGeneratedBytes / BANG_COUNT).toLocaleString()}B`
 );
 
 // ---------------------------------------------------------------------------
@@ -228,7 +226,7 @@ console.log(
 );
 
 // ---------------------------------------------------------------------------
-// 3. BANG LOOKUP PERFORMANCE (Object property access)
+// 3. BANG LOOKUP PERFORMANCE
 // ---------------------------------------------------------------------------
 
 separator("3. BANG LOOKUP PERFORMANCE");
@@ -246,7 +244,7 @@ const allSamples = [...sampleHits, ...sampleMisses];
 
 for (let i = 0; i < 10_000; i++) {
   for (const k of allSamples) {
-    void BANGS[k];
+    void lookupBang(k);
   }
 }
 
@@ -268,7 +266,9 @@ for (let run = 0; run < RUNS; run++) {
   t0 = Bun.nanoseconds();
   let hitCount = 0;
   for (let i = 0; i < LOOKUP_ITERS; i++) {
-    if (BANGS[allSamples[(i + offset + baselineLen) % allSamples.length]]) {
+    if (
+      lookupBang(allSamples[(i + offset + baselineLen) % allSamples.length])
+    ) {
       hitCount++;
     }
   }
@@ -283,7 +283,7 @@ const lookupNetMedian = Math.max(0, lookupRawMedian - lookupBaselineMedian);
 const lookupHitRatioPct = (median(lookupHitCounts) / LOOKUP_ITERS) * 100;
 const lookupStats = summarizeRuns(lookupTimes);
 
-console.log("\nObject property lookup (BANGS[key]):");
+console.log("\nPacked lookup (lookupBang):");
 console.log(`  ${LOOKUP_ITERS.toLocaleString()} iterations × ${RUNS} runs`);
 console.log(`  Median (raw):      ${fmt(lookupRawMedian)}/lookup`);
 console.log(`  p90 (run):         ${fmt(lookupStats.p90)}/lookup`);
@@ -1022,11 +1022,8 @@ separator("11. MODULE PARSE/EVAL TIME");
 const minFile = await Bun.file(minPath).text();
 const fullFile = await Bun.file(metaPath).text();
 const minEvalCode = minFile
-  .replace("export const BANGS=", "var __BANGS=")
-  .replace(
-    "Object.setPrototypeOf(BANGS,null)",
-    "Object.setPrototypeOf(__BANGS,null)"
-  );
+  .replaceAll("export const ", "const ")
+  .replaceAll("export function ", "function ");
 const fullEvalCode = fullFile
   .replace("export const BANGS=", "var __BANGS=")
   .replace(
@@ -1105,7 +1102,7 @@ console.log(`
 │ Module eval (bangs-meta.js)         │ ${fmt(evalFullStats.p50).padStart(10)} │ Cold start   │
 │ Module eval (bangs-trie.js)         │ ${fmt(evalTrieStats.p50).padStart(10)} │ Cold start   │
 ├─────────────────────────────────────┼────────────┼──────────────┤
-│ Object lookup (est. net)            │ ${fmt(lookupNetMedian).padStart(10)} │ Per redirect │
+│ Packed lookup (est. net)            │ ${fmt(lookupNetMedian).padStart(10)} │ Per redirect │
 │ bangSuggestions pipeline            │ ${fmt(trieSuggestRunStats.p50).padStart(10)} │ Per suggest  │
 │ Route parse (raw pathname)          │ ${fmt(pathViaRawStats.p50).padStart(10)} │ Per request  │
 │ Query parse (two params, 1 scan)    │ ${fmt(querySingleStats.p50).padStart(10)} │ Per request  │

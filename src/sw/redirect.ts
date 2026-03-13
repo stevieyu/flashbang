@@ -1,4 +1,4 @@
-import { BANGS } from "../generated/bangs-min.js";
+import { lookupBang } from "../generated/bangs-min.js";
 import {
   CH_0,
   CH_1,
@@ -220,7 +220,7 @@ function resolveBangFill(
   termStart: number,
   termEnd: number
 ): string | null {
-  const entry = custom[bang] || BANGS[bang];
+  const entry = custom[bang] || lookupBang(bang);
   if (!entry) {
     return null;
   }
@@ -250,7 +250,7 @@ function resolveBangOrigin(
   if (builtIn !== undefined) {
     return builtIn;
   }
-  const entry = BANGS[bang];
+  const entry = lookupBang(bang);
   if (!entry) {
     return null;
   }

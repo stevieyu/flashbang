@@ -4,9 +4,9 @@ const BASE_HEADERS: Record<string, string> = {
   "Referrer-Policy": "strict-origin-when-cross-origin",
 };
 
-// SW needs unsafe-eval for Function() (engine-detected fast parse in bangs-min.js).
+// SW runtime avoids eval; keep CSP strict.
 export const SW_CSP =
-  "default-src 'self'; script-src 'self' 'unsafe-eval'; connect-src 'self'";
+  "default-src 'self'; script-src 'self'; connect-src 'self'";
 
 export const SW_HEADERS: Record<string, string> = {
   "Content-Security-Policy": SW_CSP,
