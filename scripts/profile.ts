@@ -107,7 +107,8 @@ const [
   { EDGES, LABELS, NODES, ROOT },
   { handleSuggestRequest },
   { bangSuggestions },
-  { parseCookie },
+  { parseCookie, parseSettingsFromRawUrl },
+  { buildTopFrecency, serializeTopFrecency, updateTopFrecencyOnIncrement },
   { readQueryParam, readTwoQueryParams },
 ] = await Promise.all([
   import("../src/generated/bangs-min.js"),
@@ -115,6 +116,7 @@ const [
   import("../src/server/handlers"),
   import("../src/suggest-bang"),
   import("../src/suggest"),
+  import("../src/sw/frecency"),
   import("../src/shared/raw-query"),
 ]);
 
@@ -662,16 +664,31 @@ const reqHeavyCookie = new Request("http://localhost/suggest?q=x", {
       " misc1=1; misc2=2; misc3=3; misc4=4",
   },
 });
+const SETTINGS_PARSE_URL = "http://localhost/suggest?q=flashbang";
 
 const COOKIE_ITERS = 300_000;
 const cookieNoneTimes: number[] = [];
 const cookieLightTimes: number[] = [];
 const cookieHeavyTimes: number[] = [];
+const settingsFullContextTimes: number[] = [];
+const settingsPlainContextTimes: number[] = [];
 
 for (let i = 0; i < 10_000; i++) {
   parseSink += parseCookie(reqNoCookie).provider.length;
   parseSink += parseCookie(reqLightCookie).provider.length;
   parseSink += parseCookie(reqHeavyCookie).provider.length;
+  parseSink += parseSettingsFromRawUrl(
+    SETTINGS_PARSE_URL,
+    reqHeavyCookie,
+    "none",
+    true
+  ).provider.length;
+  parseSink += parseSettingsFromRawUrl(
+    SETTINGS_PARSE_URL,
+    reqHeavyCookie,
+    "none",
+    false
+  ).provider.length;
 }
 
 for (let run = 0; run < RUNS; run++) {
@@ -695,11 +712,39 @@ for (let run = 0; run < RUNS; run++) {
     parseSink += s.provider.length + s.trigger.length + s.custom.length;
   }
   cookieHeavyTimes.push((Bun.nanoseconds() - t0) / COOKIE_ITERS);
+
+  t0 = Bun.nanoseconds();
+  for (let i = 0; i < COOKIE_ITERS; i++) {
+    const s = parseSettingsFromRawUrl(
+      SETTINGS_PARSE_URL,
+      reqHeavyCookie,
+      "none",
+      true
+    );
+    parseSink += s.provider.length + s.trigger.length + s.custom.length;
+  }
+  settingsFullContextTimes.push((Bun.nanoseconds() - t0) / COOKIE_ITERS);
+
+  t0 = Bun.nanoseconds();
+  for (let i = 0; i < COOKIE_ITERS; i++) {
+    const s = parseSettingsFromRawUrl(
+      SETTINGS_PARSE_URL,
+      reqHeavyCookie,
+      "none",
+      false
+    );
+    parseSink += s.provider.length + s.trigger.length + s.custom.length;
+  }
+  settingsPlainContextTimes.push((Bun.nanoseconds() - t0) / COOKIE_ITERS);
 }
 
 const cookieNoneStats = summarizeRuns(cookieNoneTimes);
 const cookieLightStats = summarizeRuns(cookieLightTimes);
 const cookieHeavyStats = summarizeRuns(cookieHeavyTimes);
+const settingsFullContextStats = summarizeRuns(settingsFullContextTimes);
+const settingsPlainContextStats = summarizeRuns(settingsPlainContextTimes);
+const settingsPlainSpeedup =
+  settingsFullContextStats.p50 / settingsPlainContextStats.p50;
 if (parseSink === -1) {
   console.log("");
 }
@@ -716,12 +761,106 @@ console.log(
 console.log(
   `  Heavy cookie: ${fmt(cookieHeavyStats.p50)} median, ${fmt(cookieHeavyStats.p90)} p90`
 );
+console.log(
+  `  parseSettings heavy (full bang context):  ${fmt(settingsFullContextStats.p50)} median, ${fmt(settingsFullContextStats.p90)} p90`
+);
+console.log(
+  `  parseSettings heavy (plain only context): ${fmt(settingsPlainContextStats.p50)} median, ${fmt(settingsPlainContextStats.p90)} p90`
+);
+console.log(`  Plain-only parse speedup: ${settingsPlainSpeedup.toFixed(2)}x`);
 
 // ---------------------------------------------------------------------------
-// 8. SUGGEST HANDLER PERFORMANCE
+// 8. FRECENCY HOT-PATH PERFORMANCE
 // ---------------------------------------------------------------------------
 
-separator("8. SUGGEST HANDLER PERFORMANCE");
+separator("8. FRECENCY HOT-PATH PERFORMANCE");
+
+const FRECENCY_ITERS = 200_000;
+const FREQUENCY_TRIGGERS = [
+  "g",
+  "yt",
+  "ddg",
+  "gh",
+  "w",
+  "mdn",
+  "npm",
+  "rs",
+  "so",
+];
+const FRECENCY_LIMIT = 8;
+
+function legacyFrecencyCookie(counts: Record<string, number>): string {
+  const keys = Object.keys(counts);
+  if (keys.length === 0) {
+    return "";
+  }
+  keys.sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+  const n = keys.length < FRECENCY_LIMIT ? keys.length : FRECENCY_LIMIT;
+  let out = `${keys[0]}:${counts[keys[0]]}`;
+  for (let i = 1; i < n; i++) {
+    out += `.${keys[i]}:${counts[keys[i]]}`;
+  }
+  return out;
+}
+
+const legacyFrecencyTimes: number[] = [];
+const incrementalFrecencyTimes: number[] = [];
+let frecencySink = 0;
+
+for (let run = 0; run < RUNS; run++) {
+  const legacyCounts: Record<string, number> = {};
+  const incrementalCounts: Record<string, number> = {};
+  for (let i = 0; i < 64; i++) {
+    const key = `seed-${i}`;
+    const value = ((i * 17) % 23) + 1;
+    legacyCounts[key] = value;
+    incrementalCounts[key] = value;
+  }
+
+  let t0 = Bun.nanoseconds();
+  for (let i = 0; i < FRECENCY_ITERS; i++) {
+    const trigger = FREQUENCY_TRIGGERS[(i + run) % FREQUENCY_TRIGGERS.length];
+    legacyCounts[trigger] = (legacyCounts[trigger] || 0) + 1;
+    frecencySink += legacyFrecencyCookie(legacyCounts).length;
+  }
+  legacyFrecencyTimes.push((Bun.nanoseconds() - t0) / FRECENCY_ITERS);
+
+  const top = buildTopFrecency(incrementalCounts, FRECENCY_LIMIT);
+  t0 = Bun.nanoseconds();
+  for (let i = 0; i < FRECENCY_ITERS; i++) {
+    const trigger = FREQUENCY_TRIGGERS[(i + run) % FREQUENCY_TRIGGERS.length];
+    const next = (incrementalCounts[trigger] || 0) + 1;
+    incrementalCounts[trigger] = next;
+    updateTopFrecencyOnIncrement(top, trigger, next, FRECENCY_LIMIT);
+    frecencySink += serializeTopFrecency(top).length;
+  }
+  incrementalFrecencyTimes.push((Bun.nanoseconds() - t0) / FRECENCY_ITERS);
+}
+
+if (frecencySink === -1) {
+  console.log("");
+}
+
+const legacyFrecencyStats = summarizeRuns(legacyFrecencyTimes);
+const incrementalFrecencyStats = summarizeRuns(incrementalFrecencyTimes);
+const frecencySpeedup = legacyFrecencyStats.p50 / incrementalFrecencyStats.p50;
+
+console.log(
+  `\nFrecency update benchmark — ${FRECENCY_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
+);
+console.log(
+  `  Legacy full-sort cookie rebuild: ${fmt(legacyFrecencyStats.p50)} median, ${fmt(legacyFrecencyStats.p90)} p90`
+);
+console.log(
+  `  Incremental top-k update:        ${fmt(incrementalFrecencyStats.p50)} median, ${fmt(incrementalFrecencyStats.p90)} p90`
+);
+console.log(`  Incremental speedup: ${frecencySpeedup.toFixed(2)}x`);
+
+// ---------------------------------------------------------------------------
+// 9. SUGGEST HANDLER PERFORMANCE
+// ---------------------------------------------------------------------------
+
+separator("9. SUGGEST HANDLER PERFORMANCE");
 
 const reqBang = new Request("http://localhost/suggest?q=!gh", {
   headers: { Cookie: "suggest=default,g," },
@@ -729,15 +868,29 @@ const reqBang = new Request("http://localhost/suggest?q=!gh", {
 const reqPlain = new Request("http://localhost/suggest?q=flashbang&sp=none", {
   headers: { Cookie: "suggest=none,g," },
 });
+const reqPlainHeavy = new Request(
+  "http://localhost/suggest?q=flashbang&sp=none",
+  {
+    headers: {
+      Cookie:
+        "session=abc123; theme=dark; lang=en-US; exp=beta-on; tracking=xyz;" +
+        " suggest=custom,g,https%3A%2F%2Fexample.com%2Fsearch%3Fq%3D%7B%7D,|meta|gh.mdn.npm.rs.w;" +
+        " sf=g:50.yt:30.w:20.ddg:10.gh:8.npm:6.rs:4;" +
+        " misc1=1; misc2=2; misc3=3; misc4=4",
+    },
+  }
+);
 
 const HANDLER_ITERS = 60_000;
 for (let i = 0; i < 1_000; i++) {
   await handleSuggestRequest(reqBang);
   await handleSuggestRequest(reqPlain);
+  await handleSuggestRequest(reqPlainHeavy);
 }
 
 const handlerBangTimes: number[] = [];
 const handlerPlainTimes: number[] = [];
+const handlerPlainHeavyTimes: number[] = [];
 for (let run = 0; run < RUNS; run++) {
   let t0 = Bun.nanoseconds();
   for (let i = 0; i < HANDLER_ITERS; i++) {
@@ -750,10 +903,17 @@ for (let run = 0; run < RUNS; run++) {
     await handleSuggestRequest(reqPlain);
   }
   handlerPlainTimes.push((Bun.nanoseconds() - t0) / HANDLER_ITERS);
+
+  t0 = Bun.nanoseconds();
+  for (let i = 0; i < HANDLER_ITERS; i++) {
+    await handleSuggestRequest(reqPlainHeavy);
+  }
+  handlerPlainHeavyTimes.push((Bun.nanoseconds() - t0) / HANDLER_ITERS);
 }
 
 const handlerBangStats = summarizeRuns(handlerBangTimes);
 const handlerPlainStats = summarizeRuns(handlerPlainTimes);
+const handlerPlainHeavyStats = summarizeRuns(handlerPlainHeavyTimes);
 
 console.log(
   `\nhandleSuggestRequest() — ${HANDLER_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
@@ -764,12 +924,15 @@ console.log(
 console.log(
   `  Plain query path:     ${fmt(handlerPlainStats.p50)} median, ${fmt(handlerPlainStats.p90)} p90`
 );
+console.log(
+  `  Plain heavy-cookie:   ${fmt(handlerPlainHeavyStats.p50)} median, ${fmt(handlerPlainHeavyStats.p90)} p90`
+);
 
 // ---------------------------------------------------------------------------
-// 9. FIRST-HIT SUGGEST (ISOLATED PROCESS)
+// 10. FIRST-HIT SUGGEST (ISOLATED PROCESS)
 // ---------------------------------------------------------------------------
 
-separator("9. FIRST-HIT SUGGEST (ISOLATED PROCESS)");
+separator("10. FIRST-HIT SUGGEST (ISOLATED PROCESS)");
 
 function runIsolatedNs(script: string, label: string): number {
   const proc = Bun.spawnSync({
@@ -851,10 +1014,10 @@ console.log(
 );
 
 // ---------------------------------------------------------------------------
-// 10. MODULE PARSE/EVAL TIME
+// 11. MODULE PARSE/EVAL TIME
 // ---------------------------------------------------------------------------
 
-separator("10. MODULE PARSE/EVAL TIME");
+separator("11. MODULE PARSE/EVAL TIME");
 
 const minFile = await Bun.file(minPath).text();
 const fullFile = await Bun.file(metaPath).text();
@@ -947,7 +1110,9 @@ console.log(`
 │ Route parse (raw pathname)          │ ${fmt(pathViaRawStats.p50).padStart(10)} │ Per request  │
 │ Query parse (two params, 1 scan)    │ ${fmt(querySingleStats.p50).padStart(10)} │ Per request  │
 │ Cookie parse (heavy header)         │ ${fmt(cookieHeavyStats.p50).padStart(10)} │ Per request  │
+│ Frecency update (incremental)       │ ${fmt(incrementalFrecencyStats.p50).padStart(10)} │ Per redirect │
 │ Suggest handler (bang)              │ ${fmt(handlerBangStats.p50).padStart(10)} │ Per suggest  │
+│ Suggest handler (plain heavy)       │ ${fmt(handlerPlainHeavyStats.p50).padStart(10)} │ Per suggest  │
 │ First-hit suggest (plain)           │ ${fmt(coldPlainNs).padStart(10)} │ Cold start   │
 │ First-hit suggest (bang)            │ ${fmt(coldBangNs).padStart(10)} │ Cold start   │
 │ Warm plain-then-bang                │ ${fmt(warmThenBangNs).padStart(10)} │ Cold start   │
