@@ -14,34 +14,56 @@ if (!(await distIndex.exists())) {
   process.exit(1);
 }
 
-async function serveCompressed(
+interface StaticAsset {
+  br: Bun.BunFile | null;
+  file: Bun.BunFile;
+  type: string;
+}
+
+function buildStaticManifest(): Map<string, StaticAsset> {
+  const files = [...new Bun.Glob("**/*").scanSync("dist")];
+  const byName = new Set(files);
+  const map = new Map<string, StaticAsset>();
+
+  for (const name of files) {
+    if (name.endsWith(".br")) {
+      continue;
+    }
+    const file = Bun.file(`dist/${name}`);
+    const br = byName.has(`${name}.br`) ? Bun.file(`dist/${name}.br`) : null;
+    map.set(`/${name}`, { file, br, type: file.type });
+  }
+
+  return map;
+}
+
+const STATIC_MANIFEST = buildStaticManifest();
+const SW_FILE = STATIC_MANIFEST.get("/sw.js")?.file ?? Bun.file("dist/sw.js");
+
+function serveCompressed(
   req: Request,
-  filePath: string,
+  assetPath: string,
   extraHeaders?: Record<string, string>
 ) {
-  const file = Bun.file(filePath);
-  if (!(await file.exists())) {
+  const asset = STATIC_MANIFEST.get(assetPath);
+  if (!asset) {
     return null;
   }
 
   const accept = req.headers.get("accept-encoding") ?? "";
-  const contentType = file.type;
 
-  if (accept.includes("br")) {
-    const br = Bun.file(`${filePath}.br`);
-    if (await br.exists()) {
-      return new Response(br, {
-        headers: {
-          "Content-Encoding": "br",
-          "Content-Type": contentType,
-          ...SECURITY_HEADERS,
-          ...extraHeaders,
-        },
-      });
-    }
+  if (asset.br && accept.includes("br")) {
+    return new Response(asset.br, {
+      headers: {
+        "Content-Encoding": "br",
+        "Content-Type": asset.type,
+        ...SECURITY_HEADERS,
+        ...extraHeaders,
+      },
+    });
   }
 
-  return new Response(file, {
+  return new Response(asset.file, {
     headers: { ...SECURITY_HEADERS, ...extraHeaders },
   });
 }
@@ -75,15 +97,14 @@ Bun.serve({
     }
 
     if (pathname === "/sw.js") {
-      const file = Bun.file("dist/sw.js");
-      return new Response(file, { headers: SW_HEADERS });
+      return new Response(SW_FILE, { headers: SW_HEADERS });
     }
 
     if (pathname === "/bench") {
-      return (await serveCompressed(req, "dist/bench.html", {
+      return serveCompressed(req, "/bench.html", {
         "Cross-Origin-Opener-Policy": "same-origin",
         "Cross-Origin-Embedder-Policy": "credentialless",
-      }))!;
+      })!;
     }
 
     const path = pathname === "/" ? "/index.html" : pathname;
@@ -94,19 +115,19 @@ Bun.serve({
         headers: SECURITY_HEADERS,
       });
     }
-    const fromDist = await serveCompressed(req, normalized);
+    const fromDist = serveCompressed(req, `/${normalized.substring(5)}`);
     if (fromDist) {
       return fromDist;
     }
 
     const htmlNormalized = normalize(`dist${path}.html`);
     if (htmlNormalized.startsWith("dist/")) {
-      const fromHtml = await serveCompressed(req, htmlNormalized);
+      const fromHtml = serveCompressed(req, `/${htmlNormalized.substring(5)}`);
       if (fromHtml) {
         return fromHtml;
       }
     }
 
-    return (await serveCompressed(req, "dist/index.html"))!;
+    return serveCompressed(req, "/index.html")!;
   },
 });
