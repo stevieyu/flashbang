@@ -7,6 +7,12 @@ import {
   MAX_FRECENCY_ENTRIES,
 } from "../shared/constants";
 import { idbWrap, openDB, resetDB } from "../shared/idb";
+import {
+  buildTopFrecency,
+  serializeTopFrecency,
+  type TopFrecencyEntry,
+  updateTopFrecencyOnIncrement,
+} from "./frecency";
 import type { RedirectSettings, UrlParts } from "./redirect";
 
 function splitUrl(url: string): UrlParts {
@@ -25,6 +31,7 @@ let redirectSettingsPromise: Promise<RedirectSettings> | null = null;
 let frecencyCounts: Record<string, number> | null = null;
 let loadFrecencyPromise: Promise<void> | null = null;
 let frecencyCookie: string = "";
+let topFrecency: TopFrecencyEntry[] = [];
 let lastDecayTs: number = 0;
 let pendingPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingPersistUpdates = 0;
@@ -156,29 +163,20 @@ export function invalidateCache() {
   loadFrecencyPromise = null;
   resetDB();
   frecencyCounts = null;
+  topFrecency = [];
   frecencyCookie = "";
   lastDecayTs = 0;
 }
 
-function regenerateFrecencyValue(): void {
+function rebuildFrecencyTopAndValue(): void {
   const counts = frecencyCounts;
   if (!counts) {
+    topFrecency = [];
     frecencyCookie = "";
     return;
   }
-  const keys = Object.keys(counts);
-  const len = keys.length;
-  if (len === 0) {
-    frecencyCookie = "";
-    return;
-  }
-  keys.sort((a, b) => counts[b] - counts[a]);
-  const n = len < FRECENCY_COOKIE_ENTRIES ? len : FRECENCY_COOKIE_ENTRIES;
-  let s = `${keys[0]}:${counts[keys[0]]}`;
-  for (let i = 1; i < n; i++) {
-    s += `.${keys[i]}:${counts[keys[i]]}`;
-  }
-  frecencyCookie = s;
+  topFrecency = buildTopFrecency(counts, FRECENCY_COOKIE_ENTRIES);
+  frecencyCookie = serializeTopFrecency(topFrecency);
 }
 
 function applyDecay(): void {
@@ -247,10 +245,12 @@ export function loadFrecency(): Promise<void> {
 
         applyDecay();
         pruneFrecency();
-        regenerateFrecencyValue();
+        rebuildFrecencyTopAndValue();
         schedulePersistFrecency();
       } catch {
         frecencyCounts = {};
+        topFrecency = [];
+        frecencyCookie = "";
         lastDecayTs = Date.now();
       }
     })().finally(() => {
@@ -264,8 +264,16 @@ export function loadFrecency(): Promise<void> {
 export function trackBangUsage(trigger: string) {
   if (!frecencyCounts) {
     frecencyCounts = {};
+    topFrecency = [];
   }
-  frecencyCounts[trigger] = (frecencyCounts[trigger] || 0) + 1;
-  regenerateFrecencyValue();
+  const nextCount = (frecencyCounts[trigger] || 0) + 1;
+  frecencyCounts[trigger] = nextCount;
+  updateTopFrecencyOnIncrement(
+    topFrecency,
+    trigger,
+    nextCount,
+    FRECENCY_COOKIE_ENTRIES
+  );
+  frecencyCookie = serializeTopFrecency(topFrecency);
   schedulePersistFrecency();
 }
