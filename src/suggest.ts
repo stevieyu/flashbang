@@ -12,12 +12,24 @@ import { readQueryParam } from "./shared/raw-query";
 import { resolveTemplateParts } from "./shared/template";
 import { bangSuggestions } from "./suggest-bang";
 
-export interface SuggestSettings {
+export interface SuggestCoreSettings {
   customUrl: string | null;
   provider: string;
   trigger: string;
+}
+
+export interface SuggestBangContext {
   frecent: Record<string, number>;
   custom: string[];
+}
+
+export interface SuggestSettings
+  extends SuggestCoreSettings,
+    SuggestBangContext {}
+
+export interface PartialBang {
+  partial: string;
+  prefix: string;
 }
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
@@ -45,9 +57,7 @@ function empty(query: string): Response {
   return new Response(JSON.stringify([query, []]), { headers: JSON_HEADERS });
 }
 
-function parsePartialBang(
-  q: string
-): { prefix: string; partial: string } | null {
+export function parsePartialBang(q: string): PartialBang | null {
   let start = 0;
   let end = q.length;
 
@@ -153,6 +163,13 @@ function safeDecodeURIComponent(value: string): string | null {
 
 export function parseCookie(request: Request): SuggestSettings {
   const header = request.headers.get("Cookie") || "";
+  return parseCookieInternal(header, true);
+}
+
+function parseCookieInternal(
+  header: string,
+  includeBangContext: boolean
+): SuggestSettings {
   const suggestRaw = readCookieValue(header, "suggest");
   if (suggestRaw === null) {
     return defaultSettings();
@@ -162,12 +179,12 @@ export function parseCookie(request: Request): SuggestSettings {
   if (firstSectionEnd === -1) {
     firstSectionEnd = suggestRaw.length;
   }
-  const secondPipe =
-    firstSectionEnd === suggestRaw.length
-      ? -1
-      : suggestRaw.indexOf("|", firstSectionEnd + 1);
-  const customSection =
-    secondPipe === -1 ? "" : suggestRaw.substring(secondPipe + 1);
+  let customSection = "";
+  if (includeBangContext && firstSectionEnd !== suggestRaw.length) {
+    const secondPipe = suggestRaw.indexOf("|", firstSectionEnd + 1);
+    customSection =
+      secondPipe === -1 ? "" : suggestRaw.substring(secondPipe + 1);
+  }
 
   const firstSection = suggestRaw.substring(0, firstSectionEnd);
   let provider = "";
@@ -192,9 +209,10 @@ export function parseCookie(request: Request): SuggestSettings {
     }
   }
 
-  const sfRaw = readCookieValue(header, "sf");
-  const frecent: Record<string, number> = sfRaw ? parseFrecency(sfRaw) : {};
-  const custom = parseCustomTriggers(customSection);
+  const sfRaw = includeBangContext ? readCookieValue(header, "sf") : null;
+  const frecent: Record<string, number> =
+    includeBangContext && sfRaw ? parseFrecency(sfRaw) : {};
+  const custom = includeBangContext ? parseCustomTriggers(customSection) : [];
 
   return {
     provider: provider || "default",
@@ -288,9 +306,13 @@ export function parseSettings(url: URL, request: Request): SuggestSettings {
 export function parseSettingsFromRawUrl(
   rawUrl: string,
   request: Request,
-  spOverride?: string | null
+  spOverride?: string | null,
+  includeBangContext = true
 ): SuggestSettings {
-  const settings = parseCookie(request);
+  const settings = parseCookieInternal(
+    request.headers.get("Cookie") || "",
+    includeBangContext
+  );
   const sp = spOverride ?? readQueryParam(rawUrl, "sp");
   if (sp) {
     settings.provider = sp;
@@ -301,9 +323,10 @@ export function parseSettingsFromRawUrl(
 
 export async function suggest(
   query: string,
-  settings: SuggestSettings
+  settings: SuggestSettings,
+  bangOverride?: PartialBang | null
 ): Promise<Response> {
-  const bang = parsePartialBang(query);
+  const bang = bangOverride ?? parsePartialBang(query);
   if (bang) {
     return bangSuggestions(
       query,

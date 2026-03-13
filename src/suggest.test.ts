@@ -462,6 +462,22 @@ describe("parseSettingsFromRawUrl", () => {
     );
     expect(s.provider).toBe("�%A");
   });
+
+  test("plain-mode parsing skips bang context while preserving core settings", () => {
+    const s = parseSettingsFromRawUrl(
+      "http://localhost/suggest?q=cats",
+      req(
+        "suggest=custom,g,https%3A%2F%2Fexample.com%2Fsearch%3Fq%3D%7B%7D,|meta|gh.mdn; sf=g:10.yt:4"
+      ),
+      null,
+      false
+    );
+    expect(s.provider).toBe("custom");
+    expect(s.trigger).toBe("g");
+    expect(s.customUrl).toBe("https://example.com/search?q={}");
+    expect(s.frecent).toEqual({});
+    expect(s.custom).toEqual([]);
+  });
 });
 
 describe("bang suggestions — via suggest()", () => {
