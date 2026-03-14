@@ -25,20 +25,28 @@ const ASSETS = [
   ...__EXTRA_ASSETS__,
 ];
 
-const PRECACHE_ASSETS = [...new Set(ASSETS)];
+const CRITICAL_ASSETS: string[] = [];
+const OPTIONAL_ASSETS = [...new Set(ASSETS)];
 const PRECACHE_CONCURRENCY = 4;
+let optionalPrecachePromise: Promise<void> | null = null;
 
-async function precacheAssets(cacheName: string): Promise<void> {
+async function precacheAssets(
+  cacheName: string,
+  assetPaths: readonly string[]
+): Promise<void> {
+  if (assetPaths.length === 0) {
+    return;
+  }
   const cache = await caches.open(cacheName);
   let nextIndex = 0;
 
   async function work(): Promise<void> {
     while (true) {
       const idx = nextIndex++;
-      if (idx >= PRECACHE_ASSETS.length) {
+      if (idx >= assetPaths.length) {
         return;
       }
-      const assetPath = PRECACHE_ASSETS[idx];
+      const assetPath = assetPaths[idx];
       const req = new Request(assetPath);
       const res = await fetch(req);
       if (!res.ok) {
@@ -50,7 +58,7 @@ async function precacheAssets(cacheName: string): Promise<void> {
     }
   }
 
-  const workers = Math.min(PRECACHE_CONCURRENCY, PRECACHE_ASSETS.length);
+  const workers = Math.min(PRECACHE_CONCURRENCY, assetPaths.length);
   await Promise.all(Array.from({ length: workers }, () => work()));
 }
 
@@ -61,9 +69,24 @@ async function deleteOldCaches(cacheName: string): Promise<void> {
   );
 }
 
+function ensureOptionalPrecache(): Promise<void> {
+  if (optionalPrecachePromise) {
+    return optionalPrecachePromise;
+  }
+  optionalPrecachePromise = precacheAssets(CACHE_NAME, OPTIONAL_ASSETS).catch(
+    () => {
+      /* best-effort */
+    }
+  );
+  return optionalPrecachePromise;
+}
+
 self.addEventListener("install", (e: ExtendableEvent) => {
   e.waitUntil(
-    Promise.all([self.skipWaiting(), precacheAssets(CACHE_NAME)]).then(() => {
+    Promise.all([
+      self.skipWaiting(),
+      precacheAssets(CACHE_NAME, CRITICAL_ASSETS),
+    ]).then(() => {
       /* no-op */
     })
   );
@@ -143,6 +166,15 @@ self.addEventListener("fetch", (e: FetchEvent) => {
       }
       return;
     }
+  }
+
+  if (
+    raw.endsWith("/") ||
+    raw.endsWith("/settings") ||
+    raw.endsWith("/home") ||
+    raw.endsWith("/bench")
+  ) {
+    e.waitUntil(ensureOptionalPrecache());
   }
 
   if (raw.endsWith("/bench")) {
