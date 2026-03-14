@@ -145,7 +145,7 @@ If generated bang artifacts are missing, both `bun run build` and `bun run profi
 
 The Service Worker tracks bang usage to personalize suggestion ordering. The flow:
 
-1. **On bang redirect** — `sw.ts` calls `trackBangUsage(trigger)` in `idb.ts`, which increments an in-memory count map and regenerates a compact cookie value (top 8 bangs, format: `g:50.yt:30.w:12`). Persistence is fire-and-forget and debounced (flush after 1s or 32 updates) to keep redirects fast
+1. **On bang redirect** — `sw.ts` calls `trackBangUsage(trigger)` in `idb.ts`, which increments an in-memory count map and regenerates a compact cookie value (top 8 bangs, format: `g:50.yt:30.w:12`). A fire-and-forget IDB write persists the counts across SW restarts
 2. **Cookie sync** — `sw.ts` calls `cookieStore.set()` to write the `sf` cookie with the current frecency value. This happens on every bang redirect
 3. **Suggest reads frecency** — `suggest.ts` parses the `sf` cookie (the sole source of frecency) via `parseCookie()` and passes it to `bangSuggestions()`, which boosts candidates by usage count via `effectiveScore()`
 

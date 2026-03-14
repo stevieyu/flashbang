@@ -23,8 +23,6 @@ function splitUrl(url: string): UrlParts {
 }
 
 const FRECENCY_COOKIE_ENTRIES = 8;
-const PERSIST_DEBOUNCE_MS = 1000;
-const PERSIST_FLUSH_THRESHOLD = 32;
 
 let cachedRedirect: RedirectSettings | null = null;
 let redirectSettingsPromise: Promise<RedirectSettings> | null = null;
@@ -33,8 +31,6 @@ let loadFrecencyPromise: Promise<void> | null = null;
 let frecencyCookie: string = "";
 let topFrecency: TopFrecencyEntry[] = [];
 let lastDecayTs: number = 0;
-let pendingPersistTimer: ReturnType<typeof setTimeout> | null = null;
-let pendingPersistUpdates = 0;
 
 export function getCachedSettings(): RedirectSettings | null {
   return cachedRedirect;
@@ -129,35 +125,10 @@ function persistFrecencySnapshot(
     });
 }
 
-export function flushFrecencyNow(): void {
-  if (pendingPersistTimer) {
-    clearTimeout(pendingPersistTimer);
-    pendingPersistTimer = null;
-  }
-  pendingPersistUpdates = 0;
-  if (!frecencyCounts) {
-    return;
-  }
-  persistFrecencySnapshot(frecencyCounts, lastDecayTs);
-}
-
-function schedulePersistFrecency(): void {
-  pendingPersistUpdates++;
-  if (pendingPersistUpdates >= PERSIST_FLUSH_THRESHOLD) {
-    flushFrecencyNow();
-    return;
-  }
-  if (pendingPersistTimer) {
-    return;
-  }
-  pendingPersistTimer = setTimeout(() => {
-    pendingPersistTimer = null;
-    flushFrecencyNow();
-  }, PERSIST_DEBOUNCE_MS);
-}
-
 export function invalidateCache() {
-  flushFrecencyNow();
+  if (frecencyCounts) {
+    persistFrecencySnapshot(frecencyCounts, lastDecayTs);
+  }
   cachedRedirect = null;
   redirectSettingsPromise = null;
   loadFrecencyPromise = null;
@@ -246,7 +217,7 @@ export function loadFrecency(): Promise<void> {
         applyDecay();
         pruneFrecency();
         rebuildFrecencyTopAndValue();
-        schedulePersistFrecency();
+        persistFrecencySnapshot(frecencyCounts, lastDecayTs);
       } catch {
         frecencyCounts = {};
         topFrecency = [];
@@ -275,5 +246,5 @@ export function trackBangUsage(trigger: string) {
     FRECENCY_COOKIE_ENTRIES
   );
   frecencyCookie = serializeTopFrecency(topFrecency);
-  schedulePersistFrecency();
+  persistFrecencySnapshot(frecencyCounts, lastDecayTs);
 }
