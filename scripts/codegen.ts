@@ -463,8 +463,7 @@ function generateMeta(bangs: Bang[]): string {
     json += `"${jsonEscape(b.trigger)}":{"s":"${jsonEscape(b.name)}","d":"${jsonEscape(b.domain)}"}`;
   }
   json += "}";
-  // NOTE: Null prototype as mentioned above improves miss performance why not
-  // add it for meta bangs
+  // NOTE: Null prototype improves miss performance why not add it for meta bangs
   return `export const BANGS=${json};Object.setPrototypeOf(BANGS,null);`;
 }
 

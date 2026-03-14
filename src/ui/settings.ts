@@ -18,7 +18,7 @@ export async function initSettings(db: DB) {
     savedUrl,
     savedLucky,
     savedLuckyUrl,
-    custom,
+    initialCustom,
   ] = await Promise.all([
     db.getSetting("default-bang").then((v) => v || "g"),
     db.getSetting("suggest-provider").then((v) => v || "default"),
@@ -27,6 +27,7 @@ export async function initSettings(db: DB) {
     db.getSetting("lucky-url").then((v) => v || ""),
     readCustomBangs(db),
   ]);
+  let custom = initialCustom;
 
   luckySelect.value = savedLucky;
   if (savedLucky === "custom") {
@@ -172,7 +173,15 @@ export async function initSettings(db: DB) {
     }, 200);
   });
 
-  setupCustomBangs(db);
+  setupCustomBangs(db, (nextCustom) => {
+    custom = nextCustom;
+    setSuggestCookie(
+      suggestSelect.value,
+      defaultInput.value,
+      suggestUrlInput.value.trim(),
+      custom
+    );
+  });
 
   $("#export-btn").addEventListener("click", async () => {
     const data = await db.exportAll();
