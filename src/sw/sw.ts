@@ -25,23 +25,59 @@ const ASSETS = [
   ...__EXTRA_ASSETS__,
 ];
 
+const PRECACHE_ASSETS = [...new Set(ASSETS)];
+const PRECACHE_CONCURRENCY = 4;
+
+async function precacheAssets(cacheName: string): Promise<void> {
+  const cache = await caches.open(cacheName);
+  let nextIndex = 0;
+
+  async function work(): Promise<void> {
+    while (true) {
+      const idx = nextIndex++;
+      if (idx >= PRECACHE_ASSETS.length) {
+        return;
+      }
+      const assetPath = PRECACHE_ASSETS[idx];
+      const req = new Request(assetPath);
+      const res = await fetch(req);
+      if (!res.ok) {
+        throw new Error(
+          `Failed to precache ${assetPath}: ${res.status} ${res.statusText}`
+        );
+      }
+      await cache.put(req, res);
+    }
+  }
+
+  const workers = Math.min(PRECACHE_CONCURRENCY, PRECACHE_ASSETS.length);
+  await Promise.all(Array.from({ length: workers }, () => work()));
+}
+
+async function deleteOldCaches(cacheName: string): Promise<void> {
+  const keys = await caches.keys();
+  await Promise.all(
+    keys.filter((k) => k !== cacheName).map((k) => caches.delete(k))
+  );
+}
+
 self.addEventListener("install", (e: ExtendableEvent) => {
-  e.waitUntil(self.skipWaiting());
+  e.waitUntil(
+    Promise.all([self.skipWaiting(), precacheAssets(CACHE_NAME)]).then(() => {
+      /* no-op */
+    })
+  );
 });
 
 self.addEventListener("activate", (e: ExtendableEvent) => {
   void readRedirectSettings();
   void loadFrecency();
   e.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))
-        )
-      )
-      .then(() => self.clients.claim())
-      .then(() => caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)))
+    Promise.all([deleteOldCaches(CACHE_NAME), self.clients.claim()]).then(
+      () => {
+        /* no-op */
+      }
+    )
   );
 });
 
