@@ -134,6 +134,9 @@ self.addEventListener("fetch", (e: FetchEvent) => {
     return;
   }
 
+  // Start optional asset warmup once, without blocking any response path.
+  e.waitUntil(ensureOptionalPrecache());
+
   const qIdx = raw.indexOf("?q=");
   if (qIdx !== -1) {
     const vStart = qIdx + 3;
@@ -166,15 +169,6 @@ self.addEventListener("fetch", (e: FetchEvent) => {
       }
       return;
     }
-  }
-
-  if (
-    raw.endsWith("/") ||
-    raw.endsWith("/settings") ||
-    raw.endsWith("/home") ||
-    raw.endsWith("/bench")
-  ) {
-    e.waitUntil(ensureOptionalPrecache());
   }
 
   if (raw.endsWith("/bench")) {
