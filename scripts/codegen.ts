@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { mkdir } from "node:fs/promises";
+import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
 import { $ } from "bun";
 
 interface Bang {
@@ -312,7 +313,20 @@ function nextPow2(n: number): number {
   return p;
 }
 
-function generateMin(bangs: Bang[]): string {
+interface PackedMinData {
+  entryCount: number;
+  prefixIds: number[];
+  suffixIdsPlusOne: number[];
+  triggerBlob: ReturnType<typeof packBlob>;
+  triggerLensKind: "u8" | "u16";
+  triggers: string[];
+  uniquePrefixes: string[];
+  uniqueSuffixes: string[];
+  prefixBlob: ReturnType<typeof packBlob>;
+  suffixBlob: ReturnType<typeof packBlob>;
+}
+
+function packMinData(bangs: Bang[]): PackedMinData {
   const entryCount = bangs.length;
   if (entryCount > 0xffff) {
     throw new Error(
@@ -388,6 +402,34 @@ function generateMin(bangs: Bang[]): string {
     }
   }
 
+  return {
+    entryCount,
+    triggerBlob,
+    triggerLensKind,
+    prefixBlob,
+    suffixBlob,
+    prefixIds,
+    suffixIdsPlusOne,
+    uniquePrefixes,
+    uniqueSuffixes,
+    triggers,
+  };
+}
+
+function renderMinOpenAddress(packed: PackedMinData): string {
+  const {
+    entryCount,
+    triggerBlob,
+    triggerLensKind,
+    prefixBlob,
+    suffixBlob,
+    prefixIds,
+    suffixIdsPlusOne,
+    uniquePrefixes,
+    uniqueSuffixes,
+    triggers,
+  } = packed;
+
   const HASH_TARGET_LOAD = 0.55;
   const hashSize = nextPow2(
     Math.max(2, Math.ceil(entryCount / HASH_TARGET_LOAD))
@@ -451,6 +493,128 @@ function generateMin(bangs: Bang[]): string {
     `export const BANG_COUNT=${entryCount};` +
     "export function lookupBang(trigger){let slot=_hash(trigger)&_HM;for(let i=0;i<_HT.length;i++){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_eq(idx,trigger)){let t=_TC[idx];if(t!==undefined){return t}const pid=_EP[idx];const sid=_ES[idx];t=sid===0?[_prefix(pid),null]:[_prefix(pid),_suffix(sid-1)];_TC[idx]=t;return t}slot=(slot+1)&_HM}return null}"
   );
+}
+
+type StringOrderMode = "lex" | "lenlex";
+
+interface ReorderMap {
+  newStrings: string[];
+  oldToNew: number[];
+}
+
+function reorderUniqueStrings(
+  values: readonly string[],
+  mode: StringOrderMode
+): ReorderMap {
+  const order = values.map((_, i) => i);
+  if (mode === "lex") {
+    order.sort((a, b) => values[a].localeCompare(values[b]));
+  } else {
+    order.sort((a, b) => {
+      const la = values[a].length;
+      const lb = values[b].length;
+      if (la !== lb) {
+        return lb - la;
+      }
+      return values[a].localeCompare(values[b]);
+    });
+  }
+  const oldToNew = new Array<number>(values.length);
+  const newStrings = new Array<string>(values.length);
+  for (let i = 0; i < order.length; i++) {
+    const oldIdx = order[i];
+    oldToNew[oldIdx] = i;
+    newStrings[i] = values[oldIdx];
+  }
+  return { newStrings, oldToNew };
+}
+
+function reorderPackedForBrotli(
+  packed: PackedMinData,
+  mode: StringOrderMode
+): PackedMinData {
+  const prefixRemap = reorderUniqueStrings(packed.uniquePrefixes, mode);
+  const suffixRemap = reorderUniqueStrings(packed.uniqueSuffixes, mode);
+  const prefixIds = new Array<number>(packed.prefixIds.length);
+  const suffixIdsPlusOne = new Array<number>(packed.suffixIdsPlusOne.length);
+  for (let i = 0; i < packed.prefixIds.length; i++) {
+    prefixIds[i] = prefixRemap.oldToNew[packed.prefixIds[i]];
+  }
+  for (let i = 0; i < packed.suffixIdsPlusOne.length; i++) {
+    const old = packed.suffixIdsPlusOne[i];
+    suffixIdsPlusOne[i] = old === 0 ? 0 : suffixRemap.oldToNew[old - 1] + 1;
+  }
+  return {
+    ...packed,
+    prefixIds,
+    suffixIdsPlusOne,
+    uniquePrefixes: prefixRemap.newStrings,
+    uniqueSuffixes: suffixRemap.newStrings,
+    prefixBlob: packBlob(prefixRemap.newStrings),
+    suffixBlob: packBlob(suffixRemap.newStrings),
+  };
+}
+
+function medianNs(values: readonly number[]): number {
+  const sorted = values.slice().sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function estimateEvalNs(source: string, runs = 9): number {
+  const evalCode = source
+    .replaceAll("export const ", "const ")
+    .replaceAll("export function ", "function ");
+  const times = new Array<number>(runs);
+  for (let i = 0; i < runs; i++) {
+    const t0 = Bun.nanoseconds();
+    // Parse+execute proxy in codegen for cold-start sensitive codegen choices.
+    new Function(evalCode)();
+    times[i] = Bun.nanoseconds() - t0;
+  }
+  return medianNs(times);
+}
+
+interface BrotliCandidate {
+  brBytes: number;
+  evalNs: number;
+  js: string;
+  label: string;
+  score: number;
+}
+
+function evaluateBrotliCandidate(
+  label: string,
+  packed: PackedMinData
+): BrotliCandidate {
+  const js = renderMinOpenAddress(packed);
+  const brBytes = brotliCompressSync(Buffer.from(js), {
+    params: {
+      [zlibConstants.BROTLI_PARAM_QUALITY]: zlibConstants.BROTLI_MAX_QUALITY,
+    },
+  }).byteLength;
+  const evalNs = estimateEvalNs(js);
+  // Multi-objective trade-off: wire size dominates, eval is a tie-breaker.
+  const score = brBytes + evalNs * 0.05;
+  return { label, js, brBytes, evalNs, score };
+}
+
+function generateMin(bangs: Bang[]): string {
+  const base = packMinData(bangs);
+  const candidates: BrotliCandidate[] = [
+    evaluateBrotliCandidate("insertion", base),
+    evaluateBrotliCandidate("lex", reorderPackedForBrotli(base, "lex")),
+    evaluateBrotliCandidate("lenlex", reorderPackedForBrotli(base, "lenlex")),
+  ];
+  let best = candidates[0];
+  for (let i = 1; i < candidates.length; i++) {
+    if (candidates[i].score < best.score) {
+      best = candidates[i];
+    }
+  }
+  console.log(
+    `  bangs-min optimization: selected=${best.label} br=${best.brBytes}B eval=${Math.round(best.evalNs)}ns score=${best.score.toFixed(1)}`
+  );
+  return best.js;
 }
 
 function generateMeta(bangs: Bang[]): string {
