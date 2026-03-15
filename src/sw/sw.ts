@@ -29,6 +29,10 @@ const CRITICAL_ASSETS: string[] = [];
 const OPTIONAL_ASSETS = [...new Set(ASSETS)];
 const PRECACHE_CONCURRENCY = 4;
 let optionalPrecachePromise: Promise<void> | null = null;
+const RESOLVED_PROMISE: Promise<void> = Promise.resolve();
+const swallowError = () => {
+  /* best-effort */
+};
 
 async function precacheAssets(
   cacheName: string,
@@ -79,6 +83,27 @@ function ensureOptionalPrecache(): Promise<void> {
     }
   );
   return optionalPrecachePromise;
+}
+
+function queueBangSideEffects(e: FetchEvent, trigger: string): void {
+  e.waitUntil(
+    RESOLVED_PROMISE.then(() => {
+      trackBangUsage(trigger);
+      const val = getFrecencyValue();
+      if (!val || typeof cookieStore === "undefined") {
+        return;
+      }
+      return cookieStore
+        .set({
+          name: "sf",
+          value: val,
+          path: "/",
+          expires: Date.now() + COOKIE_MAX_AGE_S * 1000,
+          sameSite: "lax",
+        })
+        .catch(swallowError);
+    }).catch(swallowError)
+  );
 }
 
 self.addEventListener("install", (e: ExtendableEvent) => {
@@ -148,27 +173,22 @@ self.addEventListener("fetch", (e: FetchEvent) => {
       vEnd === -1 ? raw.substring(vStart) : raw.substring(vStart, vEnd);
     if (rawQ) {
       const cached = getCachedSettings();
-      const respond = (s: RedirectSettings): Response => {
-        const [resp, trigger] = redirectRaw(rawQ, s);
-        if (trigger) {
-          trackBangUsage(trigger);
-          const val = getFrecencyValue();
-          if (val && typeof cookieStore !== "undefined") {
-            cookieStore.set({
-              name: "sf",
-              value: val,
-              path: "/",
-              expires: Date.now() + COOKIE_MAX_AGE_S * 1000,
-              sameSite: "lax",
-            });
-          }
-        }
-        return resp;
-      };
       if (cached) {
-        e.respondWith(respond(cached));
+        const [resp, trigger] = redirectRaw(rawQ, cached);
+        if (trigger) {
+          queueBangSideEffects(e, trigger);
+        }
+        e.respondWith(resp);
       } else {
-        e.respondWith(readRedirectSettings().then(respond));
+        e.respondWith(
+          readRedirectSettings().then((s) => {
+            const [resp, trigger] = redirectRaw(rawQ, s);
+            if (trigger) {
+              queueBangSideEffects(e, trigger);
+            }
+            return resp;
+          })
+        );
       }
       return;
     }
