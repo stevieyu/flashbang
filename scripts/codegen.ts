@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { mkdir } from "node:fs/promises";
 import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
 import { $ } from "bun";
+import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 
 interface Bang {
   domain: string;
@@ -33,6 +34,17 @@ export const GENERATED_BANG_DATA_FILES = [
   "src/generated/bangs-meta.js",
   "src/generated/bangs-trie.js",
 ] as const;
+
+const DATA_DIR = "data";
+const DDG_BANGS_PATH = `${DATA_DIR}/ddg.json`;
+const KAGI_BANGS_PATH = `${DATA_DIR}/kagi.json`;
+const CUSTOM_BANGS_PATH = `${DATA_DIR}/custom-bangs.json`;
+const MERGED_BANGS_PATH = `${DATA_DIR}/bangs.json`;
+const GENERATED_OUT_DIR = "src/generated";
+
+const DDG_SOURCE_URL = "https://duckduckgo.com/bang.js";
+const KAGI_SOURCE_URL =
+  "https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json";
 
 export async function ensureGeneratedBangData(
   fromMerged = true
@@ -76,72 +88,81 @@ function normalizeUrl(u: string, base: string): string {
   return url;
 }
 
+interface NamedBangSource {
+  bangs: Bang[];
+  name: string;
+}
+
+type CustomBangMap = Record<
+  string,
+  { name: string; url: string; domain: string }
+>;
+
+function appendBangWithAliases(
+  out: Bang[],
+  entry: {
+    aliases?: readonly string[];
+    domain: string;
+    name: string;
+    relevance: number;
+    trigger: string;
+    url: string;
+  }
+): void {
+  out.push({
+    trigger: entry.trigger.toLowerCase(),
+    name: entry.name,
+    domain: entry.domain,
+    url: entry.url,
+    relevance: entry.relevance,
+  });
+  if (!entry.aliases) {
+    return;
+  }
+  for (const alias of entry.aliases) {
+    out.push({
+      trigger: alias.toLowerCase(),
+      name: entry.name,
+      domain: entry.domain,
+      url: entry.url,
+      relevance: entry.relevance,
+    });
+  }
+}
+
 function parseDdg(raw: string): Bang[] {
   const entries: RawDdgEntry[] = JSON.parse(raw);
   const bangs: Bang[] = [];
-
   for (const entry of entries) {
-    const url = normalizeUrl(entry.u, "https://duckduckgo.com");
-    const relevance = entry.r ?? 0;
-
-    bangs.push({
-      trigger: entry.t.toLowerCase(),
+    appendBangWithAliases(bangs, {
+      trigger: entry.t,
+      aliases: entry.ts,
       name: entry.s,
       domain: entry.d,
-      url,
-      relevance,
+      url: normalizeUrl(entry.u, "https://duckduckgo.com"),
+      relevance: entry.r ?? 0,
     });
-
-    if (entry.ts) {
-      for (const alias of entry.ts) {
-        bangs.push({
-          trigger: alias.toLowerCase(),
-          name: entry.s,
-          domain: entry.d,
-          url,
-          relevance,
-        });
-      }
-    }
   }
-
   return bangs;
 }
 
 function parseKagi(raw: string): Bang[] {
   const entries: RawKagiEntry[] = JSON.parse(raw);
   const bangs: Bang[] = [];
-
   for (const entry of entries) {
-    const url = normalizeUrl(entry.u, "https://kagi.com");
-
-    bangs.push({
-      trigger: entry.t.toLowerCase(),
+    appendBangWithAliases(bangs, {
+      trigger: entry.t,
+      aliases: entry.ts,
       name: entry.s,
       domain: entry.d,
-      url,
+      url: normalizeUrl(entry.u, "https://kagi.com"),
       relevance: 0,
     });
-
-    if (entry.ts) {
-      for (const alias of entry.ts) {
-        bangs.push({
-          trigger: alias.toLowerCase(),
-          name: entry.s,
-          domain: entry.d,
-          url,
-          relevance: 0,
-        });
-      }
-    }
   }
-
   return bangs;
 }
 
-function parseCustom(
-  data: Record<string, { name: string; url: string; domain: string }>
-): Bang[] {
+function parseCustom(data: CustomBangMap): Bang[] {
   return Object.entries(data).map(([trigger, b]) => ({
     trigger: trigger.toLowerCase(),
     name: b.name,
@@ -151,10 +172,10 @@ function parseCustom(
   }));
 }
 
-function merge(sources: [string, Bang[]][]): Bang[] {
+function mergeSources(sources: readonly NamedBangSource[]): Bang[] {
   const map = new Map<string, Bang>();
 
-  for (const [, bangs] of sources) {
+  for (const { bangs } of sources) {
     for (const bang of bangs) {
       const existing = map.get(bang.trigger);
       if (existing) {
@@ -171,7 +192,7 @@ function merge(sources: [string, Bang[]][]): Bang[] {
   return [...map.values()].sort((a, b) => a.trigger.localeCompare(b.trigger));
 }
 
-function validate(bangs: Bang[]): Bang[] {
+function validateBangs(bangs: Bang[]): Bang[] {
   return bangs.filter((b) => {
     if (!b.trigger) {
       return false;
@@ -496,6 +517,14 @@ function renderMinOpenAddress(packed: PackedMinData): string {
 }
 
 type StringOrderMode = "lex" | "lenlex";
+type MinCandidateLabel = "insertion" | StringOrderMode;
+
+const BROTLI_SORT_ORDERS: readonly StringOrderMode[] = ["lex", "lenlex"];
+const BROTLI_EVAL_RUNS = 9;
+const BROTLI_EVAL_WEIGHT = 0.05;
+const BROTLI_MAX_QUALITY_PARAMS = {
+  [zlibConstants.BROTLI_PARAM_QUALITY]: zlibConstants.BROTLI_MAX_QUALITY,
+} as const;
 
 interface ReorderMap {
   newStrings: string[];
@@ -560,7 +589,7 @@ function medianNs(values: readonly number[]): number {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
-function estimateEvalNs(source: string, runs = 9): number {
+function estimateEvalNs(source: string, runs = BROTLI_EVAL_RUNS): number {
   const evalCode = source
     .replaceAll("export const ", "const ")
     .replaceAll("export function ", "function ");
@@ -578,39 +607,52 @@ interface BrotliCandidate {
   brBytes: number;
   evalNs: number;
   js: string;
-  label: string;
+  label: MinCandidateLabel;
   score: number;
 }
 
 function evaluateBrotliCandidate(
-  label: string,
+  label: MinCandidateLabel,
   packed: PackedMinData
 ): BrotliCandidate {
   const js = renderMinOpenAddress(packed);
   const brBytes = brotliCompressSync(Buffer.from(js), {
-    params: {
-      [zlibConstants.BROTLI_PARAM_QUALITY]: zlibConstants.BROTLI_MAX_QUALITY,
-    },
+    params: BROTLI_MAX_QUALITY_PARAMS,
   }).byteLength;
   const evalNs = estimateEvalNs(js);
   // Multi-objective trade-off: wire size dominates, eval is a tie-breaker.
-  const score = brBytes + evalNs * 0.05;
+  const score = brBytes + evalNs * BROTLI_EVAL_WEIGHT;
   return { label, js, brBytes, evalNs, score };
 }
 
-function generateMin(bangs: Bang[]): string {
-  const base = packMinData(bangs);
+function buildBrotliCandidates(base: PackedMinData): BrotliCandidate[] {
   const candidates: BrotliCandidate[] = [
     evaluateBrotliCandidate("insertion", base),
-    evaluateBrotliCandidate("lex", reorderPackedForBrotli(base, "lex")),
-    evaluateBrotliCandidate("lenlex", reorderPackedForBrotli(base, "lenlex")),
   ];
+  for (const mode of BROTLI_SORT_ORDERS) {
+    candidates.push(
+      evaluateBrotliCandidate(mode, reorderPackedForBrotli(base, mode))
+    );
+  }
+  return candidates;
+}
+
+function selectBestCandidate(
+  candidates: readonly BrotliCandidate[]
+): BrotliCandidate {
   let best = candidates[0];
   for (let i = 1; i < candidates.length; i++) {
     if (candidates[i].score < best.score) {
       best = candidates[i];
     }
   }
+  return best;
+}
+
+function generateMin(bangs: Bang[]): string {
+  const base = packMinData(bangs);
+  const candidates = buildBrotliCandidates(base);
+  const best = selectBestCandidate(candidates);
   console.log(
     `  bangs-min optimization: selected=${best.label} br=${best.brBytes}B eval=${Math.round(best.evalNs)}ns score=${best.score.toFixed(1)}`
   );
@@ -630,8 +672,6 @@ function generateMeta(bangs: Bang[]): string {
   // NOTE: Null prototype improves miss performance why not add it for meta bangs
   return `export const BANGS=${json};Object.setPrototypeOf(BANGS,null);`;
 }
-
-import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 
 type TrieNode = BuildNode<Bang>;
 
@@ -833,91 +873,116 @@ function generateTrie(data: FlatTrieData, trieRuntimeHelpers: string): string {
   );
 }
 
-const MERGED_PATH = "data/bangs.json";
 interface CodegenOptions {
   fromMerged?: boolean;
   noFetch?: boolean;
 }
 
-export async function runCodegen(options: CodegenOptions = {}): Promise<void> {
+async function fetchBangSources(): Promise<void> {
+  console.log("=== Fetch bang sources ===");
+  await mkdir(DATA_DIR, { recursive: true });
+  const [kagiRes, ddgRes] = await Promise.all([
+    fetch(KAGI_SOURCE_URL),
+    fetch(DDG_SOURCE_URL),
+  ]);
+  await Promise.all([
+    Bun.write(KAGI_BANGS_PATH, kagiRes),
+    Bun.write(DDG_BANGS_PATH, ddgRes),
+  ]);
+}
+
+async function parseBangSourcesFromDisk(): Promise<NamedBangSource[]> {
+  console.log("=== Parse sources ===");
+  const [ddgRaw, kagiRaw, customData] = await Promise.all([
+    Bun.file(DDG_BANGS_PATH).text(),
+    Bun.file(KAGI_BANGS_PATH).text(),
+    Bun.file(CUSTOM_BANGS_PATH).json(),
+  ]);
+
+  const sources: NamedBangSource[] = [
+    { name: "ddg", bangs: parseDdg(ddgRaw) },
+    { name: "kagi", bangs: parseKagi(kagiRaw) },
+    { name: "custom", bangs: parseCustom(customData as CustomBangMap) },
+  ];
+
+  for (const source of sources) {
+    console.log(
+      `${source.name.toUpperCase()}: ${source.bangs.length} bangs parsed`
+    );
+  }
+  return sources;
+}
+
+function mergeAndValidateSources(sources: readonly NamedBangSource[]): Bang[] {
+  console.log("=== Merge + validate ===");
+  const merged = mergeSources(sources);
+  console.log(`Merged: ${merged.length} unique bangs`);
+  const valid = validateBangs(merged);
+  console.log(`Valid: ${valid.length} bangs after validation`);
+  return valid;
+}
+
+async function saveMergedBangs(bangs: readonly Bang[]): Promise<void> {
+  console.log("=== Save merged bangs ===");
+  await Bun.write(MERGED_BANGS_PATH, JSON.stringify(bangs));
+  console.log(`  ${MERGED_BANGS_PATH}: ${bangs.length} bangs`);
+}
+
+async function loadBangs(options: CodegenOptions): Promise<Bang[]> {
   const { fromMerged = false, noFetch = false } = options;
-
-  let valid: Bang[];
-
   if (fromMerged) {
     console.log("=== Read merged bangs ===");
-    valid = await Bun.file(MERGED_PATH).json();
-    console.log(`Loaded ${valid.length} bangs from ${MERGED_PATH}`);
-  } else {
-    if (!noFetch) {
-      console.log("=== Fetch bang sources ===");
-      await mkdir("data", { recursive: true });
-      const [kagiRes, ddgRes] = await Promise.all([
-        fetch(
-          "https://raw.githubusercontent.com/kagisearch/bangs/main/data/bangs.json"
-        ),
-        fetch("https://duckduckgo.com/bang.js"),
-      ]);
-      await Promise.all([
-        Bun.write("data/kagi.json", kagiRes),
-        Bun.write("data/ddg.json", ddgRes),
-      ]);
-    }
-
-    console.log("=== Parse sources ===");
-
-    const allSources: [string, Bang[]][] = [];
-
-    const ddgRaw = await Bun.file("data/ddg.json").text();
-    const ddgBangs = parseDdg(ddgRaw);
-    console.log(`DDG: ${ddgBangs.length} bangs parsed`);
-    allSources.push(["ddg", ddgBangs]);
-
-    const kagiRaw = await Bun.file("data/kagi.json").text();
-    const kagiBangs = parseKagi(kagiRaw);
-    console.log(`Kagi: ${kagiBangs.length} bangs parsed`);
-    allSources.push(["kagi", kagiBangs]);
-
-    const customData = await Bun.file("data/custom-bangs.json").json();
-    const customBangs = parseCustom(customData);
-    console.log(`Custom: ${customBangs.length} bangs parsed`);
-    allSources.push(["custom", customBangs]);
-
-    console.log("=== Merge + validate ===");
-    const merged = merge(allSources);
-    console.log(`Merged: ${merged.length} unique bangs`);
-
-    valid = validate(merged);
-    console.log(`Valid: ${valid.length} bangs after validation`);
-
-    console.log("=== Save merged bangs ===");
-    await Bun.write(MERGED_PATH, JSON.stringify(valid));
-    console.log(`  ${MERGED_PATH}: ${valid.length} bangs`);
+    const merged = await Bun.file(MERGED_BANGS_PATH).json();
+    const bangs = merged as Bang[];
+    console.log(`Loaded ${bangs.length} bangs from ${MERGED_BANGS_PATH}`);
+    return bangs;
   }
 
-  console.log("=== Generate ===");
-  const outDir = "src/generated";
-  await mkdir(outDir, { recursive: true });
+  if (!noFetch) {
+    await fetchBangSources();
+  }
+  const parsedSources = await parseBangSourcesFromDisk();
+  const valid = mergeAndValidateSources(parsedSources);
+  await saveMergedBangs(valid);
+  return valid;
+}
 
-  const minJs = generateMin(valid);
-  await Bun.write(`${outDir}/bangs-min.js`, minJs);
-  console.log(`  bangs-min.js: ${minJs.length} bytes`);
+interface GeneratedArtifacts {
+  metaJs: string;
+  minJs: string;
+  trieJs: string;
+}
 
-  const metaJs = generateMeta(valid);
-  await Bun.write(`${outDir}/bangs-meta.js`, metaJs);
-  console.log(`  bangs-meta.js: ${metaJs.length} bytes`);
-
+function buildGeneratedArtifacts(bangs: Bang[]): GeneratedArtifacts {
   const trieRoot = buildRadixTrie(
-    valid,
+    bangs,
     (b) => b.trigger,
     (b) => b.relevance
   );
   const trieData = flattenTrie(trieRoot);
   const trieRuntimeHelpers = buildMinifiedTrieRuntimeHelpers();
-  const trieJs = generateTrie(trieData, trieRuntimeHelpers);
-  await Bun.write(`${outDir}/bangs-trie.js`, trieJs);
-  console.log(`  bangs-trie.js: ${trieJs.length} bytes`);
+  return {
+    minJs: generateMin(bangs),
+    metaJs: generateMeta(bangs),
+    trieJs: generateTrie(trieData, trieRuntimeHelpers),
+  };
+}
 
+async function writeGeneratedArtifacts(
+  outDir: string,
+  artifacts: GeneratedArtifacts
+): Promise<void> {
+  await Promise.all([
+    Bun.write(`${outDir}/bangs-min.js`, artifacts.minJs),
+    Bun.write(`${outDir}/bangs-meta.js`, artifacts.metaJs),
+    Bun.write(`${outDir}/bangs-trie.js`, artifacts.trieJs),
+  ]);
+  console.log(`  bangs-min.js: ${artifacts.minJs.length} bytes`);
+  console.log(`  bangs-meta.js: ${artifacts.metaJs.length} bytes`);
+  console.log(`  bangs-trie.js: ${artifacts.trieJs.length} bytes`);
+}
+
+async function writeGeneratedDeclarations(outDir: string): Promise<void> {
   await Promise.all([
     Bun.write(
       `${outDir}/bangs-min.d.ts`,
@@ -949,8 +1014,17 @@ export async function runCodegen(options: CodegenOptions = {}): Promise<void> {
       ].join("\n")
     ),
   ]);
+}
 
-  console.log(`Generated ${valid.length} bangs in ${outDir}/`);
+export async function runCodegen(options: CodegenOptions = {}): Promise<void> {
+  const bangs = await loadBangs(options);
+
+  console.log("=== Generate ===");
+  await mkdir(GENERATED_OUT_DIR, { recursive: true });
+  const artifacts = buildGeneratedArtifacts(bangs);
+  await writeGeneratedArtifacts(GENERATED_OUT_DIR, artifacts);
+  await writeGeneratedDeclarations(GENERATED_OUT_DIR);
+  console.log(`Generated ${bangs.length} bangs in ${GENERATED_OUT_DIR}/`);
 }
 
 async function main(): Promise<void> {
