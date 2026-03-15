@@ -134,8 +134,11 @@ self.addEventListener("fetch", (e: FetchEvent) => {
     return;
   }
 
-  // Start optional asset warmup once, without blocking any response path.
-  e.waitUntil(ensureOptionalPrecache());
+  // Start optional asset warmup once per SW lifecycle, without touching
+  // waitUntil on every fetch.
+  if (!optionalPrecachePromise) {
+    e.waitUntil(ensureOptionalPrecache());
+  }
 
   const qIdx = raw.indexOf("?q=");
   if (qIdx !== -1) {
