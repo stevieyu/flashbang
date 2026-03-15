@@ -1,6 +1,10 @@
 import { Buffer } from "node:buffer";
 import { mkdir } from "node:fs/promises";
-import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
+import {
+  type BrotliOptions,
+  brotliCompress,
+  constants as zlibConstants,
+} from "node:zlib";
 import { $ } from "bun";
 import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 
@@ -521,10 +525,9 @@ type MinCandidateLabel = "insertion" | StringOrderMode;
 
 const BROTLI_SORT_ORDERS: readonly StringOrderMode[] = ["lex", "lenlex"];
 const BROTLI_EVAL_RUNS = 9;
-const BROTLI_EVAL_WEIGHT = 0.05;
-const BROTLI_MAX_QUALITY_PARAMS = {
+const BROTLI_MAX_QUALITY_PARAMS: BrotliOptions["params"] = {
   [zlibConstants.BROTLI_PARAM_QUALITY]: zlibConstants.BROTLI_MAX_QUALITY,
-} as const;
+};
 
 interface ReorderMap {
   newStrings: string[];
@@ -605,33 +608,67 @@ function estimateEvalNs(source: string, runs = BROTLI_EVAL_RUNS): number {
 
 interface BrotliCandidate {
   brBytes: number;
-  evalNs: number;
+  evalNs: number | null;
   js: string;
   label: MinCandidateLabel;
-  score: number;
 }
 
-function evaluateBrotliCandidate(
+function buildBrotliCandidate(
   label: MinCandidateLabel,
-  packed: PackedMinData
+  js: string,
+  brBytes: number
 ): BrotliCandidate {
-  const js = renderMinOpenAddress(packed);
-  const brBytes = brotliCompressSync(Buffer.from(js), {
-    params: BROTLI_MAX_QUALITY_PARAMS,
-  }).byteLength;
-  const evalNs = estimateEvalNs(js);
-  // Multi-objective trade-off: wire size dominates, eval is a tie-breaker.
-  const score = brBytes + evalNs * BROTLI_EVAL_WEIGHT;
-  return { label, js, brBytes, evalNs, score };
+  return { label, js, brBytes, evalNs: null };
 }
 
-function buildBrotliCandidates(base: PackedMinData): BrotliCandidate[] {
-  const candidates: BrotliCandidate[] = [
-    evaluateBrotliCandidate("insertion", base),
+interface BrotliCandidateInput {
+  js: string;
+  label: MinCandidateLabel;
+}
+
+function createBrotliCandidateInputs(
+  base: PackedMinData
+): BrotliCandidateInput[] {
+  const inputs: BrotliCandidateInput[] = [
+    { label: "insertion", js: renderMinOpenAddress(base) },
   ];
   for (const mode of BROTLI_SORT_ORDERS) {
-    candidates.push(
-      evaluateBrotliCandidate(mode, reorderPackedForBrotli(base, mode))
+    const packed = reorderPackedForBrotli(base, mode);
+    inputs.push({ label: mode, js: renderMinOpenAddress(packed) });
+  }
+  return inputs;
+}
+
+function brotliSizeBytes(source: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    brotliCompress(
+      Buffer.from(source),
+      { params: BROTLI_MAX_QUALITY_PARAMS },
+      (error, output) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(output.byteLength);
+      }
+    );
+  });
+}
+
+async function buildBrotliCandidates(
+  base: PackedMinData
+): Promise<BrotliCandidate[]> {
+  const inputs = createBrotliCandidateInputs(base);
+  const compressedSizes = await Promise.all(
+    inputs.map((input) => brotliSizeBytes(input.js))
+  );
+  const candidates = new Array<BrotliCandidate>(inputs.length);
+  for (let i = 0; i < inputs.length; i++) {
+    const input = inputs[i];
+    candidates[i] = buildBrotliCandidate(
+      input.label,
+      input.js,
+      compressedSizes[i]
     );
   }
   return candidates;
@@ -640,21 +677,41 @@ function buildBrotliCandidates(base: PackedMinData): BrotliCandidate[] {
 function selectBestCandidate(
   candidates: readonly BrotliCandidate[]
 ): BrotliCandidate {
-  let best = candidates[0];
+  let bestBrBytes = candidates[0].brBytes;
   for (let i = 1; i < candidates.length; i++) {
-    if (candidates[i].score < best.score) {
-      best = candidates[i];
+    if (candidates[i].brBytes < bestBrBytes) {
+      bestBrBytes = candidates[i].brBytes;
+    }
+  }
+  const finalists = candidates.filter(
+    (candidate) => candidate.brBytes === bestBrBytes
+  );
+  if (finalists.length === 1) {
+    return finalists[0];
+  }
+  let best = finalists[0];
+  best.evalNs = estimateEvalNs(best.js);
+  for (let i = 1; i < finalists.length; i++) {
+    const candidate = finalists[i];
+    candidate.evalNs = estimateEvalNs(candidate.js);
+    if (
+      (candidate.evalNs ?? Number.MAX_SAFE_INTEGER) <
+      (best.evalNs ?? Number.MAX_SAFE_INTEGER)
+    ) {
+      best = candidate;
     }
   }
   return best;
 }
 
-function generateMin(bangs: Bang[]): string {
+async function generateMin(bangs: Bang[]): Promise<string> {
   const base = packMinData(bangs);
-  const candidates = buildBrotliCandidates(base);
+  const candidates = await buildBrotliCandidates(base);
   const best = selectBestCandidate(candidates);
   console.log(
-    `  bangs-min optimization: selected=${best.label} br=${best.brBytes}B eval=${Math.round(best.evalNs)}ns score=${best.score.toFixed(1)}`
+    best.evalNs === null
+      ? `  bangs-min optimization: selected=${best.label} br=${best.brBytes}B`
+      : `  bangs-min optimization: selected=${best.label} br=${best.brBytes}B eval=${Math.round(best.evalNs)}ns (tie-break)`
   );
   return best.js;
 }
@@ -953,7 +1010,10 @@ interface GeneratedArtifacts {
   trieJs: string;
 }
 
-function buildGeneratedArtifacts(bangs: Bang[]): GeneratedArtifacts {
+async function buildGeneratedArtifacts(
+  bangs: Bang[]
+): Promise<GeneratedArtifacts> {
+  const minJsPromise = generateMin(bangs);
   const trieRoot = buildRadixTrie(
     bangs,
     (b) => b.trigger,
@@ -961,8 +1021,9 @@ function buildGeneratedArtifacts(bangs: Bang[]): GeneratedArtifacts {
   );
   const trieData = flattenTrie(trieRoot);
   const trieRuntimeHelpers = buildMinifiedTrieRuntimeHelpers();
+  const minJs = await minJsPromise;
   return {
-    minJs: generateMin(bangs),
+    minJs,
     metaJs: generateMeta(bangs),
     trieJs: generateTrie(trieData, trieRuntimeHelpers),
   };
@@ -1021,7 +1082,7 @@ export async function runCodegen(options: CodegenOptions = {}): Promise<void> {
 
   console.log("=== Generate ===");
   await mkdir(GENERATED_OUT_DIR, { recursive: true });
-  const artifacts = buildGeneratedArtifacts(bangs);
+  const artifacts = await buildGeneratedArtifacts(bangs);
   await writeGeneratedArtifacts(GENERATED_OUT_DIR, artifacts);
   await writeGeneratedDeclarations(GENERATED_OUT_DIR);
   console.log(`Generated ${bangs.length} bangs in ${GENERATED_OUT_DIR}/`);
