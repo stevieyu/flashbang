@@ -76,6 +76,7 @@ google, ddg, bing, brave, yahoo, ecosia, kagi, yandex, baidu, none
 ```
 
 Example suggestion URL with a provider override:
+
 ```
 https://flashbang-dyr.pages.dev/suggest?q=%s&sp=ddg
 ```
@@ -172,7 +173,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for build pipeline and project structure de
 | **Redirect method**         | Service Worker intercept                      | `window.location.replace`        | `window.location.replace`        | Cloudflare Worker (edge) + client fallback             |
 | **When redirect happens**   | Before page renders (Service Worker)          | After page loads (HTML, CSS, JS) | After page loads (HTML, CSS, JS) | At the edge or after page loads (HTML, CSS, JS, React) |
 | **Sources**                 | DDG + Kagi + custom                           | DDG                              | Kagi                             | DDG + Kagi                                             |
-| **Analytics**               | None†                                         | Plausible                        | None†                            | Plausible+Vercel Analytics+Vercel Speed Insights       |
+| **Analytics**               | None†                                         | Plausible                        | None‡                            | Plausible+Vercel Analytics+Vercel Speed Insights       |
 | **Server required**         | No (redirects), yes (suggestions, OpenSearch) | No                               | No                               | Yes (Cloudflare Worker)                                |
 | **Feeling Lucky**           | Yes (configurable per-engine)                 | No                               | No                               | No                                                     |
 | **Search suggestions**      | Yes (bang autocomplete + configurable)        | No                               | No                               | No                                                     |
@@ -183,8 +184,11 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for build pipeline and project structure de
 | **Parsed on**               | SW thread (once, persists in memory)          | Main thread (every page load)    | Main thread (every page load)    | Main thread (every page load) or edge worker           |
 | **License**                 | AGPL-3.0                                      | MIT                              | MIT                              | MIT                                                    |
 
-† Flashbang and unduckified include no analytics scripts or tracking. Cloudflare Pages exposes basic request counts in its dashboard for all hosted sites — this is a platform-level
+† Flashbang doesn't include any analytics scripts or tracking. Cloudflare Pages exposes basic request counts in its dashboard for all hosted sites — this is a platform-level
 metric we did not opt into and cannot disable. It is not Cloudflare Web Analytics.
+
+‡ Unlike the unavoidable aggregate request counts exposed by Cloudflare Pages which applies both for flashbang and unduckified, issue [#13](https://github.com/taciturnaxolotl/unduckified/issues/13) in the Unduckified repository shows Cloudflare injecting `beacon.min.js`, which Cloudflare documents as its Web Analytics beacon.
+The author claims that Web Analytics have been disabled, but `beacon.min.js` is still being loaded, indicating that an analytics-related Cloudflare script remains present.
 
 > **Note:** Comparison data is accurate at time of writing. These projects are actively developed and may have changed since.
 

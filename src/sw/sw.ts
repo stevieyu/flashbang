@@ -78,9 +78,7 @@ function ensureOptionalPrecache(): Promise<void> {
     return optionalPrecachePromise;
   }
   optionalPrecachePromise = precacheAssets(CACHE_NAME, OPTIONAL_ASSETS).catch(
-    () => {
-      /* best-effort */
-    }
+    swallowError
   );
   return optionalPrecachePromise;
 }
