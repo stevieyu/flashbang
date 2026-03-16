@@ -187,22 +187,24 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for build pipeline and project structure de
 † Flashbang doesn't include any analytics scripts or tracking. Cloudflare Pages exposes basic request counts in its dashboard for all hosted sites — this is a platform-level
 metric we did not opt into and cannot disable. It is not Cloudflare Web Analytics.
 
-‡ Unlike the unavoidable aggregate request counts exposed by Cloudflare Pages which applies both for flashbang and unduckified, issue [#13](https://github.com/taciturnaxolotl/unduckified/issues/13) in the Unduckified repository shows Cloudflare injecting `beacon.min.js`, which Cloudflare documents as its Web Analytics beacon.
+‡ Unlike the unavoidable aggregate request counts exposed by Cloudflare Pages which applies both for flashbang and unduckified, issue [#13](https://github.com/taciturnaxolotl/unduckified/issues/13) in the Unduckified repository shows Cloudflare injecting `beacon.min.js`, which [Cloudflare documents as its Web Analytics beacon](https://developers.cloudflare.com/web-analytics/data-metrics/data-origin-and-collection/).
 The author claims that Web Analytics have been disabled, but `beacon.min.js` is still being loaded, indicating that an analytics-related Cloudflare script remains present.
 
 > **Note:** Comparison data is accurate at time of writing. These projects are actively developed and may have changed since.
 
 ## Why is it faster?
 
-Every other bang tool (unduck, unduckified) — works the same way: your browser navigates to their page, loads HTML, parses and executes JavaScript (including a 1.5–2.7 MB bang database), and only then calls `window.location.replace()` to send you to your destination. You see it happen: the screen goes white, their page briefly appears or flickers, and then you arrive where you wanted to go. That blank-page flash is the browser loading and executing their redirect page. It typically takes 100–500ms depending on your device, and it happens on every single redirect — even with all assets cached.
+Every other bang tool (unduck, unduckified) — works the same way: your browser navigates to their page, loads HTML, parses and executes JavaScript (including a 1.5–2.7 MB bang database), and only then calls `window.location.replace()` to send you to your destination. You see it happen: there is a screen flash, their page briefly appears or flickers, and then you arrive where you wanted to go. That blank-page flash is the browser loading and executing their redirect page. It typically takes 100–500ms depending on your device, and it happens on every single redirect — even with all assets cached.
 
 Flashbang works differently. A [Service Worker](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API) intercepts your navigation **before the browser starts rendering any page**. It parses the bang from the raw URL, looks it up in an in-memory map, and responds with a `302 redirect` — all in under 1ms. No page loads. No JavaScript bundle to parse. No white flash. Your browser goes straight from the address bar to your destination nearly as if you'd typed the URL directly.
 
 The bang database (trigger→URL pairs, ~867 KB) is parsed once when the Service Worker installs and stays in memory across navigations — it is not re-parsed on every redirect. The settings UI is a separate bundle that only loads when you visit the homepage. During a redirect, the only code that runs is a lightweight parser and a hash-map lookup.
 
+That lookup path is also pre-optimized by `scripts/codegen.ts` at build time. Instead of shipping a large plain JSON/object map, codegen splits bang URLs into deduplicated prefix/suffix tables, packs trigger/prefix/suffix lengths into typed arrays, and emits a precomputed open-address hash table (`lookupBang`) using FNV-1a + linear probing. At runtime, the Service Worker does direct table probing and string compare, then lazily materializes/caches URL parts only for matched entries. Codegen even tries multiple string-order layouts and picks the one with the best Brotli result (and eval-time tie-break), so the shipped module is tuned for both transfer size and cold parse/execute cost.
+
 ### Will I actually notice the difference?
 
-Yes. Try it yourself: open unduck or unduckified, type `!g cats`, and watch the screen. You'll see a white flash or brief page load before Google appears. Now do the same with Flashbang. The browser navigates directly to Google — there is no intermediate page to see. The difference is immediately obvious, especially on mobile devices or enivronments where JavaScript parse time is higher.
+Yes. Try it yourself: open unduck or unduckified, type `!g cats`, and watch the screen. You'll likely see a white flash or brief page load before Google appears. This is evident by the issues opened in unduckified repo [#6](https://github.com/taciturnaxolotl/unduckified/issues/6) and in unduck repo [70](https://github.com/T3-Content/unduck/issues/70). Now do the same with Flashbang. The browser navigates directly to Google — there is no intermediate page to see. The difference is immediately obvious, especially on mobile devices or enivronments where JavaScript parse time is higher.
 
 [Run the benchmark yourself](https://flashbang-dyr.pages.dev/bench) to see measured redirect latency on your device.
 
