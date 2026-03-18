@@ -34,22 +34,35 @@ After editing, run `bun run codegen` to regenerate the bang maps.
 ## Pull requests
 
 - Branch from `master`
-- Run `bun test` before submitting
+- Run `bun test` and `bun run test:e2e` before submitting
 - Use [conventional commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `chore:`
 - Keep PRs focused — one concern per PR
 
 ## Tests
 
-Tests are co-located with source files as `*.test.ts`. Run them with:
+All tests live in `tests/` folder, you can run unit tests only with:
 
 ```sh
 bun test
 ```
 
-Add tests for new logic. Look at existing tests for patterns:
+End-to-end tests live in `tests/e2e/`. Run them with:
+
+```sh
+bun run test:e2e
+```
+
+If this is your first Playwright run on a machine, install browsers once:
+
+```sh
+bunx playwright install
+```
+
+Add tests for new logic and user-facing behavior. Look at existing tests for patterns:
 
 - `src/sw/redirect.test.ts` — redirect and routing logic
 - `src/suggest.test.ts` — suggestions and cookie parsing
+- `tests/e2e/flashbang.e2e.ts` — suggestion endpoint behavior, warm/cold redirects, and custom bang redirect flows
 
 ## Code style
 

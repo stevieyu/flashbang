@@ -17,6 +17,7 @@ bun run start      # serve pre-built dist/ (run `bun run build` first)
 bun run typecheck  # type-check with tsc (no emit)
 bun run profile    # run performance profile benchmarks (auto-runs codegen --from-merged if generated bang files are missing)
 bun test           # run tests
+bun run test:e2e   # run Playwright end-to-end tests (build + browser run)
 bun run clean      # remove dist/
 ```
 
@@ -93,14 +94,26 @@ flashbang/
 
 ```sh
 bun test           # run all tests
+bun run test:e2e   # run end-to-end tests (build + Playwright)
 ```
 
-Tests live alongside the source files they cover:
+Unit tests:
 
-- `src/sw/redirect.test.ts` — Bang parsing, routing logic, and URL encoding
-- `src/suggest.test.ts` — Cookie parsing, bang suggestions, and provider proxying
-- `src/shared/raw-url.test.ts` — Raw URL pathname and origin parsing
-- `src/sw/frecency.test.ts` — Top-K frecency ordering and serialization helpers
+- `tests/redirect.test.ts` — Bang parsing, routing logic, and URL encoding
+- `tests/suggest.test.ts` — Cookie parsing, bang suggestions, and provider proxying
+- `tests/raw-url.test.ts` — Raw URL pathname and origin parsing
+- `tests/frecency.test.ts` — Top-K frecency ordering and serialization helpers
+- `tests/handlers.test.ts` — Server-side suggest handler behavior and cookie cleanup
+
+End-to-end tests:
+
+- `tests/e2e/flashbang.e2e.ts` — Suggest endpoint behavior, warm/cold redirect flows, lucky redirects, and custom bang redirect scenarios
+
+If this is your first Playwright run on a machine, install browsers once:
+
+```sh
+bunx playwright install
+```
 
 ## Bang codegen
 
