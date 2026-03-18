@@ -156,6 +156,7 @@ import {
   parseCookie,
   parseSettings,
   parseSettingsFromRawUrl,
+  parseSettingsFromRawUrlWithCleanup,
   suggest,
 } from "./suggest";
 
@@ -268,7 +269,19 @@ describe("parseCookie", () => {
       req("suggest=google,g,|gh:50.yt:30|test8.mysite.proj")
     );
     expect(s.frecent).toEqual({});
-    expect(s.custom).toEqual(["test8", "mysite", "proj"]);
+    expect(s.custom).toEqual([]);
+  });
+
+  test("unified suggest format parses frecency and custom together", () => {
+    const cookie = `suggest=custom,ddg,https%3A%2F%2Fapi.example.com%2Fsuggest%3Fq%3D%7B%7D|f:${encodeURIComponent(
+      JSON.stringify({ mdn: 20, gh: 3 })
+    )}|c:${encodeURIComponent(JSON.stringify(["my.site", "repo"]))}`;
+    const s = parseCookie(req(cookie));
+    expect(s.provider).toBe("custom");
+    expect(s.trigger).toBe("ddg");
+    expect(s.customUrl).toBe("https://api.example.com/suggest?q={}");
+    expect(s.frecent).toEqual({ mdn: 20, gh: 3 });
+    expect(s.custom).toEqual(["my.site", "repo"]);
   });
 
   test("backward compat: old cookie format without | parses identically", () => {
@@ -288,7 +301,7 @@ describe("parseCookie", () => {
 
   test("sf cookie is the sole source of frecency", () => {
     const s = parseCookie(req("suggest=google,g,|gh:10.yt:5; sf=w:50.b:30"));
-    expect(s.frecent).toEqual({ w: 50, b: 30 });
+    expect(s.frecent).toEqual({});
     expect(s.provider).toBe("google");
     expect(s.trigger).toBe("g");
   });
@@ -297,10 +310,45 @@ describe("parseCookie", () => {
     const s = parseCookie(
       req("sf=ddg:100.g:80; suggest=brave,b,|mdn:20|mysite")
     );
-    expect(s.frecent).toEqual({ ddg: 100, g: 80 });
+    expect(s.frecent).toEqual({});
     expect(s.provider).toBe("brave");
     expect(s.trigger).toBe("b");
+    expect(s.custom).toEqual([]);
+  });
+
+  test("new suggest format takes precedence over sf frecency", () => {
+    const s = parseCookie(
+      req(
+        "sf=ddg:100.g:80; suggest=brave,b,|f:%7B%22meta%22%3A9%7D|c:%5B%22mysite%22%5D"
+      )
+    );
+    expect(s.frecent).toEqual({ meta: 9 });
     expect(s.custom).toEqual(["mysite"]);
+    expect(s.provider).toBe("brave");
+    expect(s.trigger).toBe("b");
+  });
+
+  test("legacy suggest context is normalized on next response", () => {
+    const { settings, rewrittenSuggestCookie } =
+      parseSettingsFromRawUrlWithCleanup(
+        "http://localhost/suggest?q=cats",
+        req("suggest=google,g,|gh:10.yt:5|")
+      );
+    expect(settings.frecent).toEqual({});
+    expect(settings.custom).toEqual([]);
+    expect(rewrittenSuggestCookie).toBe("google,g,");
+  });
+
+  test("malformed suggest context is normalized", () => {
+    const { settings, rewrittenSuggestCookie } =
+      parseSettingsFromRawUrlWithCleanup(
+        "http://localhost/suggest?q=cats",
+        req("suggest=custom,g,|f:%E0%A4%A|")
+      );
+    expect(settings.provider).toBe("custom");
+    expect(settings.frecent).toEqual({});
+    expect(settings.custom).toEqual([]);
+    expect(rewrittenSuggestCookie).toBe("custom,g,");
   });
 });
 
@@ -330,10 +378,10 @@ describe("parseSettings", () => {
 
   test("sp does not affect other settings", () => {
     const url = new URL("http://localhost/suggest?q=cats&sp=bing");
-    const r = req("suggest=google,ddg,; sf=w:10");
+    const r = req("suggest=google,ddg,");
     const s = parseSettings(url, r);
     expect(s.provider).toBe("bing");
-    expect(s.frecent).toEqual({ w: 10 });
+    expect(s.frecent).toEqual({});
     expect(s.trigger).toBe("ddg");
   });
 });
@@ -467,7 +515,7 @@ describe("parseSettingsFromRawUrl", () => {
     const s = parseSettingsFromRawUrl(
       "http://localhost/suggest?q=cats",
       req(
-        "suggest=custom,g,https%3A%2F%2Fexample.com%2Fsearch%3Fq%3D%7B%7D,|meta|gh.mdn; sf=g:10.yt:4"
+        "suggest=custom,g,https%3A%2F%2Fexample.com%2Fsearch%3Fq%3D%7B%7D|meta|gh.mdn"
       ),
       null,
       false

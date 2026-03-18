@@ -9,6 +9,11 @@ import {
 } from "./shared/chars";
 import { SUGGEST_URLS } from "./shared/constants";
 import { readQueryParam } from "./shared/raw-query";
+import {
+  encodeSuggestCookieValue,
+  parseSuggestCookieValue,
+  parseSuggestCookieValueWithValidation,
+} from "./shared/suggest-cookie";
 import { resolveTemplateParts } from "./shared/template";
 import { bangSuggestions } from "./suggest-bang";
 
@@ -127,100 +132,109 @@ function resolveEndpoint(provider: string, trigger: string): string | null {
   );
 }
 
-function parseFrecency(raw: string): Record<string, number> {
-  const frecent: Record<string, number> = {};
-  let i = 0;
-
-  while (i <= raw.length) {
-    let dot = raw.indexOf(".", i);
-    if (dot === -1) {
-      dot = raw.length;
-    }
-    const sep = raw.lastIndexOf(":", dot - 1);
-    if (sep > i) {
-      const count = parseInt(raw.substring(sep + 1, dot), 10);
-      if (count > 0) {
-        frecent[raw.substring(i, sep)] = count;
-      }
-    }
-
-    if (dot === raw.length) {
-      break;
-    }
-    i = dot + 1;
-  }
-
-  return frecent;
-}
-
-function safeDecodeURIComponent(value: string): string | null {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return null;
-  }
-}
-
 export function parseCookie(request: Request): SuggestSettings {
   const header = request.headers.get("Cookie") || "";
-  return parseCookieInternal(header, true);
+  return parseCookieInternalWithRewrite(header, true, false).settings;
 }
 
-function parseCookieInternal(
+interface SuggestSettingsParseResult {
+  settings: SuggestSettings;
+  rewrittenSuggestCookie: string | null;
+}
+
+function parseCookieInternalWithRewrite(
   header: string,
-  includeBangContext: boolean
-): SuggestSettings {
+  includeBangContext: boolean,
+  includeRewrite: boolean
+): SuggestSettingsParseResult {
   const suggestRaw = readCookieValue(header, "suggest");
   if (suggestRaw === null) {
-    return defaultSettings();
+    return {
+      settings: defaultSettings(),
+      rewrittenSuggestCookie: null,
+    };
   }
 
-  let firstSectionEnd = suggestRaw.indexOf("|");
-  if (firstSectionEnd === -1) {
-    firstSectionEnd = suggestRaw.length;
-  }
-  let customSection = "";
-  if (includeBangContext && firstSectionEnd !== suggestRaw.length) {
-    const secondPipe = suggestRaw.indexOf("|", firstSectionEnd + 1);
-    customSection =
-      secondPipe === -1 ? "" : suggestRaw.substring(secondPipe + 1);
+  if (!(includeRewrite && includeBangContext)) {
+    return {
+      settings: parseSuggestCookieValue(suggestRaw, includeBangContext),
+      rewrittenSuggestCookie: null,
+    };
   }
 
-  const firstSection = suggestRaw.substring(0, firstSectionEnd);
-  let provider = "";
-  let trigger = "";
-  let customUrl = "";
-
-  const comma1 = firstSection.indexOf(",");
-  if (comma1 === -1) {
-    provider = firstSection;
-  } else {
-    provider = firstSection.substring(0, comma1);
-    const comma2 = firstSection.indexOf(",", comma1 + 1);
-    if (comma2 === -1) {
-      trigger = firstSection.substring(comma1 + 1);
-    } else {
-      trigger = firstSection.substring(comma1 + 1, comma2);
-      const comma3 = firstSection.indexOf(",", comma2 + 1);
-      customUrl =
-        comma3 === -1
-          ? firstSection.substring(comma2 + 1)
-          : firstSection.substring(comma2 + 1, comma3);
-    }
+  const { settings, hasInvalidContext } = parseSuggestCookieValueWithValidation(
+    suggestRaw,
+    includeBangContext,
+    true
+  );
+  if (!hasInvalidContext) {
+    return { settings, rewrittenSuggestCookie: null };
   }
 
-  const sfRaw = includeBangContext ? readCookieValue(header, "sf") : null;
-  const frecent: Record<string, number> =
-    includeBangContext && sfRaw ? parseFrecency(sfRaw) : {};
-  const custom = includeBangContext ? parseCustomTriggers(customSection) : [];
+  const rewritten = encodeSuggestCookieValue(
+    settings.provider,
+    settings.trigger,
+    settings.customUrl || "",
+    [],
+    {}
+  );
 
   return {
-    provider: provider || "default",
-    trigger: trigger || "g",
-    customUrl: customUrl ? safeDecodeURIComponent(customUrl) : null,
-    frecent,
-    custom,
+    settings: { ...settings, frecent: {}, custom: [] },
+    rewrittenSuggestCookie: rewritten,
   };
+}
+
+export interface SuggestSettingsWithCleanup {
+  settings: SuggestSettings;
+  rewrittenSuggestCookie: string | null;
+}
+
+export function parseSettingsFromRawUrlWithCleanup(
+  rawUrl: string,
+  request: Request,
+  spOverride?: string | null,
+  includeBangContext = true
+): SuggestSettingsWithCleanup {
+  const { settings, rewrittenSuggestCookie } = parseCookieInternalWithRewrite(
+    request.headers.get("Cookie") || "",
+    includeBangContext,
+    true
+  );
+
+  const sp = spOverride ?? readQueryParam(rawUrl, "sp");
+  if (sp) {
+    settings.provider = sp;
+  }
+
+  return {
+    settings,
+    rewrittenSuggestCookie,
+  };
+}
+
+export function parseSettingsFromRawUrl(
+  rawUrl: string,
+  request: Request,
+  spOverride?: string | null,
+  includeBangContext = true
+): SuggestSettings {
+  const settings = parseCookieInternalWithRewrite(
+    request.headers.get("Cookie") || "",
+    includeBangContext,
+    false
+  ).settings;
+
+  const sp = spOverride ?? readQueryParam(rawUrl, "sp");
+  if (sp) {
+    settings.provider = sp;
+  }
+
+  return settings;
+}
+
+export function parseSettings(url: URL, request: Request): SuggestSettings {
+  return parseSettingsFromRawUrl(url.href, request);
 }
 
 function defaultSettings(): SuggestSettings {
@@ -272,53 +286,6 @@ function readCookieValue(header: string, name: string): string | null {
   }
 
   return null;
-}
-
-function parseCustomTriggers(raw: string): string[] {
-  if (!raw) {
-    return [];
-  }
-
-  const out: string[] = [];
-  let i = 0;
-
-  while (i <= raw.length) {
-    let dot = raw.indexOf(".", i);
-    if (dot === -1) {
-      dot = raw.length;
-    }
-    if (dot > i) {
-      out.push(raw.substring(i, dot));
-    }
-    if (dot === raw.length) {
-      break;
-    }
-    i = dot + 1;
-  }
-
-  return out;
-}
-
-export function parseSettings(url: URL, request: Request): SuggestSettings {
-  return parseSettingsFromRawUrl(url.href, request);
-}
-
-export function parseSettingsFromRawUrl(
-  rawUrl: string,
-  request: Request,
-  spOverride?: string | null,
-  includeBangContext = true
-): SuggestSettings {
-  const settings = parseCookieInternal(
-    request.headers.get("Cookie") || "",
-    includeBangContext
-  );
-  const sp = spOverride ?? readQueryParam(rawUrl, "sp");
-  if (sp) {
-    settings.provider = sp;
-  }
-
-  return settings;
 }
 
 export async function suggest(

@@ -2,6 +2,10 @@ declare const self: ServiceWorkerGlobalScope;
 
 import { COOKIE_MAX_AGE_S } from "../shared/constants";
 import {
+  encodeSuggestCookieValue,
+  parseSuggestCookieValue,
+} from "../shared/suggest-cookie";
+import {
   getCachedSettings,
   getFrecencyValue,
   invalidateCache,
@@ -91,17 +95,67 @@ function queueBangSideEffects(e: FetchEvent, trigger: string): void {
       if (!val || typeof cookieStore === "undefined") {
         return;
       }
-      return cookieStore
-        .set({
-          name: "sf",
-          value: val,
+
+      const frecency = parseLegacyFrecency(val);
+      const updateSuggestCookie = cookieStore.get("suggest").then((cookie) => {
+        if (!cookie?.value) {
+          return;
+        }
+        const parsed = parseSuggestCookieValue(cookie.value, true);
+        return cookieStore.set({
+          name: "suggest",
+          value: encodeSuggestCookieValue(
+            parsed.provider,
+            parsed.trigger,
+            parsed.customUrl || "",
+            parsed.custom,
+            frecency
+          ),
           path: "/",
           expires: Date.now() + COOKIE_MAX_AGE_S * 1000,
           sameSite: "lax",
-        })
-        .catch(swallowError);
+        });
+      });
+
+      return Promise.all([
+        cookieStore
+          .set({
+            name: "sf",
+            value: val,
+            path: "/",
+            expires: Date.now() + COOKIE_MAX_AGE_S * 1000,
+            sameSite: "lax",
+          })
+          .catch(swallowError),
+        updateSuggestCookie,
+      ]).catch(swallowError);
     }).catch(swallowError)
   );
+}
+
+function parseLegacyFrecency(raw: string): Record<string, number> {
+  const out: Record<string, number> = {};
+  let i = 0;
+
+  while (i <= raw.length) {
+    let dot = raw.indexOf(".", i);
+    if (dot === -1) {
+      dot = raw.length;
+    }
+    const sep = raw.lastIndexOf(":", dot - 1);
+    if (sep > i) {
+      const count = parseInt(raw.substring(sep + 1, dot), 10);
+      if (count > 0) {
+        out[raw.substring(i, sep)] = count;
+      }
+    }
+    if (dot === raw.length) {
+      break;
+    }
+    i = dot + 1;
+  }
+
+  return out;
 }
 
 self.addEventListener("install", (e: ExtendableEvent) => {

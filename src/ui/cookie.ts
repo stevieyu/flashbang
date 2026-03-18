@@ -1,4 +1,5 @@
 import { COOKIE_MAX_AGE_S } from "../shared/constants";
+import { encodeSuggestCookieValue } from "../shared/suggest-cookie";
 
 export function setSuggestCookie(
   provider: string,
@@ -6,9 +7,6 @@ export function setSuggestCookie(
   customUrl: string,
   custom?: string[]
 ) {
-  let value = `${provider},${trigger},${encodeURIComponent(customUrl)}`;
-  if (custom?.length) {
-    value += `||${custom.join(".")}`;
-  }
+  const value = encodeSuggestCookieValue(provider, trigger, customUrl, custom);
   document.cookie = `suggest=${value};path=/;max-age=${COOKIE_MAX_AGE_S};SameSite=Lax;Secure`;
 }

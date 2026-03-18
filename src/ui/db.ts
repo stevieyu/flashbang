@@ -72,6 +72,10 @@ export class DB {
     const tx = db.transaction(["settings", "custom-bangs"], "readwrite");
     const settingsStore = tx.objectStore("settings");
     const customStore = tx.objectStore("custom-bangs");
+    const clearOps: Promise<unknown>[] = [
+      idbWrap(settingsStore.clear()),
+      idbWrap(customStore.clear()),
+    ];
     const ops: Promise<unknown>[] = [];
 
     if (obj.settings && typeof obj.settings === "object") {
@@ -112,7 +116,7 @@ export class DB {
       }
     }
 
-    await Promise.all(ops);
+    await Promise.all([...clearOps, ...ops]);
   }
 }
 
