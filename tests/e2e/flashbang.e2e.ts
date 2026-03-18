@@ -58,16 +58,19 @@ async function navigateAndWaitForRedirect(
   target: string,
   expectedUrl: RegExp
 ): Promise<void> {
-  const navigation = page.goto(target, { waitUntil: "commit" }).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error ?? "");
-    if (
-      message.includes("ERR_ABORTED") ||
-      message.includes("interrupted by another navigation")
-    ) {
-      return null;
-    }
-    throw error;
-  });
+  const navigation = page
+    .goto(target, { waitUntil: "commit" })
+    .catch((error) => {
+      const message =
+        error instanceof Error ? error.message : String(error ?? "");
+      if (
+        message.includes("ERR_ABORTED") ||
+        message.includes("interrupted by another navigation")
+      ) {
+        return null;
+      }
+      throw error;
+    });
   await expect.poll(() => page.url(), { timeout: 10_000 }).toMatch(expectedUrl);
   await navigation;
 }
@@ -161,9 +164,12 @@ test("suggestions include custom bang entries from the suggest cookie", async ({
   await page.goto("/");
   const customBang = "mycustombang";
   const query = "!mycustom";
-  await page.evaluate((suggestCookie) => {
-    document.cookie = `suggest=${suggestCookie};path=/`;
-  }, encodeSuggestCookieValue("default", "g", "", [customBang]));
+  await page.evaluate(
+    (suggestCookie) => {
+      document.cookie = `suggest=${suggestCookie};path=/`;
+    },
+    encodeSuggestCookieValue("default", "g", "", [customBang])
+  );
 
   const response = await page.evaluate(async (q) => {
     const res = await fetch(`/suggest?q=${encodeURIComponent(q)}`);
@@ -201,17 +207,27 @@ test("warm redirect falls back to default search for unknown bangs", async ({
 }) => {
   await mockGoogleSearchRoute(page);
   await ensureWarmController(page);
-  await navigateAndWaitForRedirect(page, "/?q=%21zzzb%20hello", /google\.com\/search\?/);
+  await navigateAndWaitForRedirect(
+    page,
+    "/?q=%21zzzb%20hello",
+    /google\.com\/search\?/
+  );
   const redirected = new URL(page.url());
   expect(redirected.hostname).toBe("www.google.com");
   expect(redirected.pathname).toBe("/search");
   expect(redirected.searchParams.get("q")).toBe("!zzzb hello");
 });
 
-test("warm redirect uses lucky URL for trailing bare bang", async ({ page }) => {
+test("warm redirect uses lucky URL for trailing bare bang", async ({
+  page,
+}) => {
   await mockGoogleSearchRoute(page);
   await ensureWarmController(page);
-  await navigateAndWaitForRedirect(page, "/?q=hello%20%21", /google\.com\/search\?/);
+  await navigateAndWaitForRedirect(
+    page,
+    "/?q=hello%20%21",
+    /google\.com\/search\?/
+  );
   const redirected = new URL(page.url());
   expect(redirected.searchParams.get("q")).toBe("hello");
   expect(redirected.searchParams.get("btnI")).toBe("1");
@@ -262,7 +278,9 @@ test("custom bang overrides built-in bang trigger", async ({ page }) => {
   expect(redirected.searchParams.get("q")).toBe("hello");
 });
 
-test("custom bang with no term redirects to custom origin", async ({ page }) => {
+test("custom bang with no term redirects to custom origin", async ({
+  page,
+}) => {
   await mockCustomHostRoute(page);
   await ensureWarmController(page);
   await seedCustomBangs(page, [
@@ -299,7 +317,9 @@ test("custom bang supports suffix syntax", async ({ page }) => {
   expect(redirected.searchParams.get("q")).toBe("hello");
 });
 
-test("custom bang persists after reload in the same context", async ({ page }) => {
+test("custom bang persists after reload in the same context", async ({
+  page,
+}) => {
   await mockCustomHostRoute(page);
   await ensureWarmController(page);
   await seedCustomBangs(page, [

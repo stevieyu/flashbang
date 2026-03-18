@@ -7,8 +7,8 @@ import {
   spyOn,
   test,
 } from "bun:test";
-import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 import { readQueryParam, readTwoQueryParams } from "../src/shared/raw-query";
+import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 
 interface TestBang {
   k: string;
