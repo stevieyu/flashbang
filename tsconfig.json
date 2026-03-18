@@ -8,5 +8,12 @@
     "lib": ["ESNext", "WebWorker", "DOM"],
     "types": ["@types/bun"]
   },
-  "include": ["src/**/*.ts", "scripts/**/*.ts", "functions/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "functions/**/*.ts",
+    "tests/redirect.test.ts",
+    "tests/frecency.test.ts",
+    "tests/raw-url.test.ts"
+  ]
 }

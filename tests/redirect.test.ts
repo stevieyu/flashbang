@@ -25,13 +25,13 @@ import {
   redirect,
   redirectRaw as redirectRawTuple,
   redirectUrl,
-} from "./redirect";
+} from "../src/sw/redirect";
 
 function redirectRaw(rawQuery: string, settings: RedirectSettings): Response {
   return redirectRawTuple(rawQuery, settings)[0];
 }
 
-import type { UrlParts } from "./redirect";
+import type { UrlParts } from "../src/sw/redirect";
 
 const DEFAULT_URL: UrlParts = ["https://www.google.com/search?q=", ""];
 const LUCKY_URL: UrlParts = ["https://www.google.com/search?btnI&q=", ""];

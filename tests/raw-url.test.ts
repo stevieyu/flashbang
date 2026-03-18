@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readOrigin, readPathname } from "./raw-url";
+import { readOrigin, readPathname } from "../src/shared/raw-url";
 
 describe("readPathname", () => {
   test("parses pathname from absolute URL with query and hash", () => {

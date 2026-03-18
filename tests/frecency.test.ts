@@ -4,7 +4,7 @@ import {
   serializeTopFrecency,
   type TopFrecencyEntry,
   updateTopFrecencyOnIncrement,
-} from "./frecency";
+} from "../src/sw/frecency";
 
 function baselineCookie(counts: Record<string, number>, limit: number): string {
   const sorted = Object.entries(counts)

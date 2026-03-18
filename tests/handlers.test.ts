@@ -1,0 +1,102 @@
+import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { handleSuggestRequest } from "../src/server/handlers";
+import { encodeSuggestCookieValue } from "../src/shared/suggest-cookie";
+
+const fetchSpy = spyOn(globalThis, "fetch");
+
+beforeEach(() => {
+  fetchSpy.mockReset();
+});
+
+afterAll(() => {
+  fetchSpy.mockRestore();
+});
+
+const JSON_HEADERS = { "Content-Type": "application/json" };
+
+function req(url: string, cookie?: string): Request {
+  const headers = new Headers();
+  if (cookie) {
+    headers.set("Cookie", cookie);
+  }
+  return new Request(url, { headers });
+}
+
+describe("handleSuggestRequest", () => {
+  test("returns 400 when q is missing", async () => {
+    const response = await handleSuggestRequest(
+      req("http://localhost/suggest")
+    );
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Missing q parameter");
+  });
+
+  test("returns bang suggestions without remote fetch for bang-prefixed query", async () => {
+    const response = await handleSuggestRequest(
+      req(
+        "http://localhost/suggest?q=%21",
+        encodeSuggestCookieValue("default", "g", "", ["mybang"], null)
+      )
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+
+    const payload = await response.json();
+    expect(response.status).toBe(200);
+    expect(payload[0]).toBe("!");
+    expect(Array.isArray(payload[1])).toBe(true);
+    expect(payload[1]).toHaveLength(8);
+  });
+
+  test("forwards custom suggest provider request when query has no bang", async () => {
+    const upstream = [
+      "flashbang",
+      ["flashbang", "flashlight"],
+      [],
+      [],
+      { "google:suggestdetail": {} },
+    ];
+    fetchSpy.mockResolvedValue(
+      new Response(JSON.stringify(upstream), { headers: JSON_HEADERS })
+    );
+
+    const custom = "https://example.com/suggest?q={}";
+    const response = await handleSuggestRequest(
+      req(
+        "http://localhost/suggest?q=flash",
+        `suggest=${encodeSuggestCookieValue("custom", "g", custom)}`
+      )
+    );
+
+    expect(response.status).toBe(200);
+    const [calledUrl] = fetchSpy.mock.calls[0];
+    expect(String(calledUrl)).toBe(custom.replace("{}", "flash"));
+    expect(await response.json()).toEqual(upstream);
+  });
+
+  test("uses sp query param as provider override", async () => {
+    fetchSpy.mockResolvedValue(new Response("[]", { headers: JSON_HEADERS }));
+
+    const response = await handleSuggestRequest(
+      req("http://localhost/suggest?q=test&sp=ddg")
+    );
+
+    expect(response.status).toBe(200);
+    const calledUrl = String(fetchSpy.mock.calls[0][0]);
+    expect(calledUrl).toContain("duckduckgo.com/ac/?q=test&type=list");
+    expect(calledUrl.startsWith("https://duckduckgo.com")).toBe(true);
+  });
+
+  test("cleans malformed suggest context and returns fallback payload", async () => {
+    fetchSpy.mockResolvedValue(new Response("[]", { headers: JSON_HEADERS }));
+
+    const response = await handleSuggestRequest(
+      req("http://localhost/suggest?q=%21g", "suggest=custom,g,|f:%E0%A4%A")
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    const setCookie = response.headers.get("Set-Cookie") ?? "";
+    expect(setCookie).toContain("suggest=custom,g,");
+  });
+});

@@ -16,10 +16,12 @@
     "fix": "biome check --write",
     "profile": "bun scripts/profile.ts",
     "clean": "bun -e \"import{rmSync}from'fs';rmSync('dist',{recursive:true,force:true})\"",
-    "test": "bun test"
+    "test": "bun test",
+    "test:e2e": "bun run build && bunx playwright test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
+    "@playwright/test": "^1.56.1",
     "@minify-html/node": "^0.18.1",
     "@types/bun": "latest",
     "@unocss/cli": "^66.6.0",
