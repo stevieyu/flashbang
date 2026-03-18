@@ -298,13 +298,10 @@ function findTrailingBareBang(
   return -1;
 }
 
-let resolvedTrigger: string | null = null;
-
 function resolveRaw(
   rawQuery: string,
   { defaultUrl, custom, luckyUrl }: RedirectSettings
-): string {
-  resolvedTrigger = null;
+): [string, string | null] {
   const len = rawQuery.length;
 
   let start = 0;
@@ -335,14 +332,17 @@ function resolveRaw(
   }
 
   if (start >= end) {
-    return "/";
+    return ["/", null];
   }
 
   const c0 = rawQuery.charCodeAt(start);
 
   // "\" — feeling lucky
   if (c0 === CH_BSLASH && end - start > 1) {
-    return luckyOrDefault(luckyUrl, defaultUrl, rawQuery, start + 1, end);
+    return [
+      luckyOrDefault(luckyUrl, defaultUrl, rawQuery, start + 1, end),
+      null,
+    ];
   }
 
   let exclStart = -1;
@@ -359,7 +359,7 @@ function resolveRaw(
     const afterExcl = exclStart + exclWidth;
 
     if (afterExcl >= end) {
-      return "/";
+      return ["/", null];
     }
 
     // "!+query" / "!%20query" — bare bang lucky
@@ -367,9 +367,12 @@ function resolveRaw(
     if (spaceWidth) {
       const termStart = afterExcl + spaceWidth;
       if (termStart >= end) {
-        return "/";
+        return ["/", null];
       }
-      return luckyOrDefault(luckyUrl, defaultUrl, rawQuery, termStart, end);
+      return [
+        luckyOrDefault(luckyUrl, defaultUrl, rawQuery, termStart, end),
+        null,
+      ];
     }
 
     // "!g+cats" or "!g" — prefix bang
@@ -382,18 +385,16 @@ function resolveRaw(
     if (sp === -1 || sp + spLen >= end) {
       const origin = resolveBangOrigin(bang, custom);
       if (!origin) {
-        return fillParts(defaultUrl, rawQuery, start, end);
+        return [fillParts(defaultUrl, rawQuery, start, end), null];
       }
-      resolvedTrigger = bang;
-      return origin;
+      return [origin, bang];
     }
 
     const filled = resolveBangFill(bang, custom, rawQuery, sp + spLen, end);
     if (filled === null) {
-      return fillParts(defaultUrl, rawQuery, start, end);
+      return [fillParts(defaultUrl, rawQuery, start, end), null];
     }
-    resolvedTrigger = bang;
-    return filled;
+    return [filled, bang];
   }
 
   // "query+!" / "query%20!" / "query+%21" / "query%20%21" — trailing bare bang lucky
@@ -401,20 +402,17 @@ function resolveRaw(
   const trailingTermEnd = findTrailingBareBang(rawQuery, start, end, lastChar);
   if (trailingTermEnd !== -1) {
     if (trailingTermEnd <= start) {
-      return "/";
+      return ["/", null];
     }
-    return luckyOrDefault(
-      luckyUrl,
-      defaultUrl,
-      rawQuery,
-      start,
-      trailingTermEnd
-    );
+    return [
+      luckyOrDefault(luckyUrl, defaultUrl, rawQuery, start, trailingTermEnd),
+      null,
+    ];
   }
 
   const exclPacked = findExcl(rawQuery, start, end);
   if (exclPacked === -1) {
-    return fillParts(defaultUrl, rawQuery, start, end);
+    return [fillParts(defaultUrl, rawQuery, start, end), null];
   }
   const exclPos = exclPacked >> 2;
   const exclCharWidth = exclPacked & 0b11;
@@ -429,17 +427,15 @@ function resolveRaw(
       if (termStart >= end) {
         const origin = resolveBangOrigin(bang, custom);
         if (origin) {
-          resolvedTrigger = bang;
-          return origin;
+          return [origin, bang];
         }
       } else {
         const filled = resolveBangFill(bang, custom, rawQuery, termStart, end);
         if (filled !== null) {
-          resolvedTrigger = bang;
-          return filled;
+          return [filled, bang];
         }
       }
-      return fillParts(defaultUrl, rawQuery, start, end);
+      return [fillParts(defaultUrl, rawQuery, start, end), null];
     }
   }
 
@@ -449,10 +445,9 @@ function resolveRaw(
       const bang = rawQuery.substring(start, exclPos).toLowerCase();
       const origin = resolveBangOrigin(bang, custom);
       if (origin) {
-        resolvedTrigger = bang;
-        return origin;
+        return [origin, bang];
       }
-      return fillParts(defaultUrl, rawQuery, start, end);
+      return [fillParts(defaultUrl, rawQuery, start, end), null];
     }
   }
 
@@ -476,10 +471,9 @@ function resolveRaw(
           spaceBeforeBangPos
         );
         if (filled !== null) {
-          resolvedTrigger = bang;
-          return filled;
+          return [filled, bang];
         }
-        return fillParts(defaultUrl, rawQuery, start, end);
+        return [fillParts(defaultUrl, rawQuery, start, end), null];
       }
     }
   }
@@ -507,23 +501,22 @@ function resolveRaw(
           lastSpPos
         );
         if (filled !== null) {
-          resolvedTrigger = bang;
-          return filled;
+          return [filled, bang];
         }
-        return fillParts(defaultUrl, rawQuery, start, end);
+        return [fillParts(defaultUrl, rawQuery, start, end), null];
       }
     }
   }
 
-  return fillParts(defaultUrl, rawQuery, start, end);
+  return [fillParts(defaultUrl, rawQuery, start, end), null];
 }
 
 export function redirectRaw(
   rawQuery: string,
   settings: RedirectSettings
 ): [Response, string | null] {
-  const url = resolveRaw(rawQuery, settings);
-  return [redir(url), resolvedTrigger];
+  const [url, trigger] = resolveRaw(rawQuery, settings);
+  return [redir(url), trigger];
 }
 
 function encodeForRedirect(query: string): string {
@@ -531,7 +524,7 @@ function encodeForRedirect(query: string): string {
 }
 
 export function redirectUrl(query: string, settings: RedirectSettings): string {
-  return resolveRaw(encodeForRedirect(query), settings);
+  return resolveRaw(encodeForRedirect(query), settings)[0];
 }
 
 export function redirect(query: string, settings: RedirectSettings): Response {
