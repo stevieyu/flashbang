@@ -46,22 +46,21 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
       try {
         const db = await openDB();
         const tx = db.transaction(["settings", "custom-bangs"], "readonly");
-        const store = tx.objectStore("settings");
-        const [result, luckyProviderResult, luckyUrlResult, all] =
-          await Promise.all([
-            idbWrap<{ value?: string } | undefined>(store.get("default-bang")),
-            idbWrap<{ value?: string } | undefined>(
-              store.get("lucky-provider")
-            ),
-            idbWrap<{ value?: string } | undefined>(store.get("lucky-url")),
-            idbWrap<Array<{ trigger: string; url: string }>>(
-              tx.objectStore("custom-bangs").getAll()
-            ),
-          ]);
-        const defaultBang = result?.value || "g";
+        const [settings, all] = await Promise.all([
+          idbWrap<Array<{ key: string; value?: string }>>(
+            tx.objectStore("settings").getAll()
+          ),
+          idbWrap<Array<{ trigger: string; url: string }>>(
+            tx.objectStore("custom-bangs").getAll()
+          ),
+        ]);
+        const settingsMap = Object.fromEntries(
+          settings.map((s) => [s.key, s.value])
+        );
+        const defaultBang = settingsMap["default-bang"] || "g";
         const tpl = lookupBang(defaultBang);
         const defaultUrl: UrlParts = tpl || splitUrl(DEFAULT_URL);
-        const luckyProvider = luckyProviderResult?.value ?? "default";
+        const luckyProvider = settingsMap["lucky-provider"] ?? "default";
         let luckyUrl: UrlParts | null;
         switch (luckyProvider) {
           case "none":
@@ -77,8 +76,8 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
             luckyUrl = splitUrl(LUCKY_URLS.kagi);
             break;
           case "custom":
-            luckyUrl = luckyUrlResult?.value
-              ? splitUrl(luckyUrlResult.value)
+            luckyUrl = settingsMap["lucky-url"]
+              ? splitUrl(settingsMap["lucky-url"])
               : null;
             break;
           default:
