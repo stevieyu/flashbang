@@ -298,6 +298,16 @@ function findTrailingBareBang(
   return -1;
 }
 
+function toLowerIfNeeded(s: string, from: number, to: number): string {
+  for (let i = from; i < to; i++) {
+    const c = s.charCodeAt(i);
+    if (c >= 65 && c <= 90) {
+      return s.substring(from, to).toLowerCase();
+    }
+  }
+  return from === 0 && to === s.length ? s : s.substring(from, to);
+}
+
 function resolveRaw(
   rawQuery: string,
   { defaultUrl, custom, luckyUrl }: RedirectSettings
@@ -380,7 +390,7 @@ function resolveRaw(
     const sp = spPacked === -1 ? -1 : spPacked >> 2;
     const spLen = spPacked === -1 ? 0 : spPacked & 0b11;
     const bangEnd = sp === -1 ? end : sp;
-    const bang = rawQuery.substring(afterExcl, bangEnd).toLowerCase();
+    const bang = toLowerIfNeeded(rawQuery, afterExcl, bangEnd);
 
     if (sp === -1 || sp + spLen >= end) {
       const origin = resolveBangOrigin(bang, custom);
@@ -422,7 +432,7 @@ function resolveRaw(
   if (afterExcl < end) {
     const spAfter = spaceAt(rawQuery, afterExcl);
     if (spAfter) {
-      const bang = rawQuery.substring(start, exclPos).toLowerCase();
+      const bang = toLowerIfNeeded(rawQuery, start, exclPos);
       const termStart = afterExcl + spAfter;
       if (termStart >= end) {
         const origin = resolveBangOrigin(bang, custom);
@@ -442,7 +452,7 @@ function resolveRaw(
   // "g!"
   if (afterExcl >= end || (lastChar === CH_EXCL && afterExcl === end)) {
     if (findSpace(rawQuery, start, end) === -1) {
-      const bang = rawQuery.substring(start, exclPos).toLowerCase();
+      const bang = toLowerIfNeeded(rawQuery, start, exclPos);
       const origin = resolveBangOrigin(bang, custom);
       if (origin) {
         return [origin, bang];
@@ -462,7 +472,7 @@ function resolveRaw(
     if (bangStart < end) {
       const bangStr = rawQuery.substring(bangStart, end);
       if (bangStr.indexOf("+") === -1 && !bangStr.includes("%20")) {
-        const bang = bangStr.toLowerCase();
+        const bang = toLowerIfNeeded(rawQuery, bangStart, end);
         const filled = resolveBangFill(
           bang,
           custom,
@@ -490,9 +500,7 @@ function resolveRaw(
       const lastSpLen = lastSpPacked & 0b11;
       const suffixBangStart = lastSpPos + lastSpLen;
       if (suffixBangStart < bangExclEnd) {
-        const bang = rawQuery
-          .substring(suffixBangStart, bangExclEnd)
-          .toLowerCase();
+        const bang = toLowerIfNeeded(rawQuery, suffixBangStart, bangExclEnd);
         const filled = resolveBangFill(
           bang,
           custom,
