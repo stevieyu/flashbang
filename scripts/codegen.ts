@@ -511,12 +511,12 @@ function renderMinOpenAddress(packed: PackedMinData): string {
     `const _PR=new Uint8Array(${uniquePrefixes.length});` +
     `const _SC=new Array(${uniqueSuffixes.length});` +
     `const _SR=new Uint8Array(${uniqueSuffixes.length});` +
-    `const _TC=new Array(${entryCount});` +
+    `const _TC=new Array(${entryCount}).fill(null);` +
     "function _eq(i,s){const a=_TO[i];const b=_TO[i+1];const n=b-a;if(s.length!==n){return false}for(let j=0;j<n;j++){if(_TB.charCodeAt(a+j)!==s.charCodeAt(j)){return false}}return true}" +
     "function _prefix(id){if(_PR[id]){return _PC[id]}const s=_PB.substring(_PO[id],_PO[id+1]);_PC[id]=s;_PR[id]=1;return s}" +
     "function _suffix(id){if(_SR[id]){return _SC[id]}const s=_SB.substring(_SO[id],_SO[id+1]);_SC[id]=s;_SR[id]=1;return s}" +
     `export const BANG_COUNT=${entryCount};` +
-    "export function lookupBang(trigger){let slot=_hash(trigger)&_HM;for(let i=0;i<_HT.length;i++){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_eq(idx,trigger)){let t=_TC[idx];if(t!==undefined){return t}const pid=_EP[idx];const sid=_ES[idx];t=sid===0?[_prefix(pid),null]:[_prefix(pid),_suffix(sid-1)];_TC[idx]=t;return t}slot=(slot+1)&_HM}return null}"
+    "export function lookupBang(trigger){let slot=_hash(trigger)&_HM;for(let i=0;i<_HT.length;i++){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_eq(idx,trigger)){let t=_TC[idx];if(t!==null){return t}const pid=_EP[idx];const sid=_ES[idx];t=sid===0?[_prefix(pid),null]:[_prefix(pid),_suffix(sid-1)];_TC[idx]=t;return t}slot=(slot+1)&_HM}return null}"
   );
 }
 
