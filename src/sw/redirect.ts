@@ -104,11 +104,12 @@ function findLastSpaceExcl(s: string, start: number, end: number): number {
 
 function findLastSpace(s: string, start: number, before: number): number {
   for (let i = before; i >= start; i--) {
-    if (s.charCodeAt(i) === CH_PLUS) {
+    const c = s.charCodeAt(i);
+    if (c === CH_PLUS) {
       return (i << 2) | 1;
     }
     if (
-      s.charCodeAt(i) === CH_PERCENT &&
+      c === CH_PERCENT &&
       i + 2 <= before &&
       s.charCodeAt(i + 1) === CH_2 &&
       s.charCodeAt(i + 2) === CH_0
