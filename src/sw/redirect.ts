@@ -112,7 +112,7 @@ function rawFixup(s: string, from: number, to: number): string {
   const raw = from === 0 && to === s.length ? s : s.substring(from, to);
   const plusPos = raw.indexOf("+");
   if (plusPos === -1) {
-    if (raw.indexOf("%2F") === -1 && raw.indexOf("%2f") === -1) {
+    if (raw.indexOf("%") === -1 || (raw.indexOf("%2F") === -1 && raw.indexOf("%2f") === -1)) {
       return raw;
     }
     let out = "";
@@ -133,7 +133,8 @@ function rawFixup(s: string, from: number, to: number): string {
     }
     return out + raw.substring(seg);
   }
-  const hasSlash = raw.indexOf("%2F") !== -1 || raw.indexOf("%2f") !== -1;
+  const hasSlash = raw.indexOf("%") !== -1 &&
+    (raw.indexOf("%2F") !== -1 || raw.indexOf("%2f") !== -1);
   let out = `${raw.substring(0, plusPos)}%20`;
   let seg = plusPos + 1;
   for (let i = seg; i < raw.length; i++) {
