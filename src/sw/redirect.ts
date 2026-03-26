@@ -44,10 +44,16 @@ function isEncodedExclAt(s: string, i: number): boolean {
 
 function findExcl(s: string, start: number, end: number): number {
   for (let i = start; i < end; i++) {
-    if (s.charCodeAt(i) === CH_EXCL) {
+    const c = s.charCodeAt(i);
+    if (c === CH_EXCL) {
       return (i << 2) | 1;
     }
-    if (i + 2 < end && isEncodedExclAt(s, i)) {
+    if (
+      c === CH_PERCENT &&
+      i + 2 < end &&
+      s.charCodeAt(i + 1) === CH_2 &&
+      s.charCodeAt(i + 2) === CH_1
+    ) {
       return (i << 2) | 3;
     }
   }
@@ -70,7 +76,12 @@ function findLastSpaceExcl(s: string, start: number, end: number): number {
     let exclWidth = 0;
     if (c === CH_EXCL) {
       exclWidth = 1;
-    } else if (i + 2 < end && isEncodedExclAt(s, i)) {
+    } else if (
+      c === CH_PERCENT &&
+      i + 2 < end &&
+      s.charCodeAt(i + 1) === CH_2 &&
+      s.charCodeAt(i + 2) === CH_1
+    ) {
       exclWidth = 3;
     }
     if (!exclWidth) {
@@ -112,7 +123,10 @@ function rawFixup(s: string, from: number, to: number): string {
   const raw = from === 0 && to === s.length ? s : s.substring(from, to);
   const plusPos = raw.indexOf("+");
   if (plusPos === -1) {
-    if (raw.indexOf("%") === -1 || (raw.indexOf("%2F") === -1 && raw.indexOf("%2f") === -1)) {
+    if (
+      raw.indexOf("%") === -1 ||
+      (raw.indexOf("%2F") === -1 && raw.indexOf("%2f") === -1)
+    ) {
       return raw;
     }
     let out = "";
@@ -133,7 +147,8 @@ function rawFixup(s: string, from: number, to: number): string {
     }
     return out + raw.substring(seg);
   }
-  const hasSlash = raw.indexOf("%") !== -1 &&
+  const hasSlash =
+    raw.indexOf("%") !== -1 &&
     (raw.indexOf("%2F") !== -1 || raw.indexOf("%2f") !== -1);
   let out = `${raw.substring(0, plusPos)}%20`;
   let seg = plusPos + 1;
@@ -471,8 +486,7 @@ function resolveRaw(
     const bangStart =
       spaceBeforeBangPos + spaceBeforeBangWidth + suffixExclWidth;
     if (bangStart < end) {
-      const bangStr = rawQuery.substring(bangStart, end);
-      if (bangStr.indexOf("+") === -1 && !bangStr.includes("%20")) {
+      if (findSpace(rawQuery, bangStart, end) === -1) {
         const bang = toLowerIfNeeded(rawQuery, bangStart, end);
         const filled = resolveBangFill(
           bang,

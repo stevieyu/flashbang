@@ -113,7 +113,9 @@ function persistFrecencySnapshot(
   counts: Record<string, number> | null,
   ts: number
 ): void {
-  if (persistInFlight) return;
+  if (persistInFlight) {
+    return;
+  }
   persistInFlight = true;
   const value = JSON.stringify({ c: counts, t: ts });
   openDB()
