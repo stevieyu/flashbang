@@ -60,6 +60,7 @@ async function build() {
       define: {
         __CACHE_VERSION__: '"flashbang-dev"',
         __EXTRA_ASSETS__: "[]",
+        __IS_DEV__: JSON.stringify(true),
       },
     }),
     Bun.build({

@@ -73,6 +73,7 @@ await Bun.build({
   define: {
     __CACHE_VERSION__: JSON.stringify(cacheVersion),
     __EXTRA_ASSETS__: JSON.stringify(extraAssets),
+    __IS_DEV__: JSON.stringify(false),
   },
 });
 

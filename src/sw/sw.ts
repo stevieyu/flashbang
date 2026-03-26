@@ -17,6 +17,7 @@ import { type RedirectSettings, redirectRaw, redirectUrl } from "./redirect";
 
 declare const __CACHE_VERSION__: string;
 declare const __EXTRA_ASSETS__: string[];
+declare const __IS_DEV__: boolean;
 
 const CACHE_NAME = __CACHE_VERSION__;
 const ASSETS = [
@@ -207,7 +208,7 @@ self.addEventListener("message", (e: ExtendableMessageEvent) => {
 self.addEventListener("fetch", (e: FetchEvent) => {
   const raw = e.request.url;
 
-  if (raw.includes("/__dev/")) {
+  if (__IS_DEV__ && raw.includes("/__dev/")) {
     return;
   }
 
