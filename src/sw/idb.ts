@@ -24,6 +24,7 @@ function splitUrl(url: string): UrlParts {
 
 const FRECENCY_COOKIE_ENTRIES = 8;
 
+let persistInFlight = false;
 let cachedRedirect: RedirectSettings | null = null;
 let redirectSettingsPromise: Promise<RedirectSettings> | null = null;
 let frecencyCounts: Record<string, number> | null = null;
@@ -112,15 +113,18 @@ function persistFrecencySnapshot(
   counts: Record<string, number> | null,
   ts: number
 ): void {
+  if (persistInFlight) return;
+  persistInFlight = true;
   const value = JSON.stringify({ c: counts, t: ts });
   openDB()
     .then((db) => {
+      persistInFlight = false;
       const tx = db.transaction("settings", "readwrite");
       const store = tx.objectStore("settings");
       store.put({ key: "frecency", value });
     })
     .catch(() => {
-      /* fire-and-forget */
+      persistInFlight = false;
     });
 }
 
@@ -128,6 +132,7 @@ export function invalidateCache() {
   if (frecencyCounts) {
     persistFrecencySnapshot(frecencyCounts, lastDecayTs);
   }
+  persistInFlight = false;
   cachedRedirect = null;
   redirectSettingsPromise = null;
   loadFrecencyPromise = null;
