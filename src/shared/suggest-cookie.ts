@@ -41,17 +41,6 @@ function safeDecodeURIComponent(value: string): string | null {
   }
 }
 
-function parsePositiveInteger(value: unknown): number {
-  if (typeof value === "number") {
-    return value > 0 && Number.isFinite(value) ? Math.floor(value) : 0;
-  }
-  if (typeof value === "string") {
-    const parsed = parseInt(value, 10);
-    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-  }
-  return 0;
-}
-
 function parseFrecencyCompactSection(
   raw: string,
   forCleanup: boolean
@@ -59,37 +48,6 @@ function parseFrecencyCompactSection(
   const value = parseFrecencyCompact(raw);
   const valid = Object.keys(value).length > 0 || !forCleanup;
   return { value, valid };
-}
-
-function parseModernFrecency(
-  raw: string,
-  forCleanup: boolean
-): { value: Record<string, number>; valid: boolean } {
-  const decoded = safeDecodeURIComponent(raw);
-  if (!decoded) {
-    return { value: {}, valid: !forCleanup };
-  }
-
-  try {
-    const parsed = JSON.parse(decoded);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { value: {}, valid: false };
-    }
-
-    const out: Record<string, number> = {};
-    for (const key in parsed) {
-      const count = parsePositiveInteger(parsed[key]);
-      if (count > 0) {
-        out[key] = count;
-      } else if (forCleanup) {
-        return { value: out, valid: false };
-      }
-    }
-
-    return { value: out, valid: true };
-  } catch {
-    return { value: {}, valid: false };
-  }
 }
 
 function parseCustomModern(
@@ -175,10 +133,7 @@ export function parseSuggestCookieValueWithValidation(
         const section = raw.substring(sectionStart, sectionEnd);
         if (section.startsWith(FREQUENCY_PREFIX)) {
           const sectionVal = section.substring(2);
-          const result =
-            sectionVal.charCodeAt(0) === 37 // '%' = old URL-encoded JSON
-              ? parseModernFrecency(sectionVal, forCleanup)
-              : parseFrecencyCompactSection(sectionVal, forCleanup);
+          const result = parseFrecencyCompactSection(sectionVal, forCleanup);
           frecent = result.value;
           if (forCleanup && !result.valid) {
             hasInvalidContext = true;

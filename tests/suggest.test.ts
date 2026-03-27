@@ -274,9 +274,7 @@ describe("parseCookie", () => {
   });
 
   test("unified suggest format parses frecency and custom together", () => {
-    const cookie = `suggest=custom,ddg,https%3A%2F%2Fapi.example.com%2Fsuggest%3Fq%3D%7B%7D|f:${encodeURIComponent(
-      JSON.stringify({ mdn: 20, gh: 3 })
-    )}|c:${encodeURIComponent(JSON.stringify(["my.site", "repo"]))}`;
+    const cookie = `suggest=custom,ddg,https%3A%2F%2Fapi.example.com%2Fsuggest%3Fq%3D%7B%7D|f:mdn:20,gh:3|c:${encodeURIComponent(JSON.stringify(["my.site", "repo"]))}`;
     const s = parseCookie(req(cookie));
     expect(s.provider).toBe("custom");
     expect(s.trigger).toBe("ddg");
@@ -320,7 +318,7 @@ describe("parseCookie", () => {
   test("new suggest format takes precedence over sf frecency", () => {
     const s = parseCookie(
       req(
-        "sf=ddg:100.g:80; suggest=brave,b,|f:%7B%22meta%22%3A9%7D|c:%5B%22mysite%22%5D"
+        `sf=ddg:100.g:80; suggest=brave,b,|f:meta:9|c:${encodeURIComponent(JSON.stringify(["mysite"]))}`
       )
     );
     expect(s.frecent).toEqual({ meta: 9 });
