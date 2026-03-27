@@ -389,12 +389,12 @@ function resolveRaw(
     }
 
     // "!+query" / "!%20query" — bare bang lucky
-    const _cae = rawQuery.charCodeAt(afterExcl);
+    const c = rawQuery.charCodeAt(afterExcl);
     let spaceWidth = 0;
-    if (_cae === CH_PLUS) {
+    if (c === CH_PLUS) {
       spaceWidth = 1;
     } else if (
-      _cae === CH_PERCENT &&
+      c === CH_PERCENT &&
       rawQuery.charCodeAt(afterExcl + 1) === CH_2 &&
       rawQuery.charCodeAt(afterExcl + 2) === CH_0
     ) {
@@ -456,12 +456,12 @@ function resolveRaw(
   // "g!+cats"
   const afterExcl = exclPos + exclCharWidth;
   if (afterExcl < end) {
-    const _cae2 = rawQuery.charCodeAt(afterExcl);
+    const c = rawQuery.charCodeAt(afterExcl);
     let spAfter = 0;
-    if (_cae2 === CH_PLUS) {
+    if (c === CH_PLUS) {
       spAfter = 1;
     } else if (
-      _cae2 === CH_PERCENT &&
+      c === CH_PERCENT &&
       rawQuery.charCodeAt(afterExcl + 1) === CH_2 &&
       rawQuery.charCodeAt(afterExcl + 2) === CH_0
     ) {
