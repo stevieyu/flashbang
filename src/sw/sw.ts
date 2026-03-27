@@ -97,6 +97,9 @@ function queueBangSideEffects(e: FetchEvent, trigger: string): void {
       }
 
       const frecency = getTopFrecencyRecord();
+      if (Object.keys(frecency).length === 0) {
+        return;
+      }
       return cookieStore.get("suggest").then((cookie) => {
         if (!cookie?.value) {
           return;

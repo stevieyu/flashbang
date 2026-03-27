@@ -24,6 +24,7 @@ function splitUrl(url: string): UrlParts {
 const FRECENCY_COOKIE_ENTRIES = 8;
 
 let persistInFlight = false;
+let persistPending: { counts: Record<string, number> | null; ts: number } | null = null;
 let cachedRedirect: RedirectSettings | null = null;
 let redirectSettingsPromise: Promise<RedirectSettings> | null = null;
 let frecencyCounts: Record<string, number> | null = null;
@@ -112,9 +113,11 @@ function persistFrecencySnapshot(
   ts: number
 ): void {
   if (persistInFlight) {
+    persistPending = { counts, ts };
     return;
   }
   persistInFlight = true;
+  persistPending = null;
   const value = JSON.stringify({ c: counts, t: ts });
   openDB()
     .then((db) => {
@@ -122,9 +125,19 @@ function persistFrecencySnapshot(
       const tx = db.transaction("settings", "readwrite");
       const store = tx.objectStore("settings");
       store.put({ key: "frecency", value });
+      if (persistPending) {
+        const { counts: c, ts: t } = persistPending;
+        persistPending = null;
+        persistFrecencySnapshot(c, t);
+      }
     })
     .catch(() => {
       persistInFlight = false;
+      if (persistPending) {
+        const { counts: c, ts: t } = persistPending;
+        persistPending = null;
+        persistFrecencySnapshot(c, t);
+      }
     });
 }
 
@@ -133,6 +146,7 @@ export function invalidateCache() {
     persistFrecencySnapshot(frecencyCounts, lastDecayTs);
   }
   persistInFlight = false;
+  persistPending = null;
   cachedRedirect = null;
   redirectSettingsPromise = null;
   loadFrecencyPromise = null;
@@ -140,15 +154,6 @@ export function invalidateCache() {
   frecencyCounts = null;
   topFrecency = [];
   lastDecayTs = 0;
-}
-
-function rebuildFrecencyTop(): void {
-  const counts = frecencyCounts;
-  if (!counts) {
-    topFrecency = [];
-    return;
-  }
-  topFrecency = buildTopFrecency(counts, FRECENCY_COOKIE_ENTRIES);
 }
 
 function applyDecay(): void {
@@ -221,7 +226,9 @@ export function loadFrecency(): Promise<void> {
 
         applyDecay();
         pruneFrecency();
-        rebuildFrecencyTop();
+        topFrecency = frecencyCounts
+          ? buildTopFrecency(frecencyCounts, FRECENCY_COOKIE_ENTRIES)
+          : [];
         persistFrecencySnapshot(frecencyCounts, lastDecayTs);
       } catch {
         frecencyCounts = {};

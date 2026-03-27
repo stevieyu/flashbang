@@ -1,10 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildTopFrecency,
-  serializeTopFrecency,
   type TopFrecencyEntry,
   updateTopFrecencyOnIncrement,
 } from "../src/sw/frecency";
+
+function serializeTop(top: readonly TopFrecencyEntry[]): string {
+  if (top.length === 0) return "";
+  let out = `${top[0].trigger}:${top[0].count}`;
+  for (let i = 1; i < top.length; i++) out += `.${top[i].trigger}:${top[i].count}`;
+  return out;
+}
 
 function baselineCookie(counts: Record<string, number>, limit: number): string {
   const sorted = Object.entries(counts)
@@ -51,16 +57,6 @@ describe("frecency top-k helpers", () => {
     ]);
   });
 
-  test("serializeTopFrecency formats cookie value", () => {
-    expect(
-      serializeTopFrecency([
-        { trigger: "g", count: 10 },
-        { trigger: "yt", count: 3 },
-      ])
-    ).toBe("g:10.yt:3");
-    expect(serializeTopFrecency([])).toBe("");
-  });
-
   test("incremental top-k matches baseline full sort for randomized updates", () => {
     const triggers = ["g", "yt", "ddg", "gh", "npm", "w", "mdn", "so", "x"];
     const counts: Record<string, number> = {};
@@ -79,7 +75,7 @@ describe("frecency top-k helpers", () => {
       counts[trigger] = next;
       updateTopFrecencyOnIncrement(top, trigger, next, 8);
 
-      const incremental = serializeTopFrecency(top);
+      const incremental = serializeTop(top);
       const baseline = baselineCookie(counts, 8);
       expect(incremental).toBe(baseline);
     }

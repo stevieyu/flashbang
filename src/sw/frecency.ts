@@ -72,13 +72,3 @@ export function updateTopFrecencyOnIncrement(
   }
 }
 
-export function serializeTopFrecency(top: readonly TopFrecencyEntry[]): string {
-  if (top.length === 0) {
-    return "";
-  }
-  let out = `${top[0].trigger}:${top[0].count}`;
-  for (let i = 1; i < top.length; i++) {
-    out += `.${top[i].trigger}:${top[i].count}`;
-  }
-  return out;
-}
