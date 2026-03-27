@@ -248,43 +248,22 @@ function defaultSettings(): SuggestSettings {
 }
 
 function readCookieValue(header: string, name: string): string | null {
-  const nameLen = name.length;
-  const len = header.length;
-  let i = 0;
-
-  while (i < len) {
-    while (i < len) {
-      const c = header.charCodeAt(i);
-      if (c === 59 || isTrimWs(c)) {
-        i++;
-        continue;
-      }
-      break;
+  const prefix = `${name}=`;
+  const pLen = prefix.length;
+  let i = header.indexOf(prefix);
+  while (i !== -1) {
+    if (
+      i === 0 ||
+      (header.charCodeAt(i - 2) === 59 && header.charCodeAt(i - 1) === 32)
+    ) {
+      // preceded by '; ' (59=';', 32=' ')
+      const end = header.indexOf(";", i + pLen);
+      return end === -1
+        ? header.substring(i + pLen)
+        : header.substring(i + pLen, end);
     }
-
-    if (i >= len) {
-      break;
-    }
-
-    let end = header.indexOf(";", i);
-    if (end === -1) {
-      end = len;
-    }
-    const eq = header.indexOf("=", i);
-
-    if (eq !== -1 && eq < end) {
-      let keyEnd = eq;
-      while (keyEnd > i && isTrimWs(header.charCodeAt(keyEnd - 1))) {
-        keyEnd--;
-      }
-      if (keyEnd - i === nameLen && header.startsWith(name, i)) {
-        return header.substring(eq + 1, end);
-      }
-    }
-
-    i = end + 1;
+    i = header.indexOf(prefix, i + 1);
   }
-
   return null;
 }
 

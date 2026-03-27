@@ -263,8 +263,26 @@ export function bangSuggestions(
   const result = walkPrefix(partial);
 
   const customMatches: Candidate[] = [];
-  for (const trigger of custom) {
-    if (trigger.startsWith(partial)) {
+  if (custom.length <= 1) {
+    for (const trigger of custom) {
+      if (trigger.startsWith(partial)) {
+        customMatches.push({
+          trigger,
+          name: "",
+          domain: "",
+          score: effectiveScore(0, frecent, trigger),
+        });
+      }
+    }
+  } else {
+    const sortedCustom = custom.slice().sort();
+    for (const trigger of sortedCustom) {
+      if (!trigger.startsWith(partial)) {
+        if (trigger > `${partial}\uFFFF`) {
+          break;
+        }
+        continue;
+      }
       customMatches.push({
         trigger,
         name: "",
