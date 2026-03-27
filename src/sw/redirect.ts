@@ -19,21 +19,6 @@ export interface RedirectSettings {
   luckyUrl: UrlParts | null;
 }
 
-function spaceAt(s: string, i: number): number {
-  const c = s.charCodeAt(i);
-  if (c === CH_PLUS) {
-    return 1;
-  }
-  if (
-    c === CH_PERCENT &&
-    s.charCodeAt(i + 1) === CH_2 &&
-    s.charCodeAt(i + 2) === CH_0
-  ) {
-    return 3;
-  }
-  return 0;
-}
-
 function isEncodedExclAt(s: string, i: number): boolean {
   return (
     s.charCodeAt(i) === CH_PERCENT &&
@@ -62,9 +47,16 @@ function findExcl(s: string, start: number, end: number): number {
 
 function findSpace(s: string, from: number, end: number): number {
   for (let i = from; i < end; i++) {
-    const n = spaceAt(s, i);
-    if (n) {
-      return (i << 2) | n;
+    const c = s.charCodeAt(i);
+    if (c === CH_PLUS) {
+      return (i << 2) | 1;
+    }
+    if (
+      c === CH_PERCENT &&
+      s.charCodeAt(i + 1) === CH_2 &&
+      s.charCodeAt(i + 2) === CH_0
+    ) {
+      return (i << 2) | 3;
     }
   }
   return -1;
@@ -127,7 +119,7 @@ function rawFixup(s: string, from: number, to: number): string {
     if (raw.indexOf("%2F") === -1 && raw.indexOf("%2f") === -1) {
       return raw;
     }
-    let out = "";
+    const parts: string[] = [];
     let seg = 0;
     for (let i = 0; i < raw.length; i++) {
       if (
@@ -137,21 +129,22 @@ function rawFixup(s: string, from: number, to: number): string {
       ) {
         const c2 = raw.charCodeAt(i + 2);
         if (c2 === CH_F || c2 === CH_f) {
-          out += `${raw.substring(seg, i)}/`;
+          parts.push(raw.substring(seg, i), "/");
           seg = i + 3;
           i += 2;
         }
       }
     }
-    return out + raw.substring(seg);
+    parts.push(raw.substring(seg));
+    return parts.join("");
   }
   const hasSlash = raw.indexOf("%2F") !== -1 || raw.indexOf("%2f") !== -1;
-  let out = `${raw.substring(0, plusPos)}%20`;
+  const parts: string[] = [raw.substring(0, plusPos), "%20"];
   let seg = plusPos + 1;
   for (let i = seg; i < raw.length; i++) {
     const c = raw.charCodeAt(i);
     if (c === CH_PLUS) {
-      out += `${raw.substring(seg, i)}%20`;
+      parts.push(raw.substring(seg, i), "%20");
       seg = i + 1;
     } else if (
       hasSlash &&
@@ -161,13 +154,14 @@ function rawFixup(s: string, from: number, to: number): string {
     ) {
       const c2 = raw.charCodeAt(i + 2);
       if (c2 === CH_F || c2 === CH_f) {
-        out += `${raw.substring(seg, i)}/`;
+        parts.push(raw.substring(seg, i), "/");
         seg = i + 3;
         i += 2;
       }
     }
   }
-  return out + raw.substring(seg);
+  parts.push(raw.substring(seg));
+  return parts.join("");
 }
 
 function fillParts(
@@ -314,7 +308,7 @@ function toLowerIfNeeded(s: string, from: number, to: number): string {
   for (let i = from; i < to; i++) {
     const c = s.charCodeAt(i);
     if (c >= 65 && c <= 90) {
-      return s.substring(from, to).toLowerCase();
+      return s.slice(from, to).toLowerCase();
     }
   }
   return from === 0 && to === s.length ? s : s.substring(from, to);
@@ -328,11 +322,20 @@ function resolveRaw(
 
   let start = 0;
   while (start < len) {
-    const n = spaceAt(rawQuery, start);
-    if (!n) {
-      break;
+    const c = rawQuery.charCodeAt(start);
+    if (c === CH_PLUS) {
+      start++;
+      continue;
     }
-    start += n;
+    if (
+      c === CH_PERCENT &&
+      rawQuery.charCodeAt(start + 1) === CH_2 &&
+      rawQuery.charCodeAt(start + 2) === CH_0
+    ) {
+      start += 3;
+      continue;
+    }
+    break;
   }
 
   let end = len;
@@ -386,7 +389,17 @@ function resolveRaw(
     }
 
     // "!+query" / "!%20query" — bare bang lucky
-    const spaceWidth = spaceAt(rawQuery, afterExcl);
+    const _cae = rawQuery.charCodeAt(afterExcl);
+    let spaceWidth = 0;
+    if (_cae === CH_PLUS) {
+      spaceWidth = 1;
+    } else if (
+      _cae === CH_PERCENT &&
+      rawQuery.charCodeAt(afterExcl + 1) === CH_2 &&
+      rawQuery.charCodeAt(afterExcl + 2) === CH_0
+    ) {
+      spaceWidth = 3;
+    }
     if (spaceWidth) {
       const termStart = afterExcl + spaceWidth;
       if (termStart >= end) {
@@ -443,7 +456,17 @@ function resolveRaw(
   // "g!+cats"
   const afterExcl = exclPos + exclCharWidth;
   if (afterExcl < end) {
-    const spAfter = spaceAt(rawQuery, afterExcl);
+    const _cae2 = rawQuery.charCodeAt(afterExcl);
+    let spAfter = 0;
+    if (_cae2 === CH_PLUS) {
+      spAfter = 1;
+    } else if (
+      _cae2 === CH_PERCENT &&
+      rawQuery.charCodeAt(afterExcl + 1) === CH_2 &&
+      rawQuery.charCodeAt(afterExcl + 2) === CH_0
+    ) {
+      spAfter = 3;
+    }
     if (spAfter) {
       const bang = toLowerIfNeeded(rawQuery, start, exclPos);
       const termStart = afterExcl + spAfter;
