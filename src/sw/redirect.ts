@@ -342,15 +342,16 @@ function resolveRaw(
 
   let end = len;
   while (end > start) {
-    if (rawQuery.charCodeAt(end - 1) === CH_PLUS) {
+    const tail = rawQuery.charCodeAt(end - 1);
+    if (tail === CH_PLUS) {
       end--;
       continue;
     }
     if (
+      tail === CH_0 &&
       end >= start + 3 &&
       rawQuery.charCodeAt(end - 3) === CH_PERCENT &&
-      rawQuery.charCodeAt(end - 2) === CH_2 &&
-      rawQuery.charCodeAt(end - 1) === CH_0
+      rawQuery.charCodeAt(end - 2) === CH_2
     ) {
       end -= 3;
       continue;
