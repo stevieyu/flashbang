@@ -108,7 +108,7 @@ const [
   { handleSuggestRequest },
   { bangSuggestions },
   { parseCookie, parseSettingsFromRawUrl },
-  { buildTopFrecency, serializeTopFrecency, updateTopFrecencyOnIncrement },
+  { buildTopFrecency, updateTopFrecencyOnIncrement },
   { readQueryParam, readTwoQueryParams },
 ] = await Promise.all([
   import("../src/generated/bangs-min.js"),
@@ -832,7 +832,7 @@ for (let run = 0; run < RUNS; run++) {
     const next = (incrementalCounts[trigger] || 0) + 1;
     incrementalCounts[trigger] = next;
     updateTopFrecencyOnIncrement(top, trigger, next, FRECENCY_LIMIT);
-    frecencySink += serializeTopFrecency(top).length;
+    frecencySink += JSON.stringify(top).length;
   }
   incrementalFrecencyTimes.push((Bun.nanoseconds() - t0) / FRECENCY_ITERS);
 }
