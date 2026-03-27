@@ -124,10 +124,7 @@ function rawFixup(s: string, from: number, to: number): string {
   const raw = from === 0 && to === s.length ? s : s.substring(from, to);
   const plusPos = raw.indexOf("+");
   if (plusPos === -1) {
-    if (
-      raw.indexOf("%") === -1 ||
-      (raw.indexOf("%2F") === -1 && raw.indexOf("%2f") === -1)
-    ) {
+    if (raw.indexOf("%2F") === -1 && raw.indexOf("%2f") === -1) {
       return raw;
     }
     let out = "";
@@ -148,9 +145,7 @@ function rawFixup(s: string, from: number, to: number): string {
     }
     return out + raw.substring(seg);
   }
-  const hasSlash =
-    raw.indexOf("%") !== -1 &&
-    (raw.indexOf("%2F") !== -1 || raw.indexOf("%2f") !== -1);
+  const hasSlash = raw.indexOf("%2F") !== -1 || raw.indexOf("%2f") !== -1;
   let out = `${raw.substring(0, plusPos)}%20`;
   let seg = plusPos + 1;
   for (let i = seg; i < raw.length; i++) {
@@ -165,7 +160,7 @@ function rawFixup(s: string, from: number, to: number): string {
       raw.charCodeAt(i + 1) === CH_2
     ) {
       const c2 = raw.charCodeAt(i + 2);
-      if (c2 === 70 || c2 === 102) {
+      if (c2 === CH_F || c2 === CH_f) {
         out += `${raw.substring(seg, i)}/`;
         seg = i + 3;
         i += 2;
@@ -468,7 +463,7 @@ function resolveRaw(
   }
 
   // "g!"
-  if (afterExcl >= end || (lastChar === CH_EXCL && afterExcl === end)) {
+  if (afterExcl >= end) {
     if (findSpace(rawQuery, start, end) === -1) {
       const bang = toLowerIfNeeded(rawQuery, start, exclPos);
       const origin = resolveBangOrigin(bang, custom);
