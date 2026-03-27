@@ -24,7 +24,10 @@ function splitUrl(url: string): UrlParts {
 const FRECENCY_COOKIE_ENTRIES = 8;
 
 let persistInFlight = false;
-let persistPending: { counts: Record<string, number> | null; ts: number } | null = null;
+let persistPending: {
+  counts: Record<string, number> | null;
+  ts: number;
+} | null = null;
 let cachedRedirect: RedirectSettings | null = null;
 let redirectSettingsPromise: Promise<RedirectSettings> | null = null;
 let frecencyCounts: Record<string, number> | null = null;

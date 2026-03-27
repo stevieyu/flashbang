@@ -100,25 +100,28 @@ function queueBangSideEffects(e: FetchEvent, trigger: string): void {
       if (Object.keys(frecency).length === 0) {
         return;
       }
-      return cookieStore.get("suggest").then((cookie) => {
-        if (!cookie?.value) {
-          return;
-        }
-        const parsed = parseSuggestCookieValue(cookie.value, true);
-        return cookieStore.set({
-          name: "suggest",
-          value: encodeSuggestCookieValue(
-            parsed.provider,
-            parsed.trigger,
-            parsed.customUrl || "",
-            parsed.custom,
-            frecency
-          ),
-          path: "/",
-          expires: Date.now() + COOKIE_MAX_AGE_S * 1000,
-          sameSite: "lax",
-        });
-      }).catch(swallowError);
+      return cookieStore
+        .get("suggest")
+        .then((cookie) => {
+          if (!cookie?.value) {
+            return;
+          }
+          const parsed = parseSuggestCookieValue(cookie.value, true);
+          return cookieStore.set({
+            name: "suggest",
+            value: encodeSuggestCookieValue(
+              parsed.provider,
+              parsed.trigger,
+              parsed.customUrl || "",
+              parsed.custom,
+              frecency
+            ),
+            path: "/",
+            expires: Date.now() + COOKIE_MAX_AGE_S * 1000,
+            sameSite: "lax",
+          });
+        })
+        .catch(swallowError);
     }).catch(swallowError)
   );
 }
