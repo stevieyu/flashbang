@@ -510,11 +510,13 @@ function renderMinOpenAddress(packed: PackedMinData): string {
     `const _PC=new Array(${uniquePrefixes.length}).fill(null);` +
     `const _SC=new Array(${uniqueSuffixes.length}).fill(null);` +
     `const _TC=new Array(${entryCount}).fill(null);` +
-    "function _eq(i,s){const a=_TO[i];const b=_TO[i+1];const n=b-a;if(s.length!==n){return false}for(let j=0;j<n;j++){if(_TB.charCodeAt(a+j)!==s.charCodeAt(j)){return false}}return true}" +
+    `const _TS=new Array(${entryCount});for(let _i=0;_i<${entryCount};_i++)_TS[_i]=_TB.substring(_TO[_i],_TO[_i+1]);` +
+    "function _eq(i,s){return _TS[i]===s}" +
     "function _prefix(id){if(_PC[id]!==null){return _PC[id]}const s=_PB.substring(_PO[id],_PO[id+1]);_PC[id]=s;return s}" +
     "function _suffix(id){if(_SC[id]!==null){return _SC[id]}const s=_SB.substring(_SO[id],_SO[id+1]);_SC[id]=s;return s}" +
+    `for(let _i=0;_i<${entryCount};_i++){const _s=_ES[_i];_TC[_i]=_s===0?[_prefix(_EP[_i]),null]:[_prefix(_EP[_i]),_suffix(_s-1)]}` +
     `export const BANG_COUNT=${entryCount};` +
-    "export function lookupBang(trigger){let slot=_hash(trigger)&_HM;for(let i=0;i<_HT.length;i++){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_eq(idx,trigger)){let t=_TC[idx];if(t!==null){return t}const pid=_EP[idx];const sid=_ES[idx];t=sid===0?[_prefix(pid),null]:[_prefix(pid),_suffix(sid-1)];_TC[idx]=t;return t}slot=(slot+1)&_HM}return null}"
+    "export function lookupBang(trigger){let slot=_hash(trigger)&_HM;for(let i=0;i<_HT.length;i++){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_eq(idx,trigger)){return _TC[idx]}slot=(slot+1)&_HM}return null}"
   );
 }
 

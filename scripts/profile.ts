@@ -110,6 +110,7 @@ const [
   { parseCookie, parseSettingsFromRawUrl },
   { buildTopFrecency, updateTopFrecencyOnIncrement },
   { readQueryParam, readTwoQueryParams },
+  { BANGS },
 ] = await Promise.all([
   import("../src/generated/bangs-min.js"),
   import("../src/generated/bangs-trie.js"),
@@ -118,6 +119,7 @@ const [
   import("../src/suggest"),
   import("../src/sw/frecency"),
   import("../src/shared/raw-query"),
+  import("../src/generated/bangs-meta.js"),
 ]);
 
 const NODE_EDGE_START = 0;
@@ -224,6 +226,36 @@ console.log(`  Root children: ${NODES[ROOT * NODE_STRIDE + NODE_EDGE_COUNT]}`);
 console.log(
   `  Max relevance: ${NODES[ROOT * NODE_STRIDE + NODE_MAX_RELEVANCE]}`
 );
+
+// ---------------------------------------------------------------------------
+// 3b. BANG LOOKUP — COLD VS WARM PATH
+// ---------------------------------------------------------------------------
+separator("3b. BANG LOOKUP — COLD VS WARM PATH");
+
+const allTriggers = Object.keys(BANGS as Record<string, unknown>);
+// allTriggers.length ≈ 14,314 — all real bang triggers
+
+// Cold pass: first-ever call for each trigger, nothing cached yet.
+// This is the proxy for "what does a fresh service worker pay on first use?"
+const coldT0 = Bun.nanoseconds();
+for (const tr of allTriggers) lookupBang(tr);
+const coldNsPerLookup = (Bun.nanoseconds() - coldT0) / allTriggers.length;
+
+// Warm passes: cache is now fully populated; measure steady-state cost.
+const warmTimes: number[] = [];
+for (let run = 0; run < RUNS; run++) {
+  const t0 = Bun.nanoseconds();
+  for (const tr of allTriggers) lookupBang(tr);
+  warmTimes.push((Bun.nanoseconds() - t0) / allTriggers.length);
+}
+const warmStats = summarizeRuns(warmTimes);
+
+console.log(`\nAll-triggers cold/warm (${allTriggers.length.toLocaleString()} triggers):`);
+console.log(`  Cold pass (1×):    ${fmt(coldNsPerLookup)}/lookup`);
+console.log(`  Warm p50 (${RUNS}×):  ${fmt(warmStats.p50)}/lookup`);
+console.log(`  Warm p90:          ${fmt(warmStats.p90)}/lookup`);
+console.log(`  Cold/warm ratio:   ${(coldNsPerLookup / warmStats.p50).toFixed(1)}×`);
+console.log(`  Run spread:        ${fmt(warmStats.min)}..${fmt(warmStats.max)} (cv ${warmStats.cvPct.toFixed(1)}%)`);
 
 // ---------------------------------------------------------------------------
 // 3. BANG LOOKUP PERFORMANCE
