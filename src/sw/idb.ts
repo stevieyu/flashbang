@@ -9,7 +9,6 @@ import {
 import { idbWrap, openDB, resetDB } from "../shared/idb";
 import {
   buildTopFrecency,
-  serializeTopFrecency,
   type TopFrecencyEntry,
   updateTopFrecencyOnIncrement,
 } from "./frecency";
@@ -29,7 +28,6 @@ let cachedRedirect: RedirectSettings | null = null;
 let redirectSettingsPromise: Promise<RedirectSettings> | null = null;
 let frecencyCounts: Record<string, number> | null = null;
 let loadFrecencyPromise: Promise<void> | null = null;
-let frecencyCookie: string = "";
 let topFrecency: TopFrecencyEntry[] = [];
 let lastDecayTs: number = 0;
 
@@ -141,19 +139,16 @@ export function invalidateCache() {
   resetDB();
   frecencyCounts = null;
   topFrecency = [];
-  frecencyCookie = "";
   lastDecayTs = 0;
 }
 
-function rebuildFrecencyTopAndValue(): void {
+function rebuildFrecencyTop(): void {
   const counts = frecencyCounts;
   if (!counts) {
     topFrecency = [];
-    frecencyCookie = "";
     return;
   }
   topFrecency = buildTopFrecency(counts, FRECENCY_COOKIE_ENTRIES);
-  frecencyCookie = serializeTopFrecency(topFrecency);
 }
 
 function applyDecay(): void {
@@ -191,8 +186,12 @@ function pruneFrecency(): void {
   frecencyCounts = Object.fromEntries(entries.slice(0, MAX_FRECENCY_ENTRIES));
 }
 
-export function getFrecencyValue(): string {
-  return frecencyCookie;
+export function getTopFrecencyRecord(): Record<string, number> {
+  const out: Record<string, number> = Object.create(null);
+  for (const e of topFrecency) {
+    out[e.trigger] = e.count;
+  }
+  return out;
 }
 
 export function loadFrecency(): Promise<void> {
@@ -222,12 +221,11 @@ export function loadFrecency(): Promise<void> {
 
         applyDecay();
         pruneFrecency();
-        rebuildFrecencyTopAndValue();
+        rebuildFrecencyTop();
         persistFrecencySnapshot(frecencyCounts, lastDecayTs);
       } catch {
         frecencyCounts = {};
         topFrecency = [];
-        frecencyCookie = "";
         lastDecayTs = Date.now();
       }
     })().finally(() => {
@@ -251,6 +249,5 @@ export function trackBangUsage(trigger: string) {
     nextCount,
     FRECENCY_COOKIE_ENTRIES
   );
-  frecencyCookie = serializeTopFrecency(topFrecency);
   persistFrecencySnapshot(frecencyCounts, lastDecayTs);
 }
