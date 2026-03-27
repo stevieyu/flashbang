@@ -6,6 +6,10 @@ import {
   LUCKY_URLS,
   MAX_FRECENCY_ENTRIES,
 } from "../shared/constants";
+import {
+  parseFrecencyCompact,
+  serializeFrecencyCompact,
+} from "../shared/frecency-serial";
 import { idbWrap, openDB, resetDB } from "../shared/idb";
 import {
   buildTopFrecency,
@@ -121,7 +125,7 @@ function persistFrecencySnapshot(
   }
   persistInFlight = true;
   persistPending = null;
-  const value = JSON.stringify({ c: counts, t: ts });
+  const value = `${ts}|${serializeFrecencyCompact(counts)}`;
   openDB()
     .then((db) => {
       persistInFlight = false;
@@ -194,6 +198,10 @@ function pruneFrecency(): void {
   frecencyCounts = Object.fromEntries(entries.slice(0, MAX_FRECENCY_ENTRIES));
 }
 
+export function hasTopFrecency(): boolean {
+  return topFrecency.length > 0;
+}
+
 export function getTopFrecencyRecord(): Record<string, number> {
   const out: Record<string, number> = Object.create(null);
   for (const e of topFrecency) {
@@ -216,14 +224,29 @@ export function loadFrecency(): Promise<void> {
         const result = await idbWrap<{ value?: string } | undefined>(
           store.get("frecency")
         );
-        const raw = result?.value ? JSON.parse(result.value) : {};
-
-        // Migration: old format is plain counts, new format has {c, t}
-        if (raw.c && typeof raw.t === "number") {
-          frecencyCounts = raw.c;
-          lastDecayTs = raw.t;
+        const stored = result?.value ?? "";
+        if (stored.charCodeAt(0) === 123) {
+          // '{' = old JSON format (migration)
+          const raw = JSON.parse(stored);
+          if (raw.c && typeof raw.t === "number") {
+            frecencyCounts = raw.c;
+            lastDecayTs = raw.t;
+          } else {
+            frecencyCounts = raw;
+            lastDecayTs = Date.now();
+          }
+        } else if (stored) {
+          const pipeIdx = stored.indexOf("|");
+          lastDecayTs =
+            pipeIdx > 0
+              ? parseInt(stored.substring(0, pipeIdx), 10) || Date.now()
+              : Date.now();
+          frecencyCounts =
+            pipeIdx !== -1
+              ? parseFrecencyCompact(stored.substring(pipeIdx + 1))
+              : {};
         } else {
-          frecencyCounts = raw;
+          frecencyCounts = {};
           lastDecayTs = Date.now();
         }
 

@@ -1,3 +1,8 @@
+import {
+  parseFrecencyCompact,
+  serializeFrecencyCompact,
+} from "./frecency-serial";
+
 const SECTION_SEPARATOR = "|";
 const FREQUENCY_PREFIX = "f:";
 const CUSTOM_PREFIX = "c:";
@@ -45,6 +50,15 @@ function parsePositiveInteger(value: unknown): number {
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   }
   return 0;
+}
+
+function parseFrecencyCompactSection(
+  raw: string,
+  forCleanup: boolean
+): { value: Record<string, number>; valid: boolean } {
+  const value = parseFrecencyCompact(raw);
+  const valid = Object.keys(value).length > 0 || !forCleanup;
+  return { value, valid };
 }
 
 function parseModernFrecency(
@@ -160,7 +174,11 @@ export function parseSuggestCookieValueWithValidation(
       if (sectionEnd > sectionStart) {
         const section = raw.substring(sectionStart, sectionEnd);
         if (section.startsWith(FREQUENCY_PREFIX)) {
-          const result = parseModernFrecency(section.substring(2), forCleanup);
+          const sectionVal = section.substring(2);
+          const result =
+            sectionVal.charCodeAt(0) === 37 // '%' = old URL-encoded JSON
+              ? parseModernFrecency(sectionVal, forCleanup)
+              : parseFrecencyCompactSection(sectionVal, forCleanup);
           frecent = result.value;
           if (forCleanup && !result.valid) {
             hasInvalidContext = true;
@@ -210,10 +228,9 @@ export function encodeSuggestCookieValue(
 ): string {
   let value = `${provider},${trigger},${encodeURIComponent(customUrl)}`;
 
-  if (frecent && Object.keys(frecent).length > 0) {
-    value += `${SECTION_SEPARATOR}${FREQUENCY_PREFIX}${encodeURIComponent(
-      JSON.stringify(frecent)
-    )}`;
+  const compact = serializeFrecencyCompact(frecent);
+  if (compact) {
+    value += `${SECTION_SEPARATOR}${FREQUENCY_PREFIX}${compact}`;
   }
 
   if (custom.length > 0) {

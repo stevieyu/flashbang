@@ -8,6 +8,7 @@ import {
 import {
   getCachedSettings,
   getTopFrecencyRecord,
+  hasTopFrecency,
   invalidateCache,
   loadFrecency,
   readRedirectSettings,
@@ -96,10 +97,10 @@ function queueBangSideEffects(e: FetchEvent, trigger: string): void {
         return;
       }
 
-      const frecency = getTopFrecencyRecord();
-      if (Object.keys(frecency).length === 0) {
+      if (!hasTopFrecency()) {
         return;
       }
+      const frecency = getTopFrecencyRecord();
       return cookieStore
         .get("suggest")
         .then((cookie) => {
