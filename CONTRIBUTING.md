@@ -38,6 +38,16 @@ After editing, run `bun run codegen` to regenerate the bang maps.
 - Use [conventional commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`, `chore:`
 - Keep PRs focused — one concern per PR
 
+## Releases
+
+We use **GitHub Releases** as the canonical place for release notes and version history.
+
+- Version tags use `vX.Y.Z` (for example `v1.3.6`)
+- Pushing a release tag triggers `.github/workflows/release.yaml`
+- The workflow creates or updates the corresponding GitHub Release entry
+
+For the full maintainer release procedure (version bump, tag, and push), see [DEVELOPMENT.md](DEVELOPMENT.md#releasing).
+
 ## Tests
 
 All tests live in `tests/` folder, you can run unit tests only with:
