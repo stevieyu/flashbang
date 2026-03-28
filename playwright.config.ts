@@ -1,6 +1,23 @@
 import { defineConfig } from "@playwright/test";
 
-const PORT = Number(process.env.E2E_PORT || 3456);
+function hashString(input: string): number {
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
+
+function resolveE2EPort(): number {
+  const fromEnv = Number(process.env.E2E_PORT);
+  if (Number.isInteger(fromEnv) && fromEnv > 0 && fromEnv <= 65535) {
+    return fromEnv;
+  }
+
+  return 40_000 + (hashString(process.cwd()) % 20_000);
+}
+
+const PORT = resolveE2EPort();
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 export default defineConfig({

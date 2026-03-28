@@ -1,0 +1,25 @@
+import { describe, expect, test } from "bun:test";
+import { pageHeaders, SW_CSP, SW_HEADERS } from "../src/server/headers";
+
+describe("server headers", () => {
+  test("SW headers include strict CSP and security headers", () => {
+    expect(SW_CSP).toContain("default-src 'self'");
+    expect(SW_CSP).toContain("script-src 'self'");
+    expect(SW_HEADERS["Content-Security-Policy"]).toBe(SW_CSP);
+    expect(SW_HEADERS["X-Content-Type-Options"]).toBe("nosniff");
+    expect(SW_HEADERS["X-Frame-Options"]).toBe("DENY");
+    expect(SW_HEADERS["Referrer-Policy"]).toBe(
+      "strict-origin-when-cross-origin"
+    );
+  });
+
+  test("page headers compose caller script-src with core directives", () => {
+    const headers = pageHeaders("'unsafe-inline'");
+    const csp = headers["Content-Security-Policy"];
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(headers["X-Content-Type-Options"]).toBe("nosniff");
+    expect(headers["X-Frame-Options"]).toBe("DENY");
+  });
+});

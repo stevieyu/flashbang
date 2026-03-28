@@ -3,6 +3,7 @@ import { encodeSuggestCookieValue } from "../../src/shared/suggest-cookie";
 
 const GOOGLE_REDIRECT = /google\.com\/search\?q=hello/;
 const GOOGLE_HOST = "https://www.google.com";
+const DDG_HOST = "https://duckduckgo.com";
 const CUSTOM_HOST = "https://example.com";
 
 async function mockGoogleSearchRoute(page: Page): Promise<void> {
@@ -23,6 +24,17 @@ async function mockCustomHostRoute(page: Page): Promise<void> {
       status: 200,
       contentType: "text/plain",
       body: `custom ${url}`,
+    });
+  });
+}
+
+async function mockDuckDuckGoRoute(page: Page): Promise<void> {
+  await page.route(`${DDG_HOST}/**`, (route) => {
+    const url = route.request().url();
+    route.fulfill({
+      status: 200,
+      contentType: "text/plain",
+      body: `ddg ${url}`,
     });
   });
 }
@@ -140,6 +152,25 @@ async function seedCustomBangs(
   throw new Error("failed to seed custom bangs after retries");
 }
 
+async function openSettingsModal(page: Page): Promise<void> {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await page.click("#gear-btn");
+  await expect(page.locator("#settings-modal")).toHaveAttribute(
+    "aria-hidden",
+    "false"
+  );
+}
+
+async function submitCustomBangForm(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const form = document.querySelector("#add-bang-form");
+    if (!(form instanceof HTMLFormElement)) {
+      throw new Error("custom bang form not found");
+    }
+    form.requestSubmit();
+  });
+}
+
 test("suggest endpoint returns 400 when q parameter is missing", async ({
   request,
 }) => {
@@ -156,6 +187,40 @@ test("suggest endpoint respects provider override via sp=none", async ({
   });
   expect(response.status()).toBe(200);
   await expect(response.json()).resolves.toEqual(["hello", []]);
+});
+
+test("suggest endpoint rewrites malformed suggest cookie context", async ({
+  request,
+}) => {
+  const response = await request.get("/suggest", {
+    params: { q: "!g" },
+    headers: { Cookie: "suggest=custom,g,|f:%E0%A4%A" },
+  });
+
+  expect(response.status()).toBe(200);
+  const setCookie = response.headers()["set-cookie"] ?? "";
+  expect(setCookie).toContain("suggest=custom,g,");
+  expect(setCookie).toContain("SameSite=Lax");
+  expect(setCookie).toContain("Secure");
+
+  const payload = await response.json();
+  expect(payload[0]).toBe("!g");
+});
+
+test("opensearch endpoint uses request origin in generated templates", async ({
+  request,
+}) => {
+  const response = await request.get("/opensearch.xml");
+  expect(response.status()).toBe(200);
+  expect(response.headers()["content-type"]).toContain(
+    "application/opensearchdescription+xml"
+  );
+
+  const origin = new URL(response.url()).origin;
+  const xml = await response.text();
+  expect(xml).toContain(`${origin}/icon.svg`);
+  expect(xml).toContain(`${origin}/?q={searchTerms}`);
+  expect(xml).toContain(`${origin}/suggest?q={searchTerms}`);
 });
 
 test("suggestions include custom bang entries from the suggest cookie", async ({
@@ -183,6 +248,118 @@ test("suggestions include custom bang entries from the suggest cookie", async ({
   const payload = response.payload;
   expect(payload[0]).toBe(query);
   expect(payload[1]).toContain(`!${customBang}`);
+});
+
+test("settings persist default bang and affect fallback redirects", async ({
+  page,
+}) => {
+  await mockDuckDuckGoRoute(page);
+  await ensureWarmController(page);
+  await openSettingsModal(page);
+
+  await page.fill("#default-bang", "ddg");
+  await page.dispatchEvent("#default-bang", "change");
+
+  await expect
+    .poll(() => page.evaluate(() => document.cookie))
+    .toContain("suggest=default,ddg,");
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await ensureWarmController(page);
+  await navigateAndWaitForRedirect(page, "/?q=hello", /duckduckgo\.com\/\?q=/);
+
+  const redirected = new URL(page.url());
+  expect(redirected.hostname).toBe("duckduckgo.com");
+  expect(redirected.searchParams.get("q")).toBe("hello");
+});
+
+test("settings persist suggest provider none across reload", async ({
+  page,
+  request,
+}) => {
+  await openSettingsModal(page);
+
+  await page.selectOption("#suggest-provider", "none");
+  await expect
+    .poll(() => page.evaluate(() => document.cookie))
+    .toContain("suggest=none,");
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const cookie = await page.evaluate(() => document.cookie);
+  expect(cookie).toContain("suggest=none,");
+
+  const response = await request.get("/suggest", {
+    params: { q: "hello" },
+    headers: { Cookie: cookie },
+  });
+  expect(response.status()).toBe(200);
+  await expect(response.json()).resolves.toEqual(["hello", []]);
+});
+
+test("settings persist custom bang creation across reload", async ({
+  page,
+}) => {
+  await mockCustomHostRoute(page);
+  await ensureWarmController(page);
+  await openSettingsModal(page);
+
+  await page.fill('input[name="shortcut"]', "mydocs");
+  await page.fill('input[name="name"]', "My Docs");
+  await page.fill('input[name="url"]', `${CUSTOM_HOST}/search?q={}`);
+  await submitCustomBangForm(page);
+  await expect(page.locator("#custom-list")).toContainText("!mydocs");
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await ensureWarmController(page);
+  await navigateAndWaitForRedirect(
+    page,
+    "/?q=%21mydocs%20hello",
+    /example\.com\/search\?q=hello/
+  );
+
+  const redirected = new URL(page.url());
+  expect(redirected.hostname).toBe("example.com");
+  expect(redirected.pathname).toBe("/search");
+  expect(redirected.searchParams.get("q")).toBe("hello");
+});
+
+test("settings reject invalid custom bang URL format", async ({ page }) => {
+  await openSettingsModal(page);
+  await expect(page.locator("#custom-list")).toContainText(
+    "No custom bangs yet"
+  );
+
+  await page.fill('input[name="shortcut"]', "bad");
+  await page.fill('input[name="name"]', "Bad");
+  await page.fill('input[name="url"]', "https://example.com/search");
+  await submitCustomBangForm(page);
+
+  await expect(page.locator("#custom-list")).toContainText(
+    "No custom bangs yet"
+  );
+});
+
+test("settings persist custom lucky URL across reload", async ({ page }) => {
+  await mockCustomHostRoute(page);
+  await ensureWarmController(page);
+  await openSettingsModal(page);
+
+  await page.selectOption("#lucky-provider", "custom");
+  await page.fill("#lucky-url", `${CUSTOM_HOST}/lucky?q={}`);
+  await page.dispatchEvent("#lucky-url", "change");
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await ensureWarmController(page);
+  await navigateAndWaitForRedirect(
+    page,
+    "/?q=hello%20%21",
+    /example\.com\/lucky\?q=hello/
+  );
+
+  const redirected = new URL(page.url());
+  expect(redirected.hostname).toBe("example.com");
+  expect(redirected.pathname).toBe("/lucky");
+  expect(redirected.searchParams.get("q")).toBe("hello");
 });
 
 test("warm redirect uses service worker controlled fetch path", async ({
@@ -350,24 +527,27 @@ test("cold-start redirect uses service worker message path before controller exi
   browser,
 }) => {
   const context = await browser.newContext();
-  const page = await context.newPage();
-  await mockGoogleSearchRoute(page);
+  try {
+    const page = await context.newPage();
+    await mockGoogleSearchRoute(page);
 
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  expect(
-    await page.evaluate(() => {
-      if (!("serviceWorker" in navigator)) {
-        return null;
-      }
-      return navigator.serviceWorker.controller;
-    })
-  ).toBeNull();
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    expect(
+      await page.evaluate(() => {
+        if (!("serviceWorker" in navigator)) {
+          return null;
+        }
+        return navigator.serviceWorker.controller;
+      })
+    ).toBeNull();
 
-  const target = "/?q=%21g%20hello";
-  await Promise.all([
-    page.waitForURL(/google\.com\/search\?q=hello/),
-    page.goto(target, { waitUntil: "commit" }),
-  ]);
-  expect(await page.url()).toMatch(GOOGLE_REDIRECT);
-  await context.close();
+    const target = "/?q=%21g%20hello";
+    await Promise.all([
+      page.waitForURL(/google\.com\/search\?q=hello/),
+      page.goto(target, { waitUntil: "commit" }),
+    ]);
+    expect(await page.url()).toMatch(GOOGLE_REDIRECT);
+  } finally {
+    await context.close();
+  }
 });

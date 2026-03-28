@@ -1,0 +1,291 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { installFakeIndexedDb, reqToPromise } from "./helpers/fake-indexeddb";
+
+type SwHandler = (event: unknown) => Promise<void> | void;
+type HandlerMap = Partial<
+  Record<"activate" | "fetch" | "install" | "message", SwHandler>
+>;
+
+const ORIGINAL_REQUEST = Request;
+
+let restoreIndexedDb: (() => void) | null = null;
+let handlers: HandlerMap = {};
+let skipWaitingCalls = 0;
+let claimCalls = 0;
+let cacheDeleteCalls: string[] = [];
+let fetchImpl: (input: RequestInfo | URL) => Promise<Response> = () =>
+  Promise.resolve(new Response("ok"));
+
+function loadSharedIdb() {
+  return import("../src/shared/idb");
+}
+
+async function seedDb(data: {
+  customBangs?: Array<{ trigger: string; url: string }>;
+  settings?: Array<{ key: string; value: string }>;
+}) {
+  const shared = await loadSharedIdb();
+  shared.resetDB();
+  const db = await shared.openDB();
+  const tx = db.transaction(["settings", "custom-bangs"], "readwrite");
+  const settingsStore = tx.objectStore("settings");
+  const customStore = tx.objectStore("custom-bangs");
+
+  if (data.settings) {
+    for (const row of data.settings) {
+      await reqToPromise(settingsStore.put(row));
+    }
+  }
+  if (data.customBangs) {
+    for (const row of data.customBangs) {
+      await reqToPromise(customStore.put(row));
+    }
+  }
+}
+
+function setupSwGlobals() {
+  handlers = {};
+  skipWaitingCalls = 0;
+  claimCalls = 0;
+  cacheDeleteCalls = [];
+  fetchImpl = () => Promise.resolve(new Response("ok"));
+
+  const globals = globalThis as unknown as Record<string, unknown>;
+  globals.__CACHE_VERSION__ = "test-cache";
+  globals.__EXTRA_ASSETS__ = [];
+  globals.__IS_DEV__ = false;
+
+  (globalThis as unknown as { self: unknown }).self = {
+    addEventListener(
+      type: "activate" | "fetch" | "install" | "message",
+      cb: SwHandler
+    ) {
+      handlers[type] = cb;
+    },
+    skipWaiting() {
+      skipWaitingCalls++;
+      return Promise.resolve();
+    },
+    clients: {
+      claim() {
+        claimCalls++;
+        return Promise.resolve();
+      },
+    },
+  };
+
+  (globalThis as unknown as { caches: unknown }).caches = {
+    delete(name: string) {
+      cacheDeleteCalls.push(name);
+      return Promise.resolve(true);
+    },
+    keys() {
+      return Promise.resolve(["old-cache", "test-cache"]);
+    },
+    match() {
+      return Promise.resolve(null);
+    },
+    open() {
+      return Promise.resolve({
+        put() {
+          // no-op
+          return Promise.resolve();
+        },
+      });
+    },
+  };
+
+  (globalThis as unknown as { fetch: typeof fetch }).fetch = (input) =>
+    fetchImpl(input);
+
+  (globalThis as unknown as { Request: typeof Request }).Request =
+    class extends ORIGINAL_REQUEST {
+      constructor(input: string | URL | Request, init?: RequestInit) {
+        if (typeof input === "string" && input.startsWith("/")) {
+          super(`https://flashbang.local${input}`, init);
+          return;
+        }
+        super(input, init);
+      }
+    };
+}
+
+function createExtendableEvent() {
+  const waits: Promise<unknown>[] = [];
+  return {
+    waits,
+    event: {
+      waitUntil(promise: Promise<unknown>) {
+        waits.push(Promise.resolve(promise));
+      },
+    } as unknown as ExtendableEvent,
+  };
+}
+
+function createMessageEvent(
+  data: unknown,
+  source?: { postMessage: (message: unknown) => void }
+) {
+  const waits: Promise<unknown>[] = [];
+  return {
+    waits,
+    event: {
+      data,
+      source,
+      waitUntil(promise: Promise<unknown>) {
+        waits.push(Promise.resolve(promise));
+      },
+    } as unknown as ExtendableMessageEvent,
+  };
+}
+
+function createFetchEvent(url: string) {
+  const waits: Promise<unknown>[] = [];
+  let responsePromise: Promise<Response> | null = null;
+  return {
+    waits,
+    event: {
+      request: new Request(url),
+      respondWith(response: Response | Promise<Response>) {
+        responsePromise = Promise.resolve(response);
+      },
+      waitUntil(promise: Promise<unknown>) {
+        waits.push(Promise.resolve(promise));
+      },
+    } as unknown as FetchEvent,
+    response() {
+      if (!responsePromise) {
+        throw new Error("respondWith was not called");
+      }
+      return responsePromise;
+    },
+  };
+}
+
+async function loadSwRuntime() {
+  setupSwGlobals();
+  await import(`../src/sw/sw.ts?test=${Date.now()}-${Math.random()}`);
+}
+
+beforeEach(async () => {
+  restoreIndexedDb = installFakeIndexedDb();
+  const swIdb = await import("../src/sw/idb");
+  swIdb.invalidateCache();
+  await seedDb({
+    settings: [
+      { key: "default-bang", value: "g" },
+      { key: "lucky-provider", value: "default" },
+      { key: "frecency", value: `${Date.now()}|g:2` },
+    ],
+  });
+});
+
+afterEach(async () => {
+  const shared = await loadSharedIdb();
+  shared.resetDB();
+  const swIdb = await import("../src/sw/idb");
+  swIdb.invalidateCache();
+  restoreIndexedDb?.();
+  restoreIndexedDb = null;
+  (globalThis as unknown as { Request: typeof Request }).Request =
+    ORIGINAL_REQUEST;
+  (globalThis as { cookieStore?: unknown }).cookieStore = undefined;
+});
+
+describe("sw runtime with real modules", () => {
+  test("install + activate lifecycle keeps skipWaiting/claim and cache cleanup", async () => {
+    await loadSwRuntime();
+    expect(typeof handlers.install).toBe("function");
+    expect(typeof handlers.activate).toBe("function");
+
+    const installEvt = createExtendableEvent();
+    await handlers.install?.(installEvt.event);
+    await Promise.all(installEvt.waits);
+    expect(skipWaitingCalls).toBe(1);
+
+    const activateEvt = createExtendableEvent();
+    await handlers.activate?.(activateEvt.event);
+    await Promise.all(activateEvt.waits);
+    expect(claimCalls).toBe(1);
+    expect(cacheDeleteCalls).toEqual(["old-cache"]);
+  });
+
+  test("message redirect and invalidate paths work end-to-end", async () => {
+    await loadSwRuntime();
+    expect(typeof handlers.message).toBe("function");
+
+    const posted: unknown[] = [];
+    const redirectEvt = createMessageEvent(
+      { type: "redirect", query: "hello" },
+      {
+        postMessage(message: unknown) {
+          posted.push(message);
+        },
+      }
+    );
+    await handlers.message?.(redirectEvt.event);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(String((posted[0] as { url: string }).url)).toContain("google.com");
+
+    // Change default bang, invalidate cache, and verify redirect reflects new settings.
+    await seedDb({ settings: [{ key: "default-bang", value: "ddg" }] });
+    await handlers.message?.(createMessageEvent({ type: "invalidate" }).event);
+
+    const postedAfterInvalidate: unknown[] = [];
+    const redirectEvt2 = createMessageEvent(
+      { type: "redirect", query: "hello" },
+      {
+        postMessage(message: unknown) {
+          postedAfterInvalidate.push(message);
+        },
+      }
+    );
+    await handlers.message?.(redirectEvt2.event);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(String((postedAfterInvalidate[0] as { url: string }).url)).toContain(
+      "duckduckgo.com"
+    );
+  });
+
+  test("fetch q= path responds with redirect", async () => {
+    await loadSwRuntime();
+    expect(typeof handlers.fetch).toBe("function");
+
+    const fetchEvt = createFetchEvent("https://flashbang.local/?q=hello");
+    await handlers.fetch?.(fetchEvt.event);
+    const response = await fetchEvt.response();
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toContain("google.com");
+  });
+
+  test("bench route returns offline fallback with security headers", async () => {
+    await loadSwRuntime();
+    expect(typeof handlers.fetch).toBe("function");
+
+    fetchImpl = (input) => {
+      let url: string;
+      if (typeof input === "string") {
+        url = input;
+      } else if (input instanceof URL) {
+        url = input.pathname;
+      } else {
+        url = new URL(input.url).pathname;
+      }
+      if (url === "/bench") {
+        return Promise.reject(new Error("offline"));
+      }
+      return Promise.resolve(new Response("ok"));
+    };
+
+    const fetchEvt = createFetchEvent("https://flashbang.local/bench");
+    await handlers.fetch?.(fetchEvt.event);
+    const response = await fetchEvt.response();
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Cross-Origin-Opener-Policy")).toBe(
+      "same-origin"
+    );
+    expect(response.headers.get("Cross-Origin-Embedder-Policy")).toBe(
+      "credentialless"
+    );
+  });
+});
