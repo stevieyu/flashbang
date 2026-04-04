@@ -125,7 +125,8 @@ function walkPrefix(partial: string): [number, string] | null {
   return [node, ""];
 }
 
-// DFS with max-relevance pruning. Children are pre-sorted by m descending.
+const dfsStack: number[] = [];
+
 function topK(
   subtree: number,
   frecent: Record<string, number>,
@@ -134,36 +135,47 @@ function topK(
   const results: Candidate[] = [];
   let minIdx = -1;
   let threshold = -1;
+  let resultLen = 0;
 
-  function findMin(): void {
-    minIdx = 0;
-    for (let i = 1; i < TOP_K; i++) {
-      if (results[i].score < results[minIdx].score) {
-        minIdx = i;
-      }
-    }
-    threshold = results[minIdx].score;
+  let hasFrecent = false;
+  for (const _ in frecent) {
+    hasFrecent = true;
+    break;
   }
+  const boostCap = hasFrecent ? FRECENCY_BOOST_CAP : 0;
 
-  function addCandidate(c: Candidate): void {
-    if (results.length < TOP_K) {
-      results.push(c);
-      if (results.length === TOP_K) {
-        findMin();
+  for (const c of customMatches) {
+    if (resultLen < TOP_K) {
+      results[resultLen++] = c;
+      if (resultLen === TOP_K) {
+        minIdx = 0;
+        for (let i = 1; i < TOP_K; i++) {
+          if (results[i].score < results[minIdx].score) {
+            minIdx = i;
+          }
+        }
+        threshold = results[minIdx].score;
       }
     } else if (c.score > threshold) {
       results[minIdx] = c;
-      findMin();
+      minIdx = 0;
+      for (let i = 1; i < TOP_K; i++) {
+        if (results[i].score < results[minIdx].score) {
+          minIdx = i;
+        }
+      }
+      threshold = results[minIdx].score;
     }
   }
 
-  for (const c of customMatches) {
-    addCandidate(c);
-  }
+  let stackLen = 0;
+  dfsStack[stackLen++] = subtree;
 
-  function dfs(node: number): void {
+  while (stackLen > 0) {
+    const node = dfsStack[--stackLen];
     const nodeOff = node * NODE_STRIDE;
     const terminalIndex = NODES[nodeOff + NODE_TERMINAL_INDEX];
+
     if (terminalIndex >= 0) {
       const trigger = readPackedStringCached(
         TERM_K_BLOB,
@@ -172,8 +184,8 @@ function topK(
         terminalIndex
       );
       const score = effectiveScore(TERM_R[terminalIndex], frecent, trigger);
-      if (results.length < TOP_K || score > threshold) {
-        addCandidate({
+      if (resultLen < TOP_K || score > threshold) {
+        const c: Candidate = {
           trigger,
           name: readPackedStringCached(
             TERM_S_BLOB,
@@ -188,27 +200,46 @@ function topK(
             terminalIndex
           ),
           score,
-        });
+        };
+        if (resultLen < TOP_K) {
+          results[resultLen++] = c;
+          if (resultLen === TOP_K) {
+            minIdx = 0;
+            for (let i = 1; i < TOP_K; i++) {
+              if (results[i].score < results[minIdx].score) {
+                minIdx = i;
+              }
+            }
+            threshold = results[minIdx].score;
+          }
+        } else {
+          results[minIdx] = c;
+          minIdx = 0;
+          for (let i = 1; i < TOP_K; i++) {
+            if (results[i].score < results[minIdx].score) {
+              minIdx = i;
+            }
+          }
+          threshold = results[minIdx].score;
+        }
       }
     }
 
     const edgeStart = NODES[nodeOff + NODE_EDGE_START];
     const edgeCount = NODES[nodeOff + NODE_EDGE_COUNT];
-    for (let i = 0; i < edgeCount; i++) {
+
+    for (let i = edgeCount - 1; i >= 0; i--) {
       const edgeOff = (edgeStart + i) * EDGE_STRIDE;
       const child = EDGES[edgeOff + EDGE_CHILD_INDEX];
       const childMaxRelevance = NODES[child * NODE_STRIDE + NODE_MAX_RELEVANCE];
-      if (
-        results.length >= TOP_K &&
-        childMaxRelevance + FRECENCY_BOOST_CAP <= threshold
-      ) {
-        continue;
+      if (resultLen >= TOP_K && childMaxRelevance + boostCap <= threshold) {
+        break;
       }
-      dfs(child);
+      dfsStack[stackLen++] = child;
     }
   }
 
-  dfs(subtree);
+  results.length = resultLen;
   results.sort((a, b) => b.score - a.score);
   return results;
 }

@@ -238,9 +238,9 @@ export function loadFrecency(): Promise<void> {
               ? parseInt(stored.substring(0, pipeIdx), 10) || Date.now()
               : Date.now();
           frecencyCounts =
-            pipeIdx !== -1
-              ? parseFrecencyCompact(stored.substring(pipeIdx + 1))
-              : {};
+            pipeIdx === -1
+              ? {}
+              : parseFrecencyCompact(stored.substring(pipeIdx + 1));
         } else {
           frecencyCounts = {};
           lastDecayTs = Date.now();

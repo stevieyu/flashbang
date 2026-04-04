@@ -192,7 +192,7 @@ function originOfPrefix(prefix: string): string {
     return prefix;
   }
   const pathStart = prefix.indexOf("/", protoEnd + 3);
-  return pathStart !== -1 ? prefix.substring(0, pathStart) : prefix;
+  return pathStart === -1 ? prefix : prefix.substring(0, pathStart);
 }
 
 const builtInOriginCache: Record<string, string> = Object.create(null);
