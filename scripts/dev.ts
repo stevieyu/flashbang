@@ -1,7 +1,6 @@
 import { watch } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { normalize } from "node:path";
-import { minify } from "@minify-html/node";
 import { $ } from "bun";
 import {
   handleOpenSearchRequest,
@@ -9,6 +8,7 @@ import {
 } from "../src/server/handlers";
 import { pageHeaders, SW_HEADERS } from "../src/server/headers";
 import { readPathname } from "../src/shared/raw-url";
+import { buildHTMLAssets, copyStaticAssets } from "./shared";
 
 const SECURITY_HEADERS = pageHeaders("'unsafe-inline'");
 
@@ -85,39 +85,8 @@ async function build() {
   await $`bunx unocss "src/ui/home.html" "src/ui/bench.html" "src/ui/**/*.ts" -o dist/styles.css --minify`.quiet();
 
   const css = await Bun.file("dist/styles.css").text();
-  const inlineCSS = (src: string) =>
-    src.replace(
-      '<link rel="stylesheet" href="/styles.css" />',
-      `<style>${css}</style>`
-    );
-
-  const indexHtml = await Bun.file("src/ui/index.html").text();
-  await Bun.write(
-    "dist/index.html",
-    minify(Buffer.from(indexHtml), { minify_css: true, minify_js: true })
-  );
-
-  const homeHtml = await Bun.file("src/ui/home.html").text();
-  await Bun.write(
-    "dist/home.html",
-    minify(Buffer.from(inlineCSS(homeHtml)), {
-      minify_css: true,
-      minify_js: true,
-    })
-  );
-
-  const benchHtml = await Bun.file("src/ui/bench.html").text();
-  await Bun.write(
-    "dist/bench.html",
-    minify(Buffer.from(inlineCSS(benchHtml)), {
-      minify_css: true,
-      minify_js: true,
-    })
-  );
-
-  await Bun.write("dist/robots.txt", "User-agent: *\nAllow: /\n");
-  await Bun.write("dist/manifest.json", Bun.file("src/ui/manifest.json"));
-  await Bun.write("dist/icon.svg", Bun.file("src/ui/icon.svg"));
+  await buildHTMLAssets(css);
+  await copyStaticAssets();
 
   console.log(`Build done in ${(performance.now() - t).toFixed(0)}ms`);
 }

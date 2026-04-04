@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { brotliCompressSync, constants } from "node:zlib";
-import { minify } from "@minify-html/node";
 import { $ } from "bun";
 import { ensureGeneratedBangData } from "./codegen";
+import { buildHTMLAssets, copyStaticAssets } from "./shared";
 
 await ensureGeneratedBangData(true);
 
@@ -82,40 +82,9 @@ await $`bunx unocss "src/ui/home.html" "src/ui/bench.html" "src/ui/**/*.ts" -o d
 
 console.log("=== Inline CSS + minify HTML ===");
 const css = await Bun.file("dist/styles.css").text();
-const inlineCSS = (src: string) =>
-  src.replace(
-    /<link rel="stylesheet" href="\/styles\.css"\s*\/?>/,
-    `<style>${css}</style>`
-  );
-
-const indexHtml = await Bun.file("src/ui/index.html").text();
-await Bun.write(
-  "dist/index.html",
-  minify(Buffer.from(indexHtml), { minify_css: true, minify_js: true })
-);
-
-const homeHtml = await Bun.file("src/ui/home.html").text();
-await Bun.write(
-  "dist/home.html",
-  minify(Buffer.from(inlineCSS(homeHtml)), {
-    minify_css: true,
-    minify_js: true,
-  })
-);
-
-const benchHtml = await Bun.file("src/ui/bench.html").text();
-await Bun.write(
-  "dist/bench.html",
-  minify(Buffer.from(inlineCSS(benchHtml)), {
-    minify_css: true,
-    minify_js: true,
-  })
-);
-
+await buildHTMLAssets(css);
 await rm("dist/styles.css");
-await Bun.write("dist/manifest.json", Bun.file("src/ui/manifest.json"));
-await Bun.write("dist/icon.svg", Bun.file("src/ui/icon.svg"));
-await Bun.write("dist/robots.txt", "User-agent: *\nAllow: /\n");
+await copyStaticAssets();
 
 console.log("=== Generate _headers with CSP ===");
 function extractScriptHashes(html: string): string[] {
