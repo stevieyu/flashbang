@@ -2,7 +2,6 @@
  * Comprehensive profiling for flashbang's core data structures and hot paths.
  * Measures what actually matters before optimizing.
  *
- * Run: bun scripts/profile.ts
  */
 
 import { readPathname } from "../src/shared/raw-url";
@@ -109,7 +108,7 @@ const [
   { bangSuggestions },
   { parseCookie, parseSettingsFromRawUrl },
   { buildTopFrecency, updateTopFrecencyOnIncrement },
-  { readQueryParam, readTwoQueryParams },
+  { readTwoQueryParams },
   { BANGS },
 ] = await Promise.all([
   import("../src/generated/bangs-min.js"),
@@ -468,9 +467,7 @@ for (const p of suggestPartials) {
 
 separator("5. FULL REDIRECT PIPELINE");
 
-const { redirect, redirectRaw, redirectUrl } = await import(
-  "../src/sw/redirect"
-);
+const { redirectRaw, redirectUrl } = await import("../src/sw/redirect");
 
 const settings = {
   defaultUrl: ["https://www.google.com/search?q=", ""] as const,
@@ -558,41 +555,30 @@ const messageQueries = [
   "!zzzzz cats",
 ];
 const MESSAGE_ITERS = 500_000;
-const messageOldTimes: number[] = [];
-const messageNewTimes: number[] = [];
+const messageTimes: number[] = [];
 let messageSink = 0;
 
 for (let i = 0; i < 20_000; i++) {
   const q = messageQueries[i % messageQueries.length];
-  messageSink += redirect(q, settings).headers.get("Location")?.length ?? 0;
   messageSink += redirectUrl(q, settings).length;
 }
 
 for (let run = 0; run < RUNS; run++) {
-  let t0 = Bun.nanoseconds();
-  for (let i = 0; i < MESSAGE_ITERS; i++) {
-    const q = messageQueries[(i + run) % messageQueries.length];
-    messageSink += redirect(q, settings).headers.get("Location")?.length ?? 0;
-  }
-  messageOldTimes.push((Bun.nanoseconds() - t0) / MESSAGE_ITERS);
-
-  t0 = Bun.nanoseconds();
+  const t0 = Bun.nanoseconds();
   for (let i = 0; i < MESSAGE_ITERS; i++) {
     const q = messageQueries[(i + run) % messageQueries.length];
     messageSink += redirectUrl(q, settings).length;
   }
-  messageNewTimes.push((Bun.nanoseconds() - t0) / MESSAGE_ITERS);
+  messageTimes.push((Bun.nanoseconds() - t0) / MESSAGE_ITERS);
 }
 
-const messageOldStats = summarizeRuns(messageOldTimes);
-const messageNewStats = summarizeRuns(messageNewTimes);
-const messageSavings = messageOldStats.p50 - messageNewStats.p50;
+const messageStats = summarizeRuns(messageTimes);
 if (messageSink === -1) {
   console.log("");
 }
 
 console.log(
-  `SW message redirect path: old ${fmt(messageOldStats.p50)} vs new ${fmt(messageNewStats.p50)} (save ${fmt(messageSavings)}/call)`
+  `SW message redirect path (redirectUrl): ${fmt(messageStats.p50)} median, ${fmt(messageStats.p90)} p90`
 );
 
 // ---------------------------------------------------------------------------
@@ -603,39 +589,27 @@ separator("6. SERVER ROUTE PATH PARSE PERFORMANCE");
 
 const RAW_URL = "https://flashbang.local/suggest?q=%21g&sp=none#x";
 const PATH_ITERS = 500_000;
-const pathViaUrlTimes: number[] = [];
 const pathViaRawTimes: number[] = [];
 
 for (let i = 0; i < 10_000; i++) {
-  void new URL(RAW_URL).pathname;
   void readPathname(RAW_URL);
 }
 
 for (let run = 0; run < RUNS; run++) {
-  let t0 = Bun.nanoseconds();
-  for (let i = 0; i < PATH_ITERS; i++) {
-    void new URL(RAW_URL).pathname;
-  }
-  pathViaUrlTimes.push((Bun.nanoseconds() - t0) / PATH_ITERS);
-
-  t0 = Bun.nanoseconds();
+  const t0 = Bun.nanoseconds();
   for (let i = 0; i < PATH_ITERS; i++) {
     void readPathname(RAW_URL);
   }
   pathViaRawTimes.push((Bun.nanoseconds() - t0) / PATH_ITERS);
 }
 
-const pathViaUrlStats = summarizeRuns(pathViaUrlTimes);
 const pathViaRawStats = summarizeRuns(pathViaRawTimes);
 
 console.log(
   `\nPath parse benchmark — ${PATH_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
 );
 console.log(
-  `  new URL(url).pathname: ${fmt(pathViaUrlStats.p50)} median, ${fmt(pathViaUrlStats.p90)} p90`
-);
-console.log(
-  `  readPathname(url):      ${fmt(pathViaRawStats.p50)} median, ${fmt(pathViaRawStats.p90)} p90`
+  `  readPathname(url): ${fmt(pathViaRawStats.p50)} median, ${fmt(pathViaRawStats.p90)} p90`
 );
 
 // ---------------------------------------------------------------------------
@@ -647,49 +621,31 @@ separator("7. QUERY & COOKIE PARSING PERFORMANCE");
 const PARAM_URL =
   "https://flashbang.local/suggest?x=1&q=%21g%20kittens%20and%20cats&sp=none&src=prof#x";
 const PARAM_ITERS = 500_000;
-const queryDualScanTimes: number[] = [];
-const querySingleScanTimes: number[] = [];
+const queryParamTimes: number[] = [];
 let parseSink = 0;
 
 for (let i = 0; i < 20_000; i++) {
-  const q = readQueryParam(PARAM_URL, "q");
-  const sp = readQueryParam(PARAM_URL, "sp");
+  const [q, sp] = readTwoQueryParams(PARAM_URL, "q", "sp");
   parseSink += (q?.length ?? 0) + (sp?.length ?? 0);
-  const both = readTwoQueryParams(PARAM_URL, "q", "sp");
-  parseSink += (both[0]?.length ?? 0) + (both[1]?.length ?? 0);
 }
 
 for (let run = 0; run < RUNS; run++) {
-  let t0 = Bun.nanoseconds();
-  for (let i = 0; i < PARAM_ITERS; i++) {
-    const q = readQueryParam(PARAM_URL, "q");
-    const sp = readQueryParam(PARAM_URL, "sp");
-    parseSink += (q?.length ?? 0) + (sp?.length ?? 0);
-  }
-  queryDualScanTimes.push((Bun.nanoseconds() - t0) / PARAM_ITERS);
-
-  t0 = Bun.nanoseconds();
+  const t0 = Bun.nanoseconds();
   for (let i = 0; i < PARAM_ITERS; i++) {
     const [q, sp] = readTwoQueryParams(PARAM_URL, "q", "sp");
     parseSink += (q?.length ?? 0) + (sp?.length ?? 0);
   }
-  querySingleScanTimes.push((Bun.nanoseconds() - t0) / PARAM_ITERS);
+  queryParamTimes.push((Bun.nanoseconds() - t0) / PARAM_ITERS);
 }
 
-const queryDualStats = summarizeRuns(queryDualScanTimes);
-const querySingleStats = summarizeRuns(querySingleScanTimes);
-const queryScanSpeedup = queryDualStats.p50 / querySingleStats.p50;
+const queryParamStats = summarizeRuns(queryParamTimes);
 
 console.log(
   `\nQuery param extraction — ${PARAM_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
 );
 console.log(
-  `  readQueryParam(q)+readQueryParam(sp): ${fmt(queryDualStats.p50)} median, ${fmt(queryDualStats.p90)} p90`
+  `  readTwoQueryParams(q,sp): ${fmt(queryParamStats.p50)} median, ${fmt(queryParamStats.p90)} p90`
 );
-console.log(
-  `  readTwoQueryParams(q,sp):            ${fmt(querySingleStats.p50)} median, ${fmt(querySingleStats.p90)} p90`
-);
-console.log(`  Single-scan speedup: ${queryScanSpeedup.toFixed(2)}x`);
 
 const reqNoCookie = new Request("http://localhost/suggest?q=x");
 const reqLightCookie = new Request("http://localhost/suggest?q=x", {
@@ -785,8 +741,6 @@ const cookieLightStats = summarizeRuns(cookieLightTimes);
 const cookieHeavyStats = summarizeRuns(cookieHeavyTimes);
 const settingsFullContextStats = summarizeRuns(settingsFullContextTimes);
 const settingsPlainContextStats = summarizeRuns(settingsPlainContextTimes);
-const settingsPlainSpeedup =
-  settingsFullContextStats.p50 / settingsPlainContextStats.p50;
 if (parseSink === -1) {
   console.log("");
 }
@@ -809,7 +763,6 @@ console.log(
 console.log(
   `  parseSettings heavy (plain only context): ${fmt(settingsPlainContextStats.p50)} median, ${fmt(settingsPlainContextStats.p90)} p90`
 );
-console.log(`  Plain-only parse speedup: ${settingsPlainSpeedup.toFixed(2)}x`);
 
 // ---------------------------------------------------------------------------
 // 8. FRECENCY HOT-PATH PERFORMANCE
@@ -831,44 +784,19 @@ const FREQUENCY_TRIGGERS = [
 ];
 const FRECENCY_LIMIT = 8;
 
-function legacyFrecencyCookie(counts: Record<string, number>): string {
-  const keys = Object.keys(counts);
-  if (keys.length === 0) {
-    return "";
-  }
-  keys.sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
-  const n = keys.length < FRECENCY_LIMIT ? keys.length : FRECENCY_LIMIT;
-  let out = `${keys[0]}:${counts[keys[0]]}`;
-  for (let i = 1; i < n; i++) {
-    out += `.${keys[i]}:${counts[keys[i]]}`;
-  }
-  return out;
-}
-
-const legacyFrecencyTimes: number[] = [];
 const incrementalFrecencyTimes: number[] = [];
 let frecencySink = 0;
 
 for (let run = 0; run < RUNS; run++) {
-  const legacyCounts: Record<string, number> = {};
   const incrementalCounts: Record<string, number> = {};
   for (let i = 0; i < 64; i++) {
     const key = `seed-${i}`;
     const value = ((i * 17) % 23) + 1;
-    legacyCounts[key] = value;
     incrementalCounts[key] = value;
   }
 
-  let t0 = Bun.nanoseconds();
-  for (let i = 0; i < FRECENCY_ITERS; i++) {
-    const trigger = FREQUENCY_TRIGGERS[(i + run) % FREQUENCY_TRIGGERS.length];
-    legacyCounts[trigger] = (legacyCounts[trigger] || 0) + 1;
-    frecencySink += legacyFrecencyCookie(legacyCounts).length;
-  }
-  legacyFrecencyTimes.push((Bun.nanoseconds() - t0) / FRECENCY_ITERS);
-
   const top = buildTopFrecency(incrementalCounts, FRECENCY_LIMIT);
-  t0 = Bun.nanoseconds();
+  const t0 = Bun.nanoseconds();
   for (let i = 0; i < FRECENCY_ITERS; i++) {
     const trigger = FREQUENCY_TRIGGERS[(i + run) % FREQUENCY_TRIGGERS.length];
     const next = (incrementalCounts[trigger] || 0) + 1;
@@ -883,20 +811,14 @@ if (frecencySink === -1) {
   console.log("");
 }
 
-const legacyFrecencyStats = summarizeRuns(legacyFrecencyTimes);
 const incrementalFrecencyStats = summarizeRuns(incrementalFrecencyTimes);
-const frecencySpeedup = legacyFrecencyStats.p50 / incrementalFrecencyStats.p50;
 
 console.log(
   `\nFrecency update benchmark — ${FRECENCY_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
 );
 console.log(
-  `  Legacy full-sort cookie rebuild: ${fmt(legacyFrecencyStats.p50)} median, ${fmt(legacyFrecencyStats.p90)} p90`
+  `  Incremental top-k update: ${fmt(incrementalFrecencyStats.p50)} median, ${fmt(incrementalFrecencyStats.p90)} p90`
 );
-console.log(
-  `  Incremental top-k update:        ${fmt(incrementalFrecencyStats.p50)} median, ${fmt(incrementalFrecencyStats.p90)} p90`
-);
-console.log(`  Incremental speedup: ${frecencySpeedup.toFixed(2)}x`);
 
 // ---------------------------------------------------------------------------
 // 9. SUGGEST HANDLER PERFORMANCE
@@ -1147,7 +1069,7 @@ console.log(`
 │ Packed lookup (est. net)            │ ${fmt(lookupNetMedian).padStart(10)} │ Per redirect │
 │ bangSuggestions pipeline            │ ${fmt(trieSuggestRunStats.p50).padStart(10)} │ Per suggest  │
 │ Route parse (raw pathname)          │ ${fmt(pathViaRawStats.p50).padStart(10)} │ Per request  │
-│ Query parse (two params, 1 scan)    │ ${fmt(querySingleStats.p50).padStart(10)} │ Per request  │
+│ Query parse (two params, 1 scan)    │ ${fmt(queryParamStats.p50).padStart(10)} │ Per request  │
 │ Cookie parse (heavy header)         │ ${fmt(cookieHeavyStats.p50).padStart(10)} │ Per request  │
 │ Frecency update (incremental)       │ ${fmt(incrementalFrecencyStats.p50).padStart(10)} │ Per redirect │
 │ Suggest handler (bang)              │ ${fmt(handlerBangStats.p50).padStart(10)} │ Per suggest  │
@@ -1158,6 +1080,6 @@ console.log(`
 ├─────────────────────────────────────┼────────────┼──────────────┤
 │ Full redirect (bang query)          │ ${fmt(bangRedirect.p50).padStart(10)} │ Per redirect │
 │ Full redirect (non-bang query)      │ ${fmt(nonBangRedirect.p50).padStart(10)} │ Per redirect │
-│ SW message redirect (new path)      │ ${fmt(messageNewStats.p50).padStart(10)} │ Per message  │
+│ SW message redirect (redirectUrl)   │ ${fmt(messageStats.p50).padStart(10)} │ Per message  │
 └─────────────────────────────────────┴────────────┴──────────────┘
 `);
