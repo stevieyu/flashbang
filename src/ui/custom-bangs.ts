@@ -1,5 +1,4 @@
 import type { DB } from "./db";
-import { readCustomBangs } from "./db";
 import { $, el } from "./dom";
 import { notifySW } from "./sw-bridge";
 
@@ -8,6 +7,7 @@ async function renderCustom(
   onChange?: (customTriggers: string[]) => void
 ) {
   const custom = await db.getAllCustomBangs();
+  onChange?.(custom.map((b) => b.trigger));
   const list = $("#custom-list");
   if (custom.length === 0) {
     list.replaceChildren(
@@ -25,7 +25,6 @@ async function renderCustom(
       rmBtn.addEventListener("click", async () => {
         await db.removeCustomBang(b.trigger);
         notifySW("invalidate");
-        onChange?.(await readCustomBangs(db));
         await renderCustom(db, onChange);
       });
       row.append(
@@ -47,10 +46,6 @@ export function setupCustomBangs(
   onChange?: (customTriggers: string[]) => void
 ) {
   void renderCustom(db, onChange);
-
-  if (onChange) {
-    void readCustomBangs(db).then(onChange);
-  }
 
   $<HTMLFormElement>("#add-bang-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -75,9 +70,6 @@ export function setupCustomBangs(
     }
     await db.addCustomBang({ trigger, name, url });
     notifySW("invalidate");
-    if (onChange) {
-      onChange(await readCustomBangs(db));
-    }
     form.reset();
     await renderCustom(db, onChange);
   });

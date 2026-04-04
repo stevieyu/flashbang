@@ -29,6 +29,15 @@ export async function initSettings(db: DB) {
   ]);
   let custom = initialCustom;
 
+  function syncCookie() {
+    setSuggestCookie(
+      suggestSelect.value,
+      defaultInput.value.replace(/^!+/, "").toLowerCase().trim(),
+      suggestUrlInput.value.trim(),
+      custom
+    );
+  }
+
   luckySelect.value = savedLucky;
   if (savedLucky === "custom") {
     luckyUrlInput.classList.remove("hidden");
@@ -46,7 +55,7 @@ export async function initSettings(db: DB) {
     suggestUrlInput.value = savedUrl;
   }
 
-  setSuggestCookie(savedProvider, defaultBang, savedUrl, custom);
+  syncCookie();
 
   const mod = await import("../generated/bangs-meta.js");
   const full: Record<string, { s: string; d: string }> = mod.BANGS;
@@ -59,12 +68,7 @@ export async function initSettings(db: DB) {
     if (full[val]) {
       await db.setSetting("default-bang", val);
       notifySW("invalidate");
-      setSuggestCookie(
-        suggestSelect.value,
-        val,
-        suggestUrlInput.value.trim(),
-        custom
-      );
+      syncCookie();
       flashAnim(defaultInput);
       $("#bang-status").textContent = full[val].s;
       $("#bang-status").className = "text-sm text-success";
@@ -78,12 +82,7 @@ export async function initSettings(db: DB) {
   suggestSelect.addEventListener("change", async () => {
     await db.setSetting("suggest-provider", suggestSelect.value);
     notifySW("invalidate");
-    setSuggestCookie(
-      suggestSelect.value,
-      defaultInput.value,
-      suggestUrlInput.value.trim(),
-      custom
-    );
+    syncCookie();
     if (suggestSelect.value === "custom") {
       suggestUrlInput.classList.remove("hidden");
     } else {
@@ -92,10 +91,9 @@ export async function initSettings(db: DB) {
   });
 
   suggestUrlInput.addEventListener("change", async () => {
-    const url = suggestUrlInput.value.trim();
-    await db.setSetting("suggest-url", url);
+    await db.setSetting("suggest-url", suggestUrlInput.value.trim());
     notifySW("invalidate");
-    setSuggestCookie(suggestSelect.value, defaultInput.value, url, custom);
+    syncCookie();
   });
 
   luckySelect.addEventListener("change", async () => {
@@ -175,12 +173,7 @@ export async function initSettings(db: DB) {
 
   setupCustomBangs(db, (nextCustom) => {
     custom = nextCustom;
-    setSuggestCookie(
-      suggestSelect.value,
-      defaultInput.value,
-      suggestUrlInput.value.trim(),
-      custom
-    );
+    syncCookie();
   });
 
   $("#export-btn").addEventListener("click", async () => {

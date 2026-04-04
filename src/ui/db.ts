@@ -49,15 +49,45 @@ export class DB {
   }
 
   async exportAll() {
+    const db = await this.dbp;
+    const tx = db.transaction(["settings", "custom-bangs"], "readonly");
+    const settingsStore = tx.objectStore("settings");
+    const [
+      defaultBang,
+      suggestProvider,
+      suggestUrl,
+      luckyProvider,
+      luckyUrl,
+      customBangs,
+    ] = await Promise.all([
+      idbWrap<{ key: string; value: string } | undefined>(
+        settingsStore.get("default-bang")
+      ),
+      idbWrap<{ key: string; value: string } | undefined>(
+        settingsStore.get("suggest-provider")
+      ),
+      idbWrap<{ key: string; value: string } | undefined>(
+        settingsStore.get("suggest-url")
+      ),
+      idbWrap<{ key: string; value: string } | undefined>(
+        settingsStore.get("lucky-provider")
+      ),
+      idbWrap<{ key: string; value: string } | undefined>(
+        settingsStore.get("lucky-url")
+      ),
+      idbWrap<Array<{ trigger: string; name: string; url: string }>>(
+        tx.objectStore("custom-bangs").getAll()
+      ),
+    ]);
     return {
       settings: {
-        defaultBang: await this.getSetting("default-bang"),
-        suggestProvider: await this.getSetting("suggest-provider"),
-        suggestUrl: await this.getSetting("suggest-url"),
-        luckyProvider: await this.getSetting("lucky-provider"),
-        luckyUrl: await this.getSetting("lucky-url"),
+        defaultBang: defaultBang?.value ?? null,
+        suggestProvider: suggestProvider?.value ?? null,
+        suggestUrl: suggestUrl?.value ?? null,
+        luckyProvider: luckyProvider?.value ?? null,
+        luckyUrl: luckyUrl?.value ?? null,
       },
-      customBangs: await this.getAllCustomBangs(),
+      customBangs,
       exported: new Date().toISOString(),
     };
   }
@@ -72,11 +102,10 @@ export class DB {
     const tx = db.transaction(["settings", "custom-bangs"], "readwrite");
     const settingsStore = tx.objectStore("settings");
     const customStore = tx.objectStore("custom-bangs");
-    const clearOps: Promise<unknown>[] = [
+    const ops: Promise<unknown>[] = [
       idbWrap(settingsStore.clear()),
       idbWrap(customStore.clear()),
     ];
-    const ops: Promise<unknown>[] = [];
 
     if (obj.settings && typeof obj.settings === "object") {
       const settings = obj.settings as Record<string, unknown>;
@@ -116,7 +145,7 @@ export class DB {
       }
     }
 
-    await Promise.all([...clearOps, ...ops]);
+    await Promise.all(ops);
   }
 }
 
