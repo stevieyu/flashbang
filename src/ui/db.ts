@@ -16,6 +16,18 @@ export class DB {
     return db.transaction(name, mode).objectStore(name);
   }
 
+  async getMultipleSettings(keys: string[]): Promise<(string | null)[]> {
+    const db = await this.dbp;
+    const tx = db.transaction("settings", "readonly");
+    const store = tx.objectStore("settings");
+    const results = await Promise.all(
+      keys.map((key) =>
+        idbWrap<{ key: string; value: string } | undefined>(store.get(key))
+      )
+    );
+    return results.map((r) => r?.value ?? null);
+  }
+
   async getSetting(key: string): Promise<string | null> {
     const s = await this.store("settings");
     const r = await idbWrap<{ key: string; value: string } | undefined>(

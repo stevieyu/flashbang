@@ -1,7 +1,7 @@
 import { flashAnim, shakeAnim } from "./animations";
 import { setSuggestCookie } from "./cookie";
 import { setupCustomBangs } from "./custom-bangs";
-import { type DB, readCustomBangs } from "./db";
+import type { DB } from "./db";
 import { $, el } from "./dom";
 import { notifySW } from "./sw-bridge";
 
@@ -12,21 +12,21 @@ export async function initSettings(db: DB) {
   const luckySelect = $<HTMLSelectElement>("#lucky-provider");
   const luckyUrlInput = $<HTMLInputElement>("#lucky-url");
 
-  const [
-    defaultBang,
-    savedProvider,
-    savedUrl,
-    savedLucky,
-    savedLuckyUrl,
-    initialCustom,
-  ] = await Promise.all([
-    db.getSetting("default-bang").then((v) => v || "g"),
-    db.getSetting("suggest-provider").then((v) => v || "default"),
-    db.getSetting("suggest-url").then((v) => v || ""),
-    db.getSetting("lucky-provider").then((v) => v || "default"),
-    db.getSetting("lucky-url").then((v) => v || ""),
-    readCustomBangs(db),
+  const [rawSettings, initialCustom] = await Promise.all([
+    db.getMultipleSettings([
+      "default-bang",
+      "suggest-provider",
+      "suggest-url",
+      "lucky-provider",
+      "lucky-url",
+    ]),
+    db.getAllCustomBangs().then((all) => all.map((b) => b.trigger)),
   ]);
+  const defaultBang = rawSettings[0] || "g";
+  const savedProvider = rawSettings[1] || "default";
+  const savedUrl = rawSettings[2] || "";
+  const savedLucky = rawSettings[3] || "default";
+  const savedLuckyUrl = rawSettings[4] || "";
   let custom = initialCustom;
 
   function syncCookie() {

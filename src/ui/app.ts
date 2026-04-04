@@ -9,14 +9,17 @@ import { initSettings } from "./settings";
 const db = new DB();
 
 async function syncSuggestCookie() {
-  const [provider, trigger, url, custom] = await Promise.all([
-    db.getSetting("suggest-provider").then((v) => v || "default"),
-    db.getSetting("default-bang").then((v) => v || "g"),
-    db.getSetting("suggest-url").then((v) => v || ""),
+  const [settings, custom] = await Promise.all([
+    db.getMultipleSettings(["suggest-provider", "default-bang", "suggest-url"]),
     readCustomBangs(db),
   ]);
 
-  setSuggestCookie(provider, trigger, url, custom);
+  setSuggestCookie(
+    settings[0] || "default",
+    settings[1] || "g",
+    settings[2] || "",
+    custom
+  );
 }
 
 function init() {
