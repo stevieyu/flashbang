@@ -2,7 +2,7 @@
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/flashbang?referralCode=cxTxcH&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
-![Flashbang](docs/landing.png)
+![Flashbang](.github/images/landing.png)
 
 Turn your browser's address bar into a shortcut launcher. Type `!g kittens` to search Google, `!w dogs` for Wikipedia, `!gh react` for GitHub — over 14,000 shortcuts (called "bangs") that take you straight to the right site, instantly. No extra tabs, no round-trips, no waiting for a page to load.
 
