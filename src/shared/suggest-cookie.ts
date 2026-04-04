@@ -50,7 +50,7 @@ function parseFrecencyCompactSection(
   return { value, valid };
 }
 
-function parseCustomModern(
+function parseCustom(
   raw: string,
   forCleanup: boolean
 ): { value: string[]; valid: boolean } {
@@ -76,7 +76,7 @@ function parseCustomModern(
       }
     }
 
-    return { value: out, valid: true };
+    return { value: out.sort(), valid: true };
   } catch {
     return { value: [], valid: false };
   }
@@ -140,7 +140,7 @@ export function parseSuggestCookieValueWithValidation(
             break;
           }
         } else if (section.startsWith(CUSTOM_PREFIX)) {
-          const result = parseCustomModern(section.substring(2), forCleanup);
+          const result = parseCustom(section.substring(2), forCleanup);
           custom = result.value;
           if (forCleanup && !result.valid) {
             hasInvalidContext = true;

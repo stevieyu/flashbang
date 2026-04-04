@@ -14,10 +14,9 @@ import {
 import {
   FRECENCY_BOOST_CAP,
   FRECENCY_BOOST_MULTIPLIER,
+  JSON_HEADERS,
   TOP_K,
 } from "./shared/constants";
-
-const JSON_HEADERS = { "Content-Type": "application/json" };
 
 interface Candidate {
   trigger: string;
@@ -263,8 +262,7 @@ export function bangSuggestions(
   const result = walkPrefix(partial);
 
   const customMatches: Candidate[] = [];
-  const sortedCustom = custom.slice().sort();
-  for (const trigger of sortedCustom) {
+  for (const trigger of custom) {
     if (!trigger.startsWith(partial)) {
       if (trigger > `${partial}\uFFFF`) {
         break;

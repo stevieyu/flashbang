@@ -128,17 +128,13 @@ function persistFrecencySnapshot(
   const value = `${ts}|${serializeFrecencyCompact(counts)}`;
   openDB()
     .then((db) => {
-      persistInFlight = false;
       const tx = db.transaction("settings", "readwrite");
-      const store = tx.objectStore("settings");
-      store.put({ key: "frecency", value });
-      if (persistPending) {
-        const { counts: c, ts: t } = persistPending;
-        persistPending = null;
-        persistFrecencySnapshot(c, t);
-      }
+      tx.objectStore("settings").put({ key: "frecency", value });
     })
     .catch(() => {
+      /* best-effort write; ignore failure */
+    })
+    .finally(() => {
       persistInFlight = false;
       if (persistPending) {
         const { counts: c, ts: t } = persistPending;

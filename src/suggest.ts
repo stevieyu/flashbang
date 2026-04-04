@@ -7,7 +7,7 @@ import {
   CH_TAB,
   CH_VTAB,
 } from "./shared/chars";
-import { SUGGEST_URLS } from "./shared/constants";
+import { JSON_HEADERS, SUGGEST_URLS } from "./shared/constants";
 import { readQueryParam } from "./shared/raw-query";
 import {
   encodeSuggestCookieValue,
@@ -36,8 +36,6 @@ export interface PartialBang {
   partial: string;
   prefix: string;
 }
-
-const JSON_HEADERS = { "Content-Type": "application/json" };
 
 function isTrimWs(code: number): boolean {
   return (

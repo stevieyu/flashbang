@@ -31,7 +31,6 @@ const ASSETS = [
   ...__EXTRA_ASSETS__,
 ];
 
-const CRITICAL_ASSETS: string[] = [];
 const OPTIONAL_ASSETS = [...new Set(ASSETS)];
 const PRECACHE_CONCURRENCY = 4;
 let optionalPrecachePromise: Promise<void> | null = null;
@@ -128,14 +127,7 @@ function queueBangSideEffects(e: FetchEvent, trigger: string): void {
 }
 
 self.addEventListener("install", (e: ExtendableEvent) => {
-  e.waitUntil(
-    Promise.all([
-      self.skipWaiting(),
-      precacheAssets(CACHE_NAME, CRITICAL_ASSETS),
-    ]).then(() => {
-      /* no-op */
-    })
-  );
+  e.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (e: ExtendableEvent) => {
