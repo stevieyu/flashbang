@@ -214,7 +214,7 @@ Flashbang was inspired by [unduck](https://github.com/t3dotgg/unduck) by Theo Br
 
 ## Daily updates
 
-A GitHub Actions workflow runs every 24 hours at 00:00 UTC to fetch the latest bang definitions from DuckDuckGo and Kagi, rebuild the generated JavaScript, and commit any changes. This keeps the bang database current without manual intervention.
+A GitHub Actions workflow runs every 24 hours at 00:00 UTC to fetch the latest bang definitions from DuckDuckGo and Kagi, rebuild the generated JSON, and commit any changes. This keeps the bang database current without manual intervention.
 
 ## Contributing
 
