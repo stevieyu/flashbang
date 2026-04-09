@@ -105,10 +105,10 @@ const [
   { BANG_COUNT, lookupBang },
   { EDGES, LABELS, NODES, ROOT },
   { handleSuggestRequest },
-  { bangSuggestions },
+  { bangSuggestions, responseFromCandidates },
   { parseCookie, parseSettingsFromRawUrl },
   { buildTopFrecency, updateTopFrecencyOnIncrement },
-  { readTwoQueryParams },
+  { readQueryParam, readTwoQueryParams },
   { BANGS },
 ] = await Promise.all([
   import("../src/generated/bangs-min.js"),
@@ -462,6 +462,71 @@ for (const p of suggestPartials) {
 }
 
 // ---------------------------------------------------------------------------
+// 4b. SUGGEST JSON SERIALIZATION ONLY
+// ---------------------------------------------------------------------------
+
+separator("4b. SUGGEST JSON SERIALIZATION ONLY");
+
+const serializeCandidates = [
+  {
+    trigger: "g",
+    name: "Google",
+    domain: "www.google.com",
+    score: 1000,
+  },
+  {
+    trigger: "gh",
+    name: 'GitHub "code"',
+    domain: "github.com",
+    score: 500,
+  },
+  {
+    trigger: "yt",
+    name: "YouTube \\ videos",
+    domain: "www.youtube.com",
+    score: 700,
+  },
+  {
+    trigger: "local",
+    name: "Local custom",
+    domain: "",
+    score: 0,
+  },
+];
+
+const SERIALIZE_ITERS = 1_000_000;
+const serializeTimes: number[] = [];
+let serializeSink = 0;
+
+for (let i = 0; i < 20_000; i++) {
+  const r = responseFromCandidates("cats", "", serializeCandidates);
+  serializeSink += r.status;
+}
+
+for (let run = 0; run < RUNS; run++) {
+  const t0 = Bun.nanoseconds();
+  for (let i = 0; i < SERIALIZE_ITERS; i++) {
+    const r = responseFromCandidates("cats", "", serializeCandidates);
+    serializeSink += r.status;
+  }
+  serializeTimes.push((Bun.nanoseconds() - t0) / SERIALIZE_ITERS);
+}
+
+if (serializeSink === -1) {
+  console.log("");
+}
+
+const serializeStats = summarizeRuns(serializeTimes);
+console.log(
+  `\nresponseFromCandidates() — ${SERIALIZE_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
+);
+console.log(`  Median: ${fmt(serializeStats.p50)}/call`);
+console.log(`  p90:    ${fmt(serializeStats.p90)}/call`);
+console.log(
+  `  Spread: ${fmt(serializeStats.min)}..${fmt(serializeStats.max)} (cv ${serializeStats.cvPct.toFixed(1)}%)`
+);
+
+// ---------------------------------------------------------------------------
 // 5. REDIRECT PIPELINE PERFORMANCE
 // ---------------------------------------------------------------------------
 
@@ -646,6 +711,44 @@ console.log(
 console.log(
   `  readTwoQueryParams(q,sp): ${fmt(queryParamStats.p50)} median, ${fmt(queryParamStats.p90)} p90`
 );
+
+// ---------------------------------------------------------------------------
+// 7b. QUERY DECODER ISOLATION
+// ---------------------------------------------------------------------------
+
+separator("7b. QUERY DECODER ISOLATION");
+
+const decoderInputs = [
+  { label: "plus only", raw: "cat+dog" },
+  { label: "%20 only", raw: "cat%20dog" },
+  { label: "utf8 mixed", raw: "caf%C3%A9+%F0%9F%8D%95" },
+];
+const DECODER_ITERS = 500_000;
+
+console.log(
+  `\nreadQueryParam decoder-ish workload — ${DECODER_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
+);
+console.log(
+  `${"Input".padEnd(14)} ${"Median".padStart(10)} ${"p90".padStart(10)}`
+);
+console.log("-".repeat(38));
+
+for (const input of decoderInputs) {
+  const url = `https://flashbang.local/suggest?q=${input.raw}`;
+  const times: number[] = [];
+  for (let run = 0; run < RUNS; run++) {
+    const t0 = Bun.nanoseconds();
+    for (let i = 0; i < DECODER_ITERS; i++) {
+      const parsed = readQueryParam(url, "q");
+      parseSink += parsed?.length ?? 0;
+    }
+    times.push((Bun.nanoseconds() - t0) / DECODER_ITERS);
+  }
+  const stats = summarizeRuns(times);
+  console.log(
+    `  ${input.label.padEnd(12)} ${fmt(stats.p50).padStart(10)} ${fmt(stats.p90).padStart(10)}`
+  );
+}
 
 const reqNoCookie = new Request("http://localhost/suggest?q=x");
 const reqLightCookie = new Request("http://localhost/suggest?q=x", {

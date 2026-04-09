@@ -130,18 +130,14 @@ const dfsStack: number[] = [];
 function topK(
   subtree: number,
   frecent: Record<string, number>,
-  customMatches: Candidate[]
+  customMatches: Candidate[],
+  hasFrecent: boolean
 ): Candidate[] {
   const results: Candidate[] = [];
   let minIdx = -1;
   let threshold = -1;
   let resultLen = 0;
 
-  let hasFrecent = false;
-  for (const _ in frecent) {
-    hasFrecent = true;
-    break;
-  }
   const boostCap = hasFrecent ? FRECENCY_BOOST_CAP : 0;
 
   for (const c of customMatches) {
@@ -183,7 +179,9 @@ function topK(
         TERM_K_CACHE,
         terminalIndex
       );
-      const score = effectiveScore(TERM_R[terminalIndex], frecent, trigger);
+      const score = hasFrecent
+        ? effectiveScore(TERM_R[terminalIndex], frecent, trigger)
+        : TERM_R[terminalIndex];
       if (resultLen < TOP_K || score > threshold) {
         const c: Candidate = {
           trigger,
@@ -244,7 +242,7 @@ function topK(
   return results;
 }
 
-function responseFromCandidates(
+export function responseFromCandidates(
   query: string,
   prefix: string,
   candidates: Candidate[]
@@ -291,6 +289,11 @@ export function bangSuggestions(
   custom: string[]
 ): Response {
   const result = walkPrefix(partial);
+  let hasFrecent = false;
+  for (const _ in frecent) {
+    hasFrecent = true;
+    break;
+  }
 
   const customMatches: Candidate[] = [];
   for (const trigger of custom) {
@@ -304,7 +307,7 @@ export function bangSuggestions(
       trigger,
       name: "",
       domain: "",
-      score: effectiveScore(0, frecent, trigger),
+      score: hasFrecent ? effectiveScore(0, frecent, trigger) : 0,
     });
   }
 
@@ -322,6 +325,6 @@ export function bangSuggestions(
   }
 
   const [subtree] = result;
-  const candidates = topK(subtree, frecent, customMatches);
+  const candidates = topK(subtree, frecent, customMatches, hasFrecent);
   return responseFromCandidates(query, prefix, candidates);
 }

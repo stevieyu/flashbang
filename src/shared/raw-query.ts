@@ -14,8 +14,18 @@ function hexNibble(code: number): number {
 }
 
 function decodeQueryComponent(raw: string): string {
-  if (!(raw.includes("%") || raw.includes("+"))) {
+  const hasPercent = raw.includes("%");
+  const hasPlus = raw.includes("+");
+  if (!(hasPercent || hasPlus)) {
     return raw;
+  }
+  if (!hasPercent) {
+    return raw.replace(/\+/g, " ");
+  }
+  try {
+    return decodeURIComponent(hasPlus ? raw.replace(/\+/g, " ") : raw);
+  } catch {
+    // Fall back to tolerant decode loop below.
   }
 
   let out = "";

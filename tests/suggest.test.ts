@@ -160,6 +160,7 @@ const {
   parseSettingsFromRawUrlWithCleanup,
   suggest,
 } = await import("../src/suggest");
+const { responseFromCandidates } = await import("../src/suggest-bang");
 
 const fetchSpy = spyOn(globalThis, "fetch");
 
@@ -186,6 +187,47 @@ const defaultSettings = {
   frecent: {},
   custom: [],
 };
+
+function legacyResponsePayload(
+  query: string,
+  prefix: string,
+  candidates: Array<{
+    trigger: string;
+    name: string;
+    domain: string;
+    score: number;
+  }>
+): unknown[] {
+  const len = candidates.length;
+  const completions = new Array<string>(len);
+  const descriptions = new Array<string>(len);
+  const urls = new Array<string>(len);
+  const details = new Array<Record<string, string>>(len);
+
+  for (let i = 0; i < len; i++) {
+    const c = candidates[i];
+    completions[i] = `${prefix}!${c.trigger}`;
+    if (c.domain) {
+      const label = `${c.name} \u2014 ${c.domain}`;
+      const base = `https://${c.domain}`;
+      descriptions[i] = label;
+      urls[i] = base;
+      details[i] = { a: label, i: `${base}/favicon.ico` };
+    } else {
+      descriptions[i] = "";
+      urls[i] = "";
+      details[i] = {};
+    }
+  }
+
+  return [
+    query,
+    completions,
+    descriptions,
+    urls,
+    { "google:suggestdetail": details },
+  ];
+}
 
 describe("parseCookie", () => {
   test("no cookie → defaults", () => {
@@ -414,11 +456,27 @@ describe("readQueryParam", () => {
     ).toBe("+cats dogs");
   });
 
+  test("decodes mixed + and %20 values", () => {
+    expect(
+      readQueryParam("http://localhost/suggest?q=cat+and+dog%20friend", "q")
+    ).toBe("cat and dog friend");
+  });
+
+  test("decodes UTF-8 and emoji payloads", () => {
+    expect(readQueryParam("http://localhost/suggest?q=caf%C3%A9", "q")).toBe(
+      "café"
+    );
+    expect(
+      readQueryParam("http://localhost/suggest?q=caf%C3%A9+%F0%9F%8D%95", "q")
+    ).toBe("café 🍕");
+  });
+
   test("tolerates malformed percent-encoding like URLSearchParams", () => {
     expect(readQueryParam("http://localhost/suggest?q=%E0%A4%A", "q")).toBe(
       "�%A"
     );
     expect(readQueryParam("http://localhost/suggest?q=%ZZ", "q")).toBe("%ZZ");
+    expect(readQueryParam("http://localhost/suggest?q=abc%", "q")).toBe("abc%");
   });
 
   test("returns empty string for key without value", () => {
@@ -436,6 +494,33 @@ describe("readQueryParam", () => {
     expect(
       readQueryParam("http://localhost/suggest?q=alpha#q=beta&sp=ddg", "q")
     ).toBe("alpha");
+  });
+});
+
+describe("suggest JSON serialization", () => {
+  test("matches legacy payload shape for escaped values", async () => {
+    const query = 'line1\nline2 "quoted" \\ slash';
+    const prefix = "cats ";
+    const candidates = [
+      {
+        trigger: "gh",
+        name: 'Git "Hub" \\',
+        domain: "github.com",
+        score: 42,
+      },
+      {
+        trigger: "local",
+        name: "emoji 🍕",
+        domain: "",
+        score: 3,
+      },
+    ];
+
+    const legacy = legacyResponsePayload(query, prefix, candidates);
+    const response = responseFromCandidates(query, prefix, candidates);
+    const current = await response.json();
+
+    expect(current).toEqual(legacy);
   });
 });
 
