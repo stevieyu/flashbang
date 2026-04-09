@@ -1,17 +1,7 @@
-/**
- * Comprehensive profiling for flashbang's core data structures and hot paths.
- * Measures what actually matters before optimizing.
- *
- */
-
 import { readPathname } from "../src/shared/raw-url";
 import { ensureGeneratedBangData, GENERATED_BANG_DATA_FILES } from "./codegen";
 
 const [minPath, metaPath, triePath] = GENERATED_BANG_DATA_FILES;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 function median(arr: number[]): number {
   const s = arr.slice().sort((a, b) => a - b);
@@ -44,6 +34,7 @@ function mean(arr: number[]): number {
 interface RunStats {
   p50: number;
   p90: number;
+  p99: number;
   min: number;
   max: number;
   mean: number;
@@ -62,6 +53,7 @@ function summarizeRuns(arr: number[]): RunStats {
   return {
     p50: percentile(sorted, 0.5),
     p90: percentile(sorted, 0.9),
+    p99: percentile(sorted, 0.99),
     min: sorted[0] ?? 0,
     max: sorted[sorted.length - 1] ?? 0,
     mean: avg,
@@ -105,7 +97,12 @@ const [
   { BANG_COUNT, lookupBang },
   { EDGES, LABELS, NODES, ROOT },
   { handleSuggestRequest },
-  { bangSuggestions, responseFromCandidates },
+  {
+    bangSuggestions,
+    profileTopKCount,
+    profileWalkPrefix,
+    responseFromCandidates,
+  },
   { parseCookie, parseSettingsFromRawUrl },
   { buildTopFrecency, updateTopFrecencyOnIncrement },
   { readQueryParam, readTwoQueryParams },
@@ -433,8 +430,66 @@ console.log("\nbangSuggestions() pipeline (production function):");
 console.log(`  ${SUGGEST_ITERS.toLocaleString()} iterations × ${RUNS} runs`);
 console.log(`  Median: ${fmt(trieSuggestRunStats.p50)}/suggest`);
 console.log(`  p90:    ${fmt(trieSuggestRunStats.p90)}/suggest`);
+console.log(`  p99:    ${fmt(trieSuggestRunStats.p99)}/suggest`);
 console.log(
   `  Spread: ${fmt(trieSuggestRunStats.min)}..${fmt(trieSuggestRunStats.max)} (cv ${trieSuggestRunStats.cvPct.toFixed(1)}%)`
+);
+
+const WALK_PREFIX_ITERS = 500_000;
+const TOPK_ONLY_ITERS = 500_000;
+const walkPrefixTimes: number[] = [];
+const topKOnlyTimes: number[] = [];
+let walkPrefixSink = 0;
+let topKSink = 0;
+
+for (let i = 0; i < 20_000; i++) {
+  const p = suggestPartials[i % suggestPartials.length];
+  const walked = profileWalkPrefix(p);
+  walkPrefixSink += walked ? walked[0] + walked[1].length : -1;
+}
+
+for (let run = 0; run < RUNS; run++) {
+  const t0 = Bun.nanoseconds();
+  for (let i = 0; i < WALK_PREFIX_ITERS; i++) {
+    const p = suggestPartials[(i + run) % suggestPartials.length];
+    const walked = profileWalkPrefix(p);
+    walkPrefixSink += walked ? walked[0] + walked[1].length : -1;
+  }
+  walkPrefixTimes.push((Bun.nanoseconds() - t0) / WALK_PREFIX_ITERS);
+}
+
+const topKSubtrees = suggestPartials
+  .map((p) => profileWalkPrefix(p))
+  .filter((v): v is [number, string] => v !== null)
+  .map((v) => v[0]);
+
+for (let i = 0; i < 20_000; i++) {
+  const subtree = topKSubtrees[i % topKSubtrees.length];
+  topKSink += profileTopKCount(subtree, emptyFrecency, false);
+}
+
+for (let run = 0; run < RUNS; run++) {
+  const t0 = Bun.nanoseconds();
+  for (let i = 0; i < TOPK_ONLY_ITERS; i++) {
+    const subtree = topKSubtrees[(i + run) % topKSubtrees.length];
+    topKSink += profileTopKCount(subtree, emptyFrecency, false);
+  }
+  topKOnlyTimes.push((Bun.nanoseconds() - t0) / TOPK_ONLY_ITERS);
+}
+
+if (walkPrefixSink === -1 || topKSink === -1) {
+  console.log("");
+}
+
+const walkPrefixStats = summarizeRuns(walkPrefixTimes);
+const topKOnlyStats = summarizeRuns(topKOnlyTimes);
+
+console.log("\n  Breakdown (isolated):");
+console.log(
+  `    walkPrefix only: ${fmt(walkPrefixStats.p50)} median, ${fmt(walkPrefixStats.p90)} p90, ${fmt(walkPrefixStats.p99)} p99`
+);
+console.log(
+  `    topK only:       ${fmt(topKOnlyStats.p50)} median, ${fmt(topKOnlyStats.p90)} p90, ${fmt(topKOnlyStats.p99)} p99`
 );
 
 // Per-prefix breakdown
@@ -522,8 +577,20 @@ console.log(
 );
 console.log(`  Median: ${fmt(serializeStats.p50)}/call`);
 console.log(`  p90:    ${fmt(serializeStats.p90)}/call`);
+console.log(`  p99:    ${fmt(serializeStats.p99)}/call`);
 console.log(
   `  Spread: ${fmt(serializeStats.min)}..${fmt(serializeStats.max)} (cv ${serializeStats.cvPct.toFixed(1)}%)`
+);
+
+const derivedRest = Math.max(
+  0,
+  trieSuggestRunStats.p50 -
+    walkPrefixStats.p50 -
+    topKOnlyStats.p50 -
+    serializeStats.p50
+);
+console.log(
+  `\nDerived bangSuggestions rest: ${fmt(derivedRest)} (aggregate - walkPrefix - topK - responseFromCandidates)`
 );
 
 // ---------------------------------------------------------------------------
@@ -986,13 +1053,13 @@ console.log(
   `\nhandleSuggestRequest() — ${HANDLER_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
 );
 console.log(
-  `  Bang query path:      ${fmt(handlerBangStats.p50)} median, ${fmt(handlerBangStats.p90)} p90`
+  `  Bang query path:      ${fmt(handlerBangStats.p50)} median, ${fmt(handlerBangStats.p90)} p90, ${fmt(handlerBangStats.p99)} p99`
 );
 console.log(
-  `  Plain query path:     ${fmt(handlerPlainStats.p50)} median, ${fmt(handlerPlainStats.p90)} p90`
+  `  Plain query path:     ${fmt(handlerPlainStats.p50)} median, ${fmt(handlerPlainStats.p90)} p90, ${fmt(handlerPlainStats.p99)} p99`
 );
 console.log(
-  `  Plain heavy-cookie:   ${fmt(handlerPlainHeavyStats.p50)} median, ${fmt(handlerPlainHeavyStats.p90)} p90`
+  `  Plain heavy-cookie:   ${fmt(handlerPlainHeavyStats.p50)} median, ${fmt(handlerPlainHeavyStats.p90)} p90, ${fmt(handlerPlainHeavyStats.p99)} p99`
 );
 
 // ---------------------------------------------------------------------------
@@ -1104,7 +1171,6 @@ const EVAL_RUNS = 20;
 const evalMinTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
   const t0 = Bun.nanoseconds();
-  // Intentional: eval-equivalent to benchmark JS parse+eval time
   new Function(minEvalCode)();
   const elapsed = Bun.nanoseconds() - t0;
   evalMinTimes.push(elapsed);
@@ -1115,6 +1181,7 @@ const evalMinStats = summarizeRuns(evalMinTimes);
 console.log(`\nbangs-min.js eval time (${fmtBytesExact(minBytes)}):`);
 console.log(`  Median: ${fmt(evalMinStats.p50)}`);
 console.log(`  p90:    ${fmt(evalMinStats.p90)}`);
+console.log(`  p99:    ${fmt(evalMinStats.p99)}`);
 console.log(
   `  Spread: ${fmt(evalMinStats.min)}..${fmt(evalMinStats.max)} (cv ${evalMinStats.cvPct.toFixed(1)}%)`
 );
@@ -1122,7 +1189,6 @@ console.log(
 const evalFullTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
   const t0 = Bun.nanoseconds();
-  // Intentional: eval-equivalent to benchmark JS parse+eval time
   new Function(fullEvalCode)();
   const elapsed = Bun.nanoseconds() - t0;
   evalFullTimes.push(elapsed);
@@ -1133,6 +1199,7 @@ const evalFullStats = summarizeRuns(evalFullTimes);
 console.log(`\nbangs-meta.js eval time (${fmtBytesExact(metaBytes)}):`);
 console.log(`  Median: ${fmt(evalFullStats.p50)}`);
 console.log(`  p90:    ${fmt(evalFullStats.p90)}`);
+console.log(`  p99:    ${fmt(evalFullStats.p99)}`);
 console.log(
   `  Spread: ${fmt(evalFullStats.min)}..${fmt(evalFullStats.max)} (cv ${evalFullStats.cvPct.toFixed(1)}%)`
 );
@@ -1140,7 +1207,6 @@ console.log(
 const evalTrieTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
   const t0 = Bun.nanoseconds();
-  // Intentional: eval-equivalent to benchmark JS parse+eval time
   new Function(trieEvalCode)();
   const elapsed = Bun.nanoseconds() - t0;
   evalTrieTimes.push(elapsed);
@@ -1151,6 +1217,7 @@ const evalTrieStats = summarizeRuns(evalTrieTimes);
 console.log(`\nbangs-trie.js eval time (${fmtBytesExact(trieBytes)}):`);
 console.log(`  Median: ${fmt(evalTrieStats.p50)}`);
 console.log(`  p90:    ${fmt(evalTrieStats.p90)}`);
+console.log(`  p99:    ${fmt(evalTrieStats.p99)}`);
 console.log(
   `  Spread: ${fmt(evalTrieStats.min)}..${fmt(evalTrieStats.max)} (cv ${evalTrieStats.cvPct.toFixed(1)}%)`
 );

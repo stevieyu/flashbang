@@ -1,5 +1,6 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { handleSuggestRequest } from "../src/server/handlers";
+import { TOP_K } from "../src/shared/constants";
 import { encodeSuggestCookieValue } from "../src/shared/suggest-cookie";
 
 const fetchSpy = spyOn(globalThis, "fetch");
@@ -45,7 +46,7 @@ describe("handleSuggestRequest", () => {
     expect(response.status).toBe(200);
     expect(payload[0]).toBe("!");
     expect(Array.isArray(payload[1])).toBe(true);
-    expect(payload[1]).toHaveLength(8);
+    expect(payload[1]).toHaveLength(TOP_K);
   });
 
   test("forwards custom suggest provider request when query has no bang", async () => {

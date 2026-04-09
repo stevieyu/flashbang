@@ -7,6 +7,7 @@ import {
   spyOn,
   test,
 } from "bun:test";
+import { TOP_K } from "../src/shared/constants";
 import { readQueryParam, readTwoQueryParams } from "../src/shared/raw-query";
 import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 
@@ -187,47 +188,6 @@ const defaultSettings = {
   frecent: {},
   custom: [],
 };
-
-function legacyResponsePayload(
-  query: string,
-  prefix: string,
-  candidates: Array<{
-    trigger: string;
-    name: string;
-    domain: string;
-    score: number;
-  }>
-): unknown[] {
-  const len = candidates.length;
-  const completions = new Array<string>(len);
-  const descriptions = new Array<string>(len);
-  const urls = new Array<string>(len);
-  const details = new Array<Record<string, string>>(len);
-
-  for (let i = 0; i < len; i++) {
-    const c = candidates[i];
-    completions[i] = `${prefix}!${c.trigger}`;
-    if (c.domain) {
-      const label = `${c.name} \u2014 ${c.domain}`;
-      const base = `https://${c.domain}`;
-      descriptions[i] = label;
-      urls[i] = base;
-      details[i] = { a: label, i: `${base}/favicon.ico` };
-    } else {
-      descriptions[i] = "";
-      urls[i] = "";
-      details[i] = {};
-    }
-  }
-
-  return [
-    query,
-    completions,
-    descriptions,
-    urls,
-    { "google:suggestdetail": details },
-  ];
-}
 
 describe("parseCookie", () => {
   test("no cookie → defaults", () => {
@@ -516,11 +476,25 @@ describe("suggest JSON serialization", () => {
       },
     ];
 
-    const legacy = legacyResponsePayload(query, prefix, candidates);
+    const expected = [
+      query,
+      ["cats !gh", "cats !local"],
+      ['Git "Hub" \\ \u2014 github.com', ""],
+      ["https://github.com", ""],
+      {
+        "google:suggestdetail": [
+          {
+            a: 'Git "Hub" \\ \u2014 github.com',
+            i: "https://github.com/favicon.ico",
+          },
+          {},
+        ],
+      },
+    ];
     const response = responseFromCandidates(query, prefix, candidates);
     const current = await response.json();
 
-    expect(current).toEqual(legacy);
+    expect(current).toEqual(expected);
   });
 });
 
@@ -660,10 +634,10 @@ describe("bang suggestions — via suggest()", () => {
     }
   });
 
-  test('"!" → matches all keys, returns max 8', async () => {
+  test('"!" → matches all keys, returns max TOP_K', async () => {
     const r = await suggest("!", defaultSettings);
     const [, completions] = await r.json();
-    expect(completions).toHaveLength(8);
+    expect(completions).toHaveLength(TOP_K);
   });
 
   test('"!zzz" → no matches, empty completions', async () => {

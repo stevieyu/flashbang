@@ -242,6 +242,19 @@ function topK(
   return results;
 }
 
+// Profile hooks for section-4 microbreakdown in scripts/profile.ts.
+export function profileWalkPrefix(partial: string): [number, string] | null {
+  return walkPrefix(partial);
+}
+
+export function profileTopKCount(
+  subtree: number,
+  frecent: Record<string, number>,
+  hasFrecent: boolean
+): number {
+  return topK(subtree, frecent, [], hasFrecent).length;
+}
+
 export function responseFromCandidates(
   query: string,
   prefix: string,
