@@ -7,6 +7,8 @@ import { pageHeaders, SW_HEADERS } from "../src/server/headers";
 import { readPathname } from "../src/shared/raw-url";
 
 const SECURITY_HEADERS = pageHeaders("'unsafe-inline'");
+const SECURITY_HEADER_ENTRIES: ReadonlyArray<readonly [string, string]> =
+  Object.entries(SECURITY_HEADERS);
 
 const distIndex = Bun.file("dist/index.html");
 if (!(await distIndex.exists())) {
@@ -82,7 +84,7 @@ Bun.serve({
 
     if (pathname === "/suggest") {
       const res = await handleSuggestRequest(req);
-      for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+      for (const [k, v] of SECURITY_HEADER_ENTRIES) {
         res.headers.set(k, v);
       }
       return res;
@@ -90,7 +92,7 @@ Bun.serve({
 
     if (pathname === "/opensearch.xml") {
       const res = handleOpenSearchRequest(req);
-      for (const [k, v] of Object.entries(SECURITY_HEADERS)) {
+      for (const [k, v] of SECURITY_HEADER_ENTRIES) {
         res.headers.set(k, v);
       }
       return res;
