@@ -127,40 +127,47 @@ function walkPrefix(partial: string): [number, string] | null {
 
 const dfsStack: number[] = [];
 
+const RESULT_IDX = new Int32Array(TOP_K);
+const RESULT_SCORE = new Float64Array(TOP_K);
+const RESULT_ORDER = new Int32Array(TOP_K);
+
 function topK(
   subtree: number,
   frecent: Record<string, number>,
   customMatches: Candidate[],
   hasFrecent: boolean
 ): Candidate[] {
-  const results: Candidate[] = [];
   let minIdx = -1;
   let threshold = -1;
   let resultLen = 0;
 
   const boostCap = hasFrecent ? FRECENCY_BOOST_CAP : 0;
 
-  for (const c of customMatches) {
+  for (let k = 0; k < customMatches.length; k++) {
+    const score = customMatches[k].score;
     if (resultLen < TOP_K) {
-      results[resultLen++] = c;
+      RESULT_IDX[resultLen] = -k - 1;
+      RESULT_SCORE[resultLen] = score;
+      resultLen++;
       if (resultLen === TOP_K) {
         minIdx = 0;
         for (let i = 1; i < TOP_K; i++) {
-          if (results[i].score < results[minIdx].score) {
+          if (RESULT_SCORE[i] < RESULT_SCORE[minIdx]) {
             minIdx = i;
           }
         }
-        threshold = results[minIdx].score;
+        threshold = RESULT_SCORE[minIdx];
       }
-    } else if (c.score > threshold) {
-      results[minIdx] = c;
+    } else if (score > threshold) {
+      RESULT_IDX[minIdx] = -k - 1;
+      RESULT_SCORE[minIdx] = score;
       minIdx = 0;
       for (let i = 1; i < TOP_K; i++) {
-        if (results[i].score < results[minIdx].score) {
+        if (RESULT_SCORE[i] < RESULT_SCORE[minIdx]) {
           minIdx = i;
         }
       }
-      threshold = results[minIdx].score;
+      threshold = RESULT_SCORE[minIdx];
     }
   }
 
@@ -173,52 +180,42 @@ function topK(
     const terminalIndex = NODES[nodeOff + NODE_TERMINAL_INDEX];
 
     if (terminalIndex >= 0) {
-      const trigger = readPackedStringCached(
-        TERM_K_BLOB,
-        TERM_K_OFF,
-        TERM_K_CACHE,
-        terminalIndex
-      );
       const score = hasFrecent
-        ? effectiveScore(TERM_R[terminalIndex], frecent, trigger)
+        ? effectiveScore(
+            TERM_R[terminalIndex],
+            frecent,
+            readPackedStringCached(
+              TERM_K_BLOB,
+              TERM_K_OFF,
+              TERM_K_CACHE,
+              terminalIndex
+            )
+          )
         : TERM_R[terminalIndex];
       if (resultLen < TOP_K || score > threshold) {
-        const c: Candidate = {
-          trigger,
-          name: readPackedStringCached(
-            TERM_S_BLOB,
-            TERM_S_OFF,
-            TERM_S_CACHE,
-            terminalIndex
-          ),
-          domain: readPackedStringCached(
-            TERM_D_BLOB,
-            TERM_D_OFF,
-            TERM_D_CACHE,
-            terminalIndex
-          ),
-          score,
-        };
         if (resultLen < TOP_K) {
-          results[resultLen++] = c;
+          RESULT_IDX[resultLen] = terminalIndex;
+          RESULT_SCORE[resultLen] = score;
+          resultLen++;
           if (resultLen === TOP_K) {
             minIdx = 0;
             for (let i = 1; i < TOP_K; i++) {
-              if (results[i].score < results[minIdx].score) {
+              if (RESULT_SCORE[i] < RESULT_SCORE[minIdx]) {
                 minIdx = i;
               }
             }
-            threshold = results[minIdx].score;
+            threshold = RESULT_SCORE[minIdx];
           }
         } else {
-          results[minIdx] = c;
+          RESULT_IDX[minIdx] = terminalIndex;
+          RESULT_SCORE[minIdx] = score;
           minIdx = 0;
           for (let i = 1; i < TOP_K; i++) {
-            if (results[i].score < results[minIdx].score) {
+            if (RESULT_SCORE[i] < RESULT_SCORE[minIdx]) {
               minIdx = i;
             }
           }
-          threshold = results[minIdx].score;
+          threshold = RESULT_SCORE[minIdx];
         }
       }
     }
@@ -237,12 +234,49 @@ function topK(
     }
   }
 
-  results.length = resultLen;
-  results.sort((a, b) => b.score - a.score);
-  return results;
+  for (let i = 0; i < resultLen; i++) {
+    RESULT_ORDER[i] = i;
+  }
+  for (let i = 1; i < resultLen; i++) {
+    const pos = RESULT_ORDER[i];
+    const score = RESULT_SCORE[pos];
+    let j = i - 1;
+    while (j >= 0 && RESULT_SCORE[RESULT_ORDER[j]] < score) {
+      RESULT_ORDER[j + 1] = RESULT_ORDER[j];
+      j--;
+    }
+    RESULT_ORDER[j + 1] = pos;
+  }
+
+  const candidates = new Array<Candidate>(resultLen);
+  for (let i = 0; i < resultLen; i++) {
+    const pos = RESULT_ORDER[i];
+    const idx = RESULT_IDX[pos];
+    if (idx < 0) {
+      candidates[i] = customMatches[-idx - 1];
+      continue;
+    }
+    candidates[i] = {
+      trigger: readPackedStringCached(
+        TERM_K_BLOB,
+        TERM_K_OFF,
+        TERM_K_CACHE,
+        idx
+      ),
+      name: readPackedStringCached(TERM_S_BLOB, TERM_S_OFF, TERM_S_CACHE, idx),
+      domain: readPackedStringCached(
+        TERM_D_BLOB,
+        TERM_D_OFF,
+        TERM_D_CACHE,
+        idx
+      ),
+      score: RESULT_SCORE[pos],
+    };
+  }
+
+  return candidates;
 }
 
-// Profile hooks for section-4 microbreakdown in scripts/profile.ts.
 export function profileWalkPrefix(partial: string): [number, string] | null {
   return walkPrefix(partial);
 }
