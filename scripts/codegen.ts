@@ -478,13 +478,13 @@ function renderMinOpenAddress(packed: PackedMinData): string {
   let longestCluster = 0;
   let currentCluster = 0;
   for (let i = 0; i < hashSize * 2; i++) {
-    if (hashTable[i & hashMask] !== 0) {
+    if (hashTable[i & hashMask] === 0) {
+      currentCluster = 0;
+    } else {
       currentCluster++;
       if (currentCluster > longestCluster) {
         longestCluster = currentCluster;
       }
-    } else {
-      currentCluster = 0;
     }
   }
   const maxProbe = Math.min(hashSize, longestCluster + 1);
