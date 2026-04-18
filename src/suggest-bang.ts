@@ -173,7 +173,7 @@ function topK(
   frecent: Record<string, number>,
   customMatches: Candidate[],
   hasFrecent: boolean
-): Candidate[] {
+): number {
   let minIdx = -1;
   let threshold = -1;
   let resultLen = 0;
@@ -280,22 +280,7 @@ function topK(
     RESULT_ORDER[j + 1] = pos;
   }
 
-  const candidates = new Array<Candidate>(resultLen);
-  for (let i = 0; i < resultLen; i++) {
-    const pos = RESULT_ORDER[i];
-    const idx = RESULT_IDX[pos];
-    if (idx < 0) {
-      candidates[i] = customMatches[-idx - 1];
-      continue;
-    }
-    candidates[i] = {
-      trigger: "",
-      score: RESULT_SCORE[pos],
-      terminalIndex: idx,
-    };
-  }
-
-  return candidates;
+  return resultLen;
 }
 
 export function profileWalkPrefix(partial: string): [number, string] | null {
@@ -307,7 +292,7 @@ export function profileTopKCount(
   frecent: Record<string, number>,
   hasFrecent: boolean
 ): number {
-  return topK(subtree, frecent, [], hasFrecent).length;
+  return topK(subtree, frecent, [], hasFrecent);
 }
 
 export function responseFromCandidates(
@@ -337,6 +322,49 @@ export function responseFromCandidates(
       urls[i] = "";
       details[i] = EMPTY_DETAIL;
     }
+  }
+
+  return new Response(
+    JSON.stringify([
+      query,
+      completions,
+      descriptions,
+      urls,
+      { "google:suggestdetail": details },
+    ]),
+    JSON_HEADERS_INIT
+  );
+}
+
+function responseFromRanked(
+  query: string,
+  prefix: string,
+  customMatches: Candidate[],
+  resultLen: number
+): Response {
+  const prefixBang = `${prefix}!`;
+  const completions = new Array<string>(resultLen);
+  const descriptions = new Array<string>(resultLen);
+  const urls = new Array<string>(resultLen);
+  const details = new Array<Record<string, string>>(resultLen);
+
+  for (let i = 0; i < resultLen; i++) {
+    const pos = RESULT_ORDER[i];
+    const idx = RESULT_IDX[pos];
+    if (idx < 0) {
+      const custom = customMatches[-idx - 1];
+      completions[i] = `${prefixBang}${custom.trigger}`;
+      descriptions[i] = "";
+      urls[i] = "";
+      details[i] = EMPTY_DETAIL;
+      continue;
+    }
+
+    completions[i] = `${prefixBang}${readTerminalTrigger(idx)}`;
+    const meta = readTerminalMeta(idx);
+    descriptions[i] = meta.label;
+    urls[i] = meta.url;
+    details[i] = meta.detail;
   }
 
   return new Response(
@@ -392,6 +420,6 @@ export function bangSuggestions(
   }
 
   const [subtree] = result;
-  const candidates = topK(subtree, frecent, customMatches, hasFrecent);
-  return responseFromCandidates(query, prefix, candidates);
+  const resultLen = topK(subtree, frecent, customMatches, hasFrecent);
+  return responseFromRanked(query, prefix, customMatches, resultLen);
 }
