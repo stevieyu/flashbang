@@ -19,11 +19,12 @@ import {
 } from "./shared/constants";
 
 interface Candidate {
+  terminalIndex: number;
   trigger: string;
-  name: string;
-  domain: string;
   score: number;
 }
+
+const JSON_HEADERS_INIT = { headers: JSON_HEADERS };
 
 const NODE_EDGE_START = 0;
 const NODE_EDGE_COUNT = 1;
@@ -39,6 +40,13 @@ const EDGE_STRIDE = 3;
 const TERM_K_CACHE = new Array<string | undefined>(TERM_R.length);
 const TERM_S_CACHE = new Array<string | undefined>(TERM_R.length);
 const TERM_D_CACHE = new Array<string | undefined>(TERM_R.length);
+const EMPTY_DETAIL: Record<string, string> = {};
+interface TerminalMeta {
+  detail: Record<string, string>;
+  label: string;
+  url: string;
+}
+const TERM_META_CACHE = new Array<TerminalMeta | undefined>(TERM_R.length);
 
 function readPackedStringCached(
   blob: string,
@@ -53,6 +61,35 @@ function readPackedStringCached(
   const value = blob.slice(offsets[index], offsets[index + 1]);
   cache[index] = value;
   return value;
+}
+
+function readTerminalTrigger(index: number): string {
+  return readPackedStringCached(TERM_K_BLOB, TERM_K_OFF, TERM_K_CACHE, index);
+}
+
+function readTerminalName(index: number): string {
+  return readPackedStringCached(TERM_S_BLOB, TERM_S_OFF, TERM_S_CACHE, index);
+}
+
+function readTerminalDomain(index: number): string {
+  return readPackedStringCached(TERM_D_BLOB, TERM_D_OFF, TERM_D_CACHE, index);
+}
+
+function readTerminalMeta(index: number): TerminalMeta {
+  const cached = TERM_META_CACHE[index];
+  if (cached !== undefined) {
+    return cached;
+  }
+  const domain = readTerminalDomain(index);
+  const label = `${readTerminalName(index)} \u2014 ${domain}`;
+  const url = `https://${domain}`;
+  const meta = {
+    label,
+    url,
+    detail: { a: label, i: `${url}/favicon.ico` },
+  };
+  TERM_META_CACHE[index] = meta;
+  return meta;
 }
 
 function effectiveScore(
@@ -184,12 +221,7 @@ function topK(
         ? effectiveScore(
             TERM_R[terminalIndex],
             frecent,
-            readPackedStringCached(
-              TERM_K_BLOB,
-              TERM_K_OFF,
-              TERM_K_CACHE,
-              terminalIndex
-            )
+            readTerminalTrigger(terminalIndex)
           )
         : TERM_R[terminalIndex];
       if (resultLen < TOP_K || score > threshold) {
@@ -257,20 +289,9 @@ function topK(
       continue;
     }
     candidates[i] = {
-      trigger: readPackedStringCached(
-        TERM_K_BLOB,
-        TERM_K_OFF,
-        TERM_K_CACHE,
-        idx
-      ),
-      name: readPackedStringCached(TERM_S_BLOB, TERM_S_OFF, TERM_S_CACHE, idx),
-      domain: readPackedStringCached(
-        TERM_D_BLOB,
-        TERM_D_OFF,
-        TERM_D_CACHE,
-        idx
-      ),
+      trigger: "",
       score: RESULT_SCORE[pos],
+      terminalIndex: idx,
     };
   }
 
@@ -295,6 +316,7 @@ export function responseFromCandidates(
   candidates: Candidate[]
 ): Response {
   const len = candidates.length;
+  const prefixBang = `${prefix}!`;
   const completions = new Array<string>(len);
   const descriptions = new Array<string>(len);
   const urls = new Array<string>(len);
@@ -302,17 +324,18 @@ export function responseFromCandidates(
 
   for (let i = 0; i < len; i++) {
     const c = candidates[i];
-    completions[i] = `${prefix}!${c.trigger}`;
-    if (c.domain) {
-      const label = `${c.name} \u2014 ${c.domain}`;
-      const base = `https://${c.domain}`;
-      descriptions[i] = label;
-      urls[i] = base;
-      details[i] = { a: label, i: `${base}/favicon.ico` };
+    if (c.terminalIndex >= 0) {
+      const terminalIndex = c.terminalIndex;
+      completions[i] = `${prefixBang}${readTerminalTrigger(terminalIndex)}`;
+      const meta = readTerminalMeta(terminalIndex);
+      descriptions[i] = meta.label;
+      urls[i] = meta.url;
+      details[i] = meta.detail;
     } else {
+      completions[i] = `${prefixBang}${c.trigger}`;
       descriptions[i] = "";
       urls[i] = "";
-      details[i] = {};
+      details[i] = EMPTY_DETAIL;
     }
   }
 
@@ -324,7 +347,7 @@ export function responseFromCandidates(
       urls,
       { "google:suggestdetail": details },
     ]),
-    { headers: JSON_HEADERS }
+    JSON_HEADERS_INIT
   );
 }
 
@@ -351,18 +374,15 @@ export function bangSuggestions(
       continue;
     }
     customMatches.push({
+      terminalIndex: -1,
       trigger,
-      name: "",
-      domain: "",
       score: hasFrecent ? effectiveScore(0, frecent, trigger) : 0,
     });
   }
 
   if (!result) {
     if (customMatches.length === 0) {
-      return new Response(JSON.stringify([query, []]), {
-        headers: JSON_HEADERS,
-      });
+      return new Response(JSON.stringify([query, []]), JSON_HEADERS_INIT);
     }
     customMatches.sort((a, b) => b.score - a.score);
     if (customMatches.length > TOP_K) {

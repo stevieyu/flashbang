@@ -95,7 +95,7 @@ await ensureGeneratedBangData(true);
 
 const [
   { BANG_COUNT, lookupBang },
-  { EDGES, LABELS, NODES, ROOT },
+  { EDGES, LABELS, NODES, ROOT, TERM_K_BLOB, TERM_K_OFF },
   { handleSuggestRequest },
   {
     bangSuggestions,
@@ -128,6 +128,15 @@ const EDGE_LABEL_START = 0;
 const EDGE_LABEL_LENGTH = 1;
 const EDGE_CHILD_INDEX = 2;
 const EDGE_STRIDE = 3;
+
+function terminalIndexFor(trigger: string): number {
+  for (let i = 0; i < TERM_K_OFF.length - 1; i++) {
+    if (TERM_K_BLOB.slice(TERM_K_OFF[i], TERM_K_OFF[i + 1]) === trigger) {
+      return i;
+    }
+  }
+  throw new Error(`Missing terminal index in profile data for !${trigger}`);
+}
 
 const RUNS = 12;
 const COLD_RUNS = 5;
@@ -524,27 +533,23 @@ separator("4b. SUGGEST JSON SERIALIZATION ONLY");
 
 const serializeCandidates = [
   {
-    trigger: "g",
-    name: "Google",
-    domain: "www.google.com",
+    trigger: "",
+    terminalIndex: terminalIndexFor("g"),
     score: 1000,
   },
   {
-    trigger: "gh",
-    name: 'GitHub "code"',
-    domain: "github.com",
+    trigger: "",
+    terminalIndex: terminalIndexFor("gh"),
     score: 500,
   },
   {
-    trigger: "yt",
-    name: "YouTube \\ videos",
-    domain: "www.youtube.com",
+    trigger: "",
+    terminalIndex: terminalIndexFor("yt"),
     score: 700,
   },
   {
     trigger: "local",
-    name: "Local custom",
-    domain: "",
+    terminalIndex: -1,
     score: 0,
   },
 ];

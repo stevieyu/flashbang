@@ -151,6 +151,19 @@ const TEST_BANGS: TestBang[] = [
 
 const TEST_TRIE = buildTestTrie(TEST_BANGS);
 
+function terminalIndexFor(trigger: string): number {
+  for (let i = 0; i < TEST_TRIE.TERM_K_OFF.length - 1; i++) {
+    const value = TEST_TRIE.TERM_K_BLOB.slice(
+      TEST_TRIE.TERM_K_OFF[i],
+      TEST_TRIE.TERM_K_OFF[i + 1]
+    );
+    if (value === trigger) {
+      return i;
+    }
+  }
+  throw new Error(`Missing terminal index for !${trigger}`);
+}
+
 mock.module("./generated/bangs-trie.js", () => TEST_TRIE);
 mock.module("../src/generated/bangs-trie.js", () => TEST_TRIE);
 
@@ -460,31 +473,29 @@ describe("readQueryParam", () => {
 describe("suggest JSON serialization", () => {
   test("matches legacy payload shape for escaped values", async () => {
     const query = 'line1\nline2 "quoted" \\ slash';
-    const prefix = "cats ";
+    const prefix = 'cats "';
     const candidates = [
       {
-        trigger: "gh",
-        name: 'Git "Hub" \\',
-        domain: "github.com",
+        trigger: "",
+        terminalIndex: terminalIndexFor("gh"),
         score: 42,
       },
       {
-        trigger: "local",
-        name: "emoji 🍕",
-        domain: "",
+        trigger: 'lo"cal\\slash',
+        terminalIndex: -1,
         score: 3,
       },
     ];
 
     const expected = [
       query,
-      ["cats !gh", "cats !local"],
-      ['Git "Hub" \\ \u2014 github.com', ""],
+      ['cats "!gh', 'cats "!lo"cal\\slash'],
+      ["GitHub \u2014 github.com", ""],
       ["https://github.com", ""],
       {
         "google:suggestdetail": [
           {
-            a: 'Git "Hub" \\ \u2014 github.com',
+            a: "GitHub \u2014 github.com",
             i: "https://github.com/favicon.ico",
           },
           {},
