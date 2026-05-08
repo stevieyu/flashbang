@@ -5,8 +5,6 @@ import {
   CH_2,
   CH_BSLASH,
   CH_EXCL,
-  CH_F,
-  CH_f,
   CH_PERCENT,
   CH_PLUS,
 } from "../shared/chars";
@@ -112,68 +110,51 @@ function findLastSpace(s: string, start: number, before: number): number {
   return -1;
 }
 
-function rawFixup(s: string, from: number, to: number): string {
-  const raw = from === 0 && to === s.length ? s : s.substring(from, to);
-  const plusPos = raw.indexOf("+");
-  if (plusPos === -1) {
-    if (raw.indexOf("%2F") === -1 && raw.indexOf("%2f") === -1) {
-      return raw;
-    }
-    const parts: string[] = [];
-    let seg = 0;
-    for (let i = 0; i < raw.length; i++) {
-      if (
-        raw.charCodeAt(i) === CH_PERCENT &&
-        i + 2 < raw.length &&
-        raw.charCodeAt(i + 1) === CH_2
-      ) {
-        const c2 = raw.charCodeAt(i + 2);
-        if (c2 === CH_F || c2 === CH_f) {
-          parts.push(raw.substring(seg, i), "/");
-          seg = i + 3;
-          i += 2;
-        }
-      }
-    }
-    parts.push(raw.substring(seg));
-    return parts.join("");
+function isQuerySafe(prefix: string): boolean {
+  const q = prefix.indexOf("?");
+  if (q === -1) {
+    return false;
   }
-  const hasSlash = raw.indexOf("%2F") !== -1 || raw.indexOf("%2f") !== -1;
-  const parts: string[] = [raw.substring(0, plusPos), "%20"];
-  let seg = plusPos + 1;
-  for (let i = seg; i < raw.length; i++) {
-    const c = raw.charCodeAt(i);
-    if (c === CH_PLUS) {
-      parts.push(raw.substring(seg, i), "%20");
-      seg = i + 1;
-    } else if (
-      hasSlash &&
-      c === CH_PERCENT &&
-      i + 2 < raw.length &&
-      raw.charCodeAt(i + 1) === CH_2
-    ) {
-      const c2 = raw.charCodeAt(i + 2);
-      if (c2 === CH_F || c2 === CH_f) {
-        parts.push(raw.substring(seg, i), "/");
-        seg = i + 3;
-        i += 2;
-      }
-    }
-  }
-  parts.push(raw.substring(seg));
-  return parts.join("");
+  const h = prefix.indexOf("#");
+  return h === -1 || q < h;
 }
 
-function fillParts(
-  parts: UrlParts,
+function fixupForPath(raw: string): string {
+  const hasPlus = raw.indexOf("+") !== -1;
+  const hasSlash = raw.indexOf("%2F") !== -1 || raw.indexOf("%2f") !== -1;
+  if (!(hasPlus || hasSlash)) {
+    return raw;
+  }
+  if (hasPlus && !hasSlash) {
+    return raw.replaceAll("+", "%20");
+  }
+  if (!hasPlus) {
+    return raw.replaceAll("%2F", "/").replaceAll("%2f", "/");
+  }
+  return raw
+    .replaceAll("+", "%20")
+    .replaceAll("%2F", "/")
+    .replaceAll("%2f", "/");
+}
+
+function buildUrl(
+  prefix: string,
+  suffix: string | null,
   s: string,
   termStart: number,
   termEnd: number
 ): string {
-  if (parts[1] === null) {
-    return parts[0];
+  if (suffix === null) {
+    return prefix;
   }
-  return parts[0] + rawFixup(s, termStart, termEnd) + parts[1];
+  const raw =
+    termStart === 0 && termEnd === s.length
+      ? s
+      : s.substring(termStart, termEnd);
+  if (isQuerySafe(prefix)) {
+    return prefix + raw + suffix;
+  }
+  return prefix + fixupForPath(raw) + suffix;
 }
 
 function luckyOrDefault(
@@ -183,7 +164,8 @@ function luckyOrDefault(
   termStart: number,
   termEnd: number
 ): string {
-  return fillParts(luckyUrl ?? defaultUrl, rawQuery, termStart, termEnd);
+  const parts = luckyUrl ?? defaultUrl;
+  return buildUrl(parts[0], parts[1], rawQuery, termStart, termEnd);
 }
 
 function originOfPrefix(prefix: string): string {
@@ -230,10 +212,7 @@ function resolveBangFill(
   if (!entry) {
     return null;
   }
-  if (entry[1] === null) {
-    return entry[0];
-  }
-  return entry[0] + rawFixup(rawQuery, termStart, termEnd) + entry[1];
+  return buildUrl(entry[0], entry[1], rawQuery, termStart, termEnd);
 }
 
 function resolveBangOrigin(
@@ -421,14 +400,20 @@ function resolveRaw(
     if (sp === -1 || sp + spLen >= end) {
       const origin = resolveBangOrigin(bang, custom);
       if (!origin) {
-        return [fillParts(defaultUrl, rawQuery, start, end), null];
+        return [
+          buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
+          null,
+        ];
       }
       return [origin, bang];
     }
 
     const filled = resolveBangFill(bang, custom, rawQuery, sp + spLen, end);
     if (filled === null) {
-      return [fillParts(defaultUrl, rawQuery, start, end), null];
+      return [
+        buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
+        null,
+      ];
     }
     return [filled, bang];
   }
@@ -448,7 +433,7 @@ function resolveRaw(
 
   const exclPacked = findExcl(rawQuery, start, end);
   if (exclPacked === -1) {
-    return [fillParts(defaultUrl, rawQuery, start, end), null];
+    return [buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end), null];
   }
   const exclPos = exclPacked >> 2;
   const exclCharWidth = exclPacked & 0b11;
@@ -481,7 +466,10 @@ function resolveRaw(
           return [filled, bang];
         }
       }
-      return [fillParts(defaultUrl, rawQuery, start, end), null];
+      return [
+        buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
+        null,
+      ];
     }
   }
 
@@ -493,7 +481,10 @@ function resolveRaw(
       if (origin) {
         return [origin, bang];
       }
-      return [fillParts(defaultUrl, rawQuery, start, end), null];
+      return [
+        buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
+        null,
+      ];
     }
   }
 
@@ -518,7 +509,10 @@ function resolveRaw(
         if (filled !== null) {
           return [filled, bang];
         }
-        return [fillParts(defaultUrl, rawQuery, start, end), null];
+        return [
+          buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
+          null,
+        ];
       }
     }
   }
@@ -546,12 +540,15 @@ function resolveRaw(
         if (filled !== null) {
           return [filled, bang];
         }
-        return [fillParts(defaultUrl, rawQuery, start, end), null];
+        return [
+          buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
+          null,
+        ];
       }
     }
   }
 
-  return [fillParts(defaultUrl, rawQuery, start, end), null];
+  return [buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end), null];
 }
 
 export function redirectRaw(
@@ -563,7 +560,31 @@ export function redirectRaw(
 }
 
 function encodeForRedirect(query: string): string {
-  return encodeURIComponent(query).replace(/%5C/g, "\\");
+  for (let i = 0; i < query.length; i++) {
+    const c = query.charCodeAt(i);
+    if (
+      c === 0x20 ||
+      c === 0x5c ||
+      (c >= 0x41 && c <= 0x5a) ||
+      (c >= 0x61 && c <= 0x7a) ||
+      (c >= 0x30 && c <= 0x39) ||
+      c === 0x21 ||
+      c === 0x27 ||
+      c === 0x28 ||
+      c === 0x29 ||
+      c === 0x2a ||
+      c === 0x2d ||
+      c === 0x2e ||
+      c === 0x5f ||
+      c === 0x7e
+    ) {
+      continue;
+    }
+    return encodeURIComponent(query)
+      .replaceAll("%5C", "\\")
+      .replaceAll("%20", "+");
+  }
+  return query.replaceAll(" ", "+");
 }
 
 export function redirectUrl(query: string, settings: RedirectSettings): string {

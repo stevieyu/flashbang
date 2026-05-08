@@ -134,7 +134,7 @@ describe("redirect — routing logic", () => {
   test("lucky + luckyUrl + term → lucky redirect", () => {
     const r = redirect("\\hello world", settings());
     expect(r.status).toBe(302);
-    expect(loc(r)).toBe("https://www.google.com/search?btnI&q=hello%20world");
+    expect(loc(r)).toBe("https://www.google.com/search?btnI&q=hello+world");
   });
 
   test("lucky without luckyUrl → falls through to default", () => {
@@ -155,7 +155,7 @@ describe("redirect — routing logic", () => {
   test('"!zzz cats" → unknown bang → default URL with full raw query', () => {
     const r = redirect("!zzz cats", settings());
     expect(r.status).toBe(302);
-    expect(loc(r)).toBe("https://www.google.com/search?q=!zzz%20cats");
+    expect(loc(r)).toBe("https://www.google.com/search?q=!zzz+cats");
   });
 
   test("empty term → origin extraction via new URL().origin", () => {
@@ -175,14 +175,14 @@ describe("redirect — routing logic", () => {
 });
 
 describe("encode — URL encoding", () => {
-  test("slashes preserved (not %2F)", () => {
+  test("query-param: %2F passed through", () => {
     const r = redirect("!g a/b/c", settings());
-    expect(loc(r)).toBe("https://www.google.com/search?q=a/b/c");
+    expect(loc(r)).toBe("https://www.google.com/search?q=a%2Fb%2Fc");
   });
 
-  test("spaces encoded as %20", () => {
+  test("query-param: + passed through", () => {
     const r = redirect("!g hello world", settings());
-    expect(loc(r)).toBe("https://www.google.com/search?q=hello%20world");
+    expect(loc(r)).toBe("https://www.google.com/search?q=hello+world");
   });
 
   test("special chars (& = ?) encoded", () => {
@@ -319,7 +319,7 @@ describe("redirectRaw — routing logic", () => {
   test("lucky + luckyUrl + term → lucky redirect", () => {
     const r = redirectRaw("\\hello+world", settings());
     expect(r.status).toBe(302);
-    expect(loc(r)).toBe("https://www.google.com/search?btnI&q=hello%20world");
+    expect(loc(r)).toBe("https://www.google.com/search?btnI&q=hello+world");
   });
 
   test("lucky without luckyUrl → falls through to default", () => {
@@ -340,7 +340,7 @@ describe("redirectRaw — routing logic", () => {
   test('"!zzz+cats" → unknown bang → default URL with full query', () => {
     const r = redirectRaw("!zzz+cats", settings());
     expect(r.status).toBe(302);
-    expect(loc(r)).toBe("https://www.google.com/search?q=!zzz%20cats");
+    expect(loc(r)).toBe("https://www.google.com/search?q=!zzz+cats");
   });
 
   test("empty term → origin extraction via new URL().origin", () => {
@@ -359,20 +359,20 @@ describe("redirectRaw — routing logic", () => {
   });
 });
 
-describe("redirectRaw — rawFixup encoding", () => {
-  test("+ converted to %20 in term", () => {
+describe("redirectRaw — query-param-safe encoding", () => {
+  test("query-param: + passed through", () => {
     const r = redirectRaw("!g+hello+world", settings());
-    expect(loc(r)).toBe("https://www.google.com/search?q=hello%20world");
+    expect(loc(r)).toBe("https://www.google.com/search?q=hello+world");
   });
 
-  test("%2F preserved as / in term", () => {
+  test("query-param: %2F passed through", () => {
     const r = redirectRaw("!g+a%2Fb%2Fc", settings());
-    expect(loc(r)).toBe("https://www.google.com/search?q=a/b/c");
+    expect(loc(r)).toBe("https://www.google.com/search?q=a%2Fb%2Fc");
   });
 
-  test("%2f (lowercase) preserved as / in term", () => {
+  test("query-param: %2f (lowercase) passed through", () => {
     const r = redirectRaw("!g+a%2fb", settings());
-    expect(loc(r)).toBe("https://www.google.com/search?q=a/b");
+    expect(loc(r)).toBe("https://www.google.com/search?q=a%2fb");
   });
 
   test("special chars stay percent-encoded", () => {
@@ -383,6 +383,44 @@ describe("redirectRaw — rawFixup encoding", () => {
   test("multi-byte encoded chars pass through", () => {
     const r = redirectRaw("!g+%E4%B8%AD%E6%96%87", settings());
     expect(loc(r)).toBe("https://www.google.com/search?q=%E4%B8%AD%E6%96%87");
+  });
+});
+
+describe("redirectRaw — path-based template fixup", () => {
+  const pathBang = { pathb: ["https://example.com/user/", ""] as UrlParts };
+  const fragBang = { fragb: ["https://example.com/#q=", ""] as UrlParts };
+
+  test("+ converted to %20 for path-based template", () => {
+    const r = redirectRaw("!pathb+hello+world", settings({ custom: pathBang }));
+    expect(loc(r)).toBe("https://example.com/user/hello%20world");
+  });
+
+  test("%2F converted to / for path-based template", () => {
+    const r = redirectRaw("!pathb+a%2Fb%2Fc", settings({ custom: pathBang }));
+    expect(loc(r)).toBe("https://example.com/user/a/b/c");
+  });
+
+  test("%2f (lowercase) converted to / for path-based template", () => {
+    const r = redirectRaw("!pathb+a%2fb", settings({ custom: pathBang }));
+    expect(loc(r)).toBe("https://example.com/user/a/b");
+  });
+
+  test("no fixup needed for path-based template without + or %2F", () => {
+    const r = redirectRaw("!pathb+username", settings({ custom: pathBang }));
+    expect(loc(r)).toBe("https://example.com/user/username");
+  });
+
+  test("mixed + and %2F fixup for path-based template", () => {
+    const r = redirectRaw(
+      "!pathb+hello+a%2Fb+world",
+      settings({ custom: pathBang })
+    );
+    expect(loc(r)).toBe("https://example.com/user/hello%20a/b%20world");
+  });
+
+  test("fragment-based template gets fixup", () => {
+    const r = redirectRaw("!fragb+hello+world", settings({ custom: fragBang }));
+    expect(loc(r)).toBe("https://example.com/#q=hello%20world");
   });
 });
 
