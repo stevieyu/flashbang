@@ -26,16 +26,16 @@ interface Candidate {
 
 const JSON_HEADERS_INIT = { headers: JSON_HEADERS };
 
-const NODE_EDGE_START = 0;
-const NODE_EDGE_COUNT = 1;
-const NODE_TERMINAL_INDEX = 2;
-const NODE_MAX_RELEVANCE = 3;
-const NODE_STRIDE = 4;
+export const NODE_EDGE_START = 0;
+export const NODE_EDGE_COUNT = 1;
+export const NODE_TERMINAL_INDEX = 2;
+export const NODE_MAX_RELEVANCE = 3;
+export const NODE_STRIDE = 4;
 
-const EDGE_LABEL_START = 0;
-const EDGE_LABEL_LENGTH = 1;
-const EDGE_CHILD_INDEX = 2;
-const EDGE_STRIDE = 3;
+export const EDGE_LABEL_START = 0;
+export const EDGE_LABEL_LENGTH = 1;
+export const EDGE_CHILD_INDEX = 2;
+export const EDGE_STRIDE = 3;
 
 const TERM_K_CACHE = new Array<string | undefined>(TERM_R.length);
 const TERM_S_CACHE = new Array<string | undefined>(TERM_R.length);

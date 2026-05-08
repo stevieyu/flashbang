@@ -1,24 +1,16 @@
 import { readPathname } from "../src/shared/raw-url";
+import {
+  EDGE_CHILD_INDEX,
+  EDGE_STRIDE,
+  NODE_EDGE_COUNT,
+  NODE_EDGE_START,
+  NODE_MAX_RELEVANCE,
+  NODE_STRIDE,
+  NODE_TERMINAL_INDEX,
+} from "../src/suggest-bang";
 import { ensureGeneratedBangData, GENERATED_BANG_DATA_FILES } from "./codegen";
 
 const [minPath, metaPath, triePath] = GENERATED_BANG_DATA_FILES;
-
-function median(arr: number[]): number {
-  const s = arr.slice().sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
-}
-
-function percentile(arr: number[], p: number): number {
-  const s = arr.slice().sort((a, b) => a - b);
-  const idx = (s.length - 1) * p;
-  const lo = Math.floor(idx);
-  const hi = Math.ceil(idx);
-  if (lo === hi) {
-    return s[lo];
-  }
-  const frac = idx - lo;
-  return s[lo] * (1 - frac) + s[hi] * frac;
-}
 
 function mean(arr: number[]): number {
   if (arr.length === 0) {
@@ -29,6 +21,17 @@ function mean(arr: number[]): number {
     sum += n;
   }
   return sum / arr.length;
+}
+
+function pct(sorted: number[], p: number): number {
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) {
+    return sorted[lo];
+  }
+  const frac = idx - lo;
+  return sorted[lo] * (1 - frac) + sorted[hi] * frac;
 }
 
 interface RunStats {
@@ -51,9 +54,9 @@ function summarizeRuns(arr: number[]): RunStats {
   const stdev = arr.length > 0 ? Math.sqrt(variance / arr.length) : 0;
   const sorted = arr.slice().sort((a, b) => a - b);
   return {
-    p50: percentile(sorted, 0.5),
-    p90: percentile(sorted, 0.9),
-    p99: percentile(sorted, 0.99),
+    p50: pct(sorted, 0.5),
+    p90: pct(sorted, 0.9),
+    p99: pct(sorted, 0.99),
     min: sorted[0] ?? 0,
     max: sorted[sorted.length - 1] ?? 0,
     mean: avg,
@@ -81,21 +84,62 @@ function fmtBytes(b: number): string {
   return `${(b / (1024 * 1024)).toFixed(2)}MB`;
 }
 
+function fmtBytesExact(b: number): string {
+  return `${fmtBytes(b)} (${b.toLocaleString()}B)`;
+}
+
 function separator(title: string) {
   console.log(`\n${"=".repeat(70)}`);
   console.log(`  ${title}`);
   console.log("=".repeat(70));
 }
 
-function fmtBytesExact(b: number): string {
-  return `${fmtBytes(b)} (${b.toLocaleString()}B)`;
+const RUNS = 12;
+const COLD_RUNS = 5;
+
+function bench(
+  iters: number,
+  fn: (i: number, run: number) => void,
+  warmup = 10_000
+): RunStats {
+  for (let i = 0; i < warmup; i++) {
+    fn(i, -1);
+  }
+  const times: number[] = [];
+  for (let run = 0; run < RUNS; run++) {
+    const t0 = Bun.nanoseconds();
+    for (let i = 0; i < iters; i++) {
+      fn(i, run);
+    }
+    times.push((Bun.nanoseconds() - t0) / iters);
+  }
+  return summarizeRuns(times);
 }
+
+function benchTable<T extends { label: string }>(
+  items: T[],
+  iters: number,
+  fn: (item: T, i: number, run: number) => void,
+  labelWidth = 24
+): Map<string, RunStats> {
+  const results = new Map<string, RunStats>();
+  for (const item of items) {
+    const stats = bench(iters, (i, run) => fn(item, i, run));
+    results.set(item.label, stats);
+    console.log(
+      `  ${item.label.padEnd(labelWidth)} ${fmt(stats.p50).padStart(10)} ${fmt(stats.p90).padStart(10)}`
+    );
+  }
+  return results;
+}
+
+let sink = 0;
 
 await ensureGeneratedBangData(true);
 
 const [
   { BANG_COUNT, lookupBang },
-  { EDGES, LABELS, NODES, ROOT, TERM_K_BLOB, TERM_K_OFF },
+  { EDGES, NODES, ROOT, TERM_K_BLOB, TERM_K_OFF },
   { handleSuggestRequest },
   {
     bangSuggestions,
@@ -118,17 +162,6 @@ const [
   import("../src/generated/bangs-meta.js"),
 ]);
 
-const NODE_EDGE_START = 0;
-const NODE_EDGE_COUNT = 1;
-const NODE_TERMINAL_INDEX = 2;
-const NODE_MAX_RELEVANCE = 3;
-const NODE_STRIDE = 4;
-
-const EDGE_LABEL_START = 0;
-const EDGE_LABEL_LENGTH = 1;
-const EDGE_CHILD_INDEX = 2;
-const EDGE_STRIDE = 3;
-
 function terminalIndexFor(trigger: string): number {
   for (let i = 0; i < TERM_K_OFF.length - 1; i++) {
     if (TERM_K_BLOB.slice(TERM_K_OFF[i], TERM_K_OFF[i + 1]) === trigger) {
@@ -138,8 +171,17 @@ function terminalIndexFor(trigger: string): number {
   throw new Error(`Missing terminal index in profile data for !${trigger}`);
 }
 
-const RUNS = 12;
-const COLD_RUNS = 5;
+function countTerminals(node: number): number {
+  const nodeOff = node * NODE_STRIDE;
+  let c = NODES[nodeOff + NODE_TERMINAL_INDEX] >= 0 ? 1 : 0;
+  const edgeStart = NODES[nodeOff + NODE_EDGE_START];
+  const edgeCount = NODES[nodeOff + NODE_EDGE_COUNT];
+  for (let i = 0; i < edgeCount; i++) {
+    const edgeOff = (edgeStart + i) * EDGE_STRIDE;
+    c += countTerminals(EDGES[edgeOff + EDGE_CHILD_INDEX]);
+  }
+  return c;
+}
 
 console.log(
   `\nMethod: per-iteration means across ${RUNS} runs (p90/spread are run-level).`
@@ -147,10 +189,6 @@ console.log(
 console.log(
   "Low single-digit nanosecond results should be treated as directional only."
 );
-
-// ---------------------------------------------------------------------------
-// 1. FILE SIZES & DATA STATS
-// ---------------------------------------------------------------------------
 
 separator("1. DATA SIZE & STRUCTURE ANALYSIS");
 
@@ -175,10 +213,6 @@ console.log(`Total generated: ${fmtBytesExact(totalGeneratedBytes)}`);
 console.log(
   `Avg bytes per bang: ${Math.round(totalGeneratedBytes / BANG_COUNT).toLocaleString()}B`
 );
-
-// ---------------------------------------------------------------------------
-// 2. TRIE STRUCTURE ANALYSIS
-// ---------------------------------------------------------------------------
 
 separator("2. TRIE STRUCTURE ANALYSIS");
 
@@ -232,50 +266,6 @@ console.log(
   `  Max relevance: ${NODES[ROOT * NODE_STRIDE + NODE_MAX_RELEVANCE]}`
 );
 
-// ---------------------------------------------------------------------------
-// 3b. BANG LOOKUP — COLD VS WARM PATH
-// ---------------------------------------------------------------------------
-separator("3b. BANG LOOKUP — COLD VS WARM PATH");
-
-const allTriggers = Object.keys(BANGS as Record<string, unknown>);
-// allTriggers.length ≈ 14,314 — all real bang triggers
-
-// Cold pass: first-ever call for each trigger, nothing cached yet.
-// This is the proxy for "what does a fresh service worker pay on first use?"
-const coldT0 = Bun.nanoseconds();
-for (const tr of allTriggers) {
-  lookupBang(tr);
-}
-const coldNsPerLookup = (Bun.nanoseconds() - coldT0) / allTriggers.length;
-
-// Warm passes: cache is now fully populated; measure steady-state cost.
-const warmTimes: number[] = [];
-for (let run = 0; run < RUNS; run++) {
-  const t0 = Bun.nanoseconds();
-  for (const tr of allTriggers) {
-    lookupBang(tr);
-  }
-  warmTimes.push((Bun.nanoseconds() - t0) / allTriggers.length);
-}
-const warmStats = summarizeRuns(warmTimes);
-
-console.log(
-  `\nAll-triggers cold/warm (${allTriggers.length.toLocaleString()} triggers):`
-);
-console.log(`  Cold pass (1×):    ${fmt(coldNsPerLookup)}/lookup`);
-console.log(`  Warm p50 (${RUNS}×):  ${fmt(warmStats.p50)}/lookup`);
-console.log(`  Warm p90:          ${fmt(warmStats.p90)}/lookup`);
-console.log(
-  `  Cold/warm ratio:   ${(coldNsPerLookup / warmStats.p50).toFixed(1)}×`
-);
-console.log(
-  `  Run spread:        ${fmt(warmStats.min)}..${fmt(warmStats.max)} (cv ${warmStats.cvPct.toFixed(1)}%)`
-);
-
-// ---------------------------------------------------------------------------
-// 3. BANG LOOKUP PERFORMANCE
-// ---------------------------------------------------------------------------
-
 separator("3. BANG LOOKUP PERFORMANCE");
 
 const sampleHits = ["g", "gh", "yt", "w", "a", "ddg", "so", "mdn", "npm"];
@@ -289,126 +279,66 @@ const sampleMisses = [
 ];
 const allSamples = [...sampleHits, ...sampleMisses];
 
-for (let i = 0; i < 10_000; i++) {
-  for (const k of allSamples) {
-    void lookupBang(k);
-  }
-}
-
 const LOOKUP_ITERS = 1_000_000;
-const lookupBaselineTimes: number[] = [];
-const lookupTimes: number[] = [];
-const lookupHitCounts: number[] = [];
 
-for (let run = 0; run < RUNS; run++) {
-  const offset = run % allSamples.length;
+const lookupBaselineStats = bench(LOOKUP_ITERS, (i, run) => {
+  const offset = run === -1 ? 0 : run;
+  sink += allSamples[(i + offset) % allSamples.length].length;
+});
 
-  let t0 = Bun.nanoseconds();
-  let baselineLen = 0;
-  for (let i = 0; i < LOOKUP_ITERS; i++) {
-    baselineLen += allSamples[(i + offset) % allSamples.length].length;
+const lookupStats = bench(LOOKUP_ITERS, (i, run) => {
+  const offset = run === -1 ? 0 : run;
+  if (lookupBang(allSamples[(i + offset) % allSamples.length])) {
+    sink++;
   }
-  lookupBaselineTimes.push((Bun.nanoseconds() - t0) / LOOKUP_ITERS);
+});
 
-  t0 = Bun.nanoseconds();
-  let hitCount = 0;
-  for (let i = 0; i < LOOKUP_ITERS; i++) {
-    if (
-      lookupBang(allSamples[(i + offset + baselineLen) % allSamples.length])
-    ) {
-      hitCount++;
-    }
-  }
-  lookupHitCounts.push(hitCount);
-  const elapsed = Bun.nanoseconds() - t0;
-  lookupTimes.push(elapsed / LOOKUP_ITERS);
-}
-
-const lookupRawMedian = median(lookupTimes);
-const lookupBaselineMedian = median(lookupBaselineTimes);
-const lookupNetMedian = Math.max(0, lookupRawMedian - lookupBaselineMedian);
-const lookupHitRatioPct = (median(lookupHitCounts) / LOOKUP_ITERS) * 100;
-const lookupStats = summarizeRuns(lookupTimes);
+const lookupNetMedian = Math.max(0, lookupStats.p50 - lookupBaselineStats.p50);
 
 console.log("\nPacked lookup (lookupBang):");
 console.log(`  ${LOOKUP_ITERS.toLocaleString()} iterations × ${RUNS} runs`);
-console.log(`  Median (raw):      ${fmt(lookupRawMedian)}/lookup`);
+console.log(`  Median (raw):      ${fmt(lookupStats.p50)}/lookup`);
 console.log(`  p90 (run):         ${fmt(lookupStats.p90)}/lookup`);
-console.log(`  Loop baseline:     ${fmt(lookupBaselineMedian)}/iter`);
+console.log(`  Loop baseline:     ${fmt(lookupBaselineStats.p50)}/iter`);
 console.log(`  Estimated lookup:  ${fmt(lookupNetMedian)}/lookup`);
 console.log(
   `  Run spread:        ${fmt(lookupStats.min)}..${fmt(lookupStats.max)} (cv ${lookupStats.cvPct.toFixed(1)}%)`
 );
-console.log(`  Sample hit ratio:  ${lookupHitRatioPct.toFixed(1)}%`);
 
-// ---------------------------------------------------------------------------
-// 4. TRIE-BASED SUGGESTION PERFORMANCE
-// ---------------------------------------------------------------------------
+separator("3b. BANG LOOKUP — COLD VS WARM PATH");
+
+const allTriggers = Object.keys(BANGS as Record<string, unknown>);
+
+const coldT0 = Bun.nanoseconds();
+for (const tr of allTriggers) {
+  lookupBang(tr);
+}
+const coldNsPerLookup = (Bun.nanoseconds() - coldT0) / allTriggers.length;
+
+const warmTimes: number[] = [];
+for (let run = 0; run < RUNS; run++) {
+  const t0 = Bun.nanoseconds();
+  for (const tr of allTriggers) {
+    lookupBang(tr);
+  }
+  warmTimes.push((Bun.nanoseconds() - t0) / allTriggers.length);
+}
+const warmRunStats = summarizeRuns(warmTimes);
+
+console.log(
+  `\nAll-triggers cold/warm (${allTriggers.length.toLocaleString()} triggers):`
+);
+console.log(`  Cold pass (1×):    ${fmt(coldNsPerLookup)}/lookup`);
+console.log(`  Warm p50 (${RUNS}×):  ${fmt(warmRunStats.p50)}/lookup`);
+console.log(`  Warm p90:          ${fmt(warmRunStats.p90)}/lookup`);
+console.log(
+  `  Cold/warm ratio:   ${(coldNsPerLookup / warmRunStats.p50).toFixed(1)}×`
+);
+console.log(
+  `  Run spread:        ${fmt(warmRunStats.min)}..${fmt(warmRunStats.max)} (cv ${warmRunStats.cvPct.toFixed(1)}%)`
+);
 
 separator("4. TRIE-BASED SUGGESTION PERFORMANCE");
-
-function walkPrefix(partial: string): [number, string] | null {
-  let node = ROOT;
-  let pos = 0;
-
-  while (pos < partial.length) {
-    let found = false;
-    const nodeOff = node * NODE_STRIDE;
-    const edgeStart = NODES[nodeOff + NODE_EDGE_START];
-    const edgeCount = NODES[nodeOff + NODE_EDGE_COUNT];
-    for (let i = 0; i < edgeCount; i++) {
-      const edgeOff = (edgeStart + i) * EDGE_STRIDE;
-      const edgeLabelStart = EDGES[edgeOff + EDGE_LABEL_START];
-      const edgeLabelLen = EDGES[edgeOff + EDGE_LABEL_LENGTH];
-      const child = EDGES[edgeOff + EDGE_CHILD_INDEX];
-      const limit = Math.min(partial.length - pos, edgeLabelLen);
-      let match = 0;
-      while (
-        match < limit &&
-        partial.charCodeAt(pos + match) ===
-          LABELS.charCodeAt(edgeLabelStart + match)
-      ) {
-        match++;
-      }
-      if (match === 0) {
-        continue;
-      }
-      if (match < edgeLabelLen) {
-        if (match < partial.length - pos) {
-          return null;
-        }
-        return [
-          child,
-          LABELS.substring(
-            edgeLabelStart + match,
-            edgeLabelStart + edgeLabelLen
-          ),
-        ];
-      }
-      node = child;
-      pos += match;
-      found = true;
-      break;
-    }
-    if (!found) {
-      return null;
-    }
-  }
-
-  return [node, ""];
-}
-
-function countTerminals(node: number): number {
-  const nodeOff = node * NODE_STRIDE;
-  let c = NODES[nodeOff + NODE_TERMINAL_INDEX] >= 0 ? 1 : 0;
-  const edgeStart = NODES[nodeOff + NODE_EDGE_START];
-  const edgeCount = NODES[nodeOff + NODE_EDGE_COUNT];
-  for (let i = 0; i < edgeCount; i++) {
-    const edgeOff = (edgeStart + i) * EDGE_STRIDE;
-    c += countTerminals(EDGES[edgeOff + EDGE_CHILD_INDEX]);
-  }
-  return c;
-}
 
 const suggestPartials = ["g", "gh", "gi", "yt", "a", "s"];
 const SUGGEST_ITERS = 100_000;
@@ -416,24 +346,14 @@ const SUGGEST_PREFIX_ITERS = 20_000;
 const emptyFrecency: Record<string, number> = Object.create(null);
 const emptyCustom: string[] = [];
 
-// Warm up
-for (let i = 0; i < 1_000; i++) {
-  const p = suggestPartials[i % suggestPartials.length];
-  void bangSuggestions(`!${p}`, "", p, emptyFrecency, emptyCustom);
-}
-
-const trieSuggestTimes: number[] = [];
-for (let run = 0; run < RUNS; run++) {
-  const t0 = Bun.nanoseconds();
-  for (let i = 0; i < SUGGEST_ITERS; i++) {
+const trieSuggestRunStats = bench(
+  SUGGEST_ITERS,
+  (i) => {
     const p = suggestPartials[i % suggestPartials.length];
     void bangSuggestions(`!${p}`, "", p, emptyFrecency, emptyCustom);
-  }
-  const elapsed = Bun.nanoseconds() - t0;
-  trieSuggestTimes.push(elapsed / SUGGEST_ITERS);
-}
-
-const trieSuggestRunStats = summarizeRuns(trieSuggestTimes);
+  },
+  1_000
+);
 
 console.log("\nbangSuggestions() pipeline (production function):");
 console.log(`  ${SUGGEST_ITERS.toLocaleString()} iterations × ${RUNS} runs`);
@@ -446,52 +366,32 @@ console.log(
 
 const WALK_PREFIX_ITERS = 500_000;
 const TOPK_ONLY_ITERS = 500_000;
-const walkPrefixTimes: number[] = [];
-const topKOnlyTimes: number[] = [];
-let walkPrefixSink = 0;
-let topKSink = 0;
 
-for (let i = 0; i < 20_000; i++) {
-  const p = suggestPartials[i % suggestPartials.length];
-  const walked = profileWalkPrefix(p);
-  walkPrefixSink += walked ? walked[0] + walked[1].length : -1;
-}
-
-for (let run = 0; run < RUNS; run++) {
-  const t0 = Bun.nanoseconds();
-  for (let i = 0; i < WALK_PREFIX_ITERS; i++) {
-    const p = suggestPartials[(i + run) % suggestPartials.length];
+const walkPrefixStats = bench(
+  WALK_PREFIX_ITERS,
+  (i, run) => {
+    const offset = run === -1 ? 0 : run;
+    const p = suggestPartials[(i + offset) % suggestPartials.length];
     const walked = profileWalkPrefix(p);
-    walkPrefixSink += walked ? walked[0] + walked[1].length : -1;
-  }
-  walkPrefixTimes.push((Bun.nanoseconds() - t0) / WALK_PREFIX_ITERS);
-}
+    sink += walked ? walked[0] + walked[1].length : -1;
+  },
+  20_000
+);
 
 const topKSubtrees = suggestPartials
   .map((p) => profileWalkPrefix(p))
   .filter((v): v is [number, string] => v !== null)
   .map((v) => v[0]);
 
-for (let i = 0; i < 20_000; i++) {
-  const subtree = topKSubtrees[i % topKSubtrees.length];
-  topKSink += profileTopKCount(subtree, emptyFrecency, false);
-}
-
-for (let run = 0; run < RUNS; run++) {
-  const t0 = Bun.nanoseconds();
-  for (let i = 0; i < TOPK_ONLY_ITERS; i++) {
-    const subtree = topKSubtrees[(i + run) % topKSubtrees.length];
-    topKSink += profileTopKCount(subtree, emptyFrecency, false);
-  }
-  topKOnlyTimes.push((Bun.nanoseconds() - t0) / TOPK_ONLY_ITERS);
-}
-
-if (walkPrefixSink === -1 || topKSink === -1) {
-  console.log("");
-}
-
-const walkPrefixStats = summarizeRuns(walkPrefixTimes);
-const topKOnlyStats = summarizeRuns(topKOnlyTimes);
+const topKOnlyStats = bench(
+  TOPK_ONLY_ITERS,
+  (i, run) => {
+    const offset = run === -1 ? 0 : run;
+    const subtree = topKSubtrees[(i + offset) % topKSubtrees.length];
+    sink += profileTopKCount(subtree, emptyFrecency, false);
+  },
+  20_000
+);
 
 console.log("\n  Breakdown (isolated):");
 console.log(
@@ -501,82 +401,45 @@ console.log(
   `    topK only:       ${fmt(topKOnlyStats.p50)} median, ${fmt(topKOnlyStats.p90)} p90, ${fmt(topKOnlyStats.p99)} p99`
 );
 
-// Per-prefix breakdown
 console.log("\n  Per-prefix timings:");
 for (const p of suggestPartials) {
-  const times: number[] = [];
-  for (let run = 0; run < RUNS; run++) {
-    const t0 = Bun.nanoseconds();
-    for (let i = 0; i < SUGGEST_PREFIX_ITERS; i++) {
+  const prefixStats = bench(
+    SUGGEST_PREFIX_ITERS,
+    () => {
       void bangSuggestions(`!${p}`, "", p, emptyFrecency, emptyCustom);
-    }
-    const elapsed = Bun.nanoseconds() - t0;
-    times.push(elapsed / SUGGEST_PREFIX_ITERS);
-  }
+    },
+    1_000
+  );
 
-  const result = walkPrefix(p);
+  const result = profileWalkPrefix(p);
   const matchCount = result ? countTerminals(result[0]) : 0;
   const payloadBytes = (
     await bangSuggestions(`!${p}`, "", p, emptyFrecency, emptyCustom).text()
   ).length;
-  const prefixStats = summarizeRuns(times);
   console.log(
     `    "${p}": ${fmt(prefixStats.p50)} median, ${fmt(prefixStats.p90)} p90 (${matchCount} subtree matches, ${payloadBytes}B payload)`
   );
 }
 
-// ---------------------------------------------------------------------------
-// 4b. SUGGEST JSON SERIALIZATION ONLY
-// ---------------------------------------------------------------------------
-
 separator("4b. SUGGEST JSON SERIALIZATION ONLY");
 
 const serializeCandidates = [
-  {
-    trigger: "",
-    terminalIndex: terminalIndexFor("g"),
-    score: 1000,
-  },
-  {
-    trigger: "",
-    terminalIndex: terminalIndexFor("gh"),
-    score: 500,
-  },
-  {
-    trigger: "",
-    terminalIndex: terminalIndexFor("yt"),
-    score: 700,
-  },
-  {
-    trigger: "local",
-    terminalIndex: -1,
-    score: 0,
-  },
+  { trigger: "", terminalIndex: terminalIndexFor("g"), score: 1000 },
+  { trigger: "", terminalIndex: terminalIndexFor("gh"), score: 500 },
+  { trigger: "", terminalIndex: terminalIndexFor("yt"), score: 700 },
+  { trigger: "local", terminalIndex: -1, score: 0 },
 ];
 
 const SERIALIZE_ITERS = 1_000_000;
-const serializeTimes: number[] = [];
-let serializeSink = 0;
 
-for (let i = 0; i < 20_000; i++) {
-  const r = responseFromCandidates("cats", "", serializeCandidates);
-  serializeSink += r.status;
-}
+const serializeStats = bench(
+  SERIALIZE_ITERS,
+  () => {
+    sink += responseFromCandidates("cats", "", serializeCandidates).status;
+  },
+  20_000
+);
 
-for (let run = 0; run < RUNS; run++) {
-  const t0 = Bun.nanoseconds();
-  for (let i = 0; i < SERIALIZE_ITERS; i++) {
-    const r = responseFromCandidates("cats", "", serializeCandidates);
-    serializeSink += r.status;
-  }
-  serializeTimes.push((Bun.nanoseconds() - t0) / SERIALIZE_ITERS);
-}
-
-if (serializeSink === -1) {
-  console.log("");
-}
-
-const serializeStats = summarizeRuns(serializeTimes);
 console.log(
   `\nresponseFromCandidates() — ${SERIALIZE_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
 );
@@ -598,10 +461,6 @@ console.log(
   `\nDerived bangSuggestions rest: ${fmt(derivedRest)} (aggregate - walkPrefix - topK - responseFromCandidates)`
 );
 
-// ---------------------------------------------------------------------------
-// 5. REDIRECT PIPELINE PERFORMANCE
-// ---------------------------------------------------------------------------
-
 separator("5. FULL REDIRECT PIPELINE");
 
 const { redirectRaw, redirectUrl } = await import("../src/sw/redirect");
@@ -609,11 +468,10 @@ const { redirectRaw, redirectUrl } = await import("../src/sw/redirect");
 const settings = {
   defaultUrl: ["https://www.google.com/search?q=", ""] as const,
   luckyUrl: ["https://duckduckgo.com/?q=\\", ""] as const,
-  hasCustom: false,
-  custom: Object.create(null) as Record<
-    string,
-    readonly [string, string | null]
-  >,
+  hasCustom: true,
+  custom: {
+    tw: ["https://twitter.com/", ""] as readonly [string, string | null],
+  } as Record<string, readonly [string, string | null]>,
 };
 
 const queries = [
@@ -631,11 +489,6 @@ const queries = [
 ];
 
 const REDIRECT_ITERS = 500_000;
-const redirectStats = new Map<string, RunStats>();
-
-for (let i = 0; i < 10_000; i++) {
-  redirectRaw(queries[i % queries.length].raw, settings);
-}
 
 console.log(
   `\nredirectRaw() — ${REDIRECT_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
@@ -645,22 +498,14 @@ console.log(
 );
 console.log("-".repeat(46));
 
-for (const q of queries) {
-  const times: number[] = [];
-  for (let run = 0; run < RUNS; run++) {
-    const t0 = Bun.nanoseconds();
-    for (let i = 0; i < REDIRECT_ITERS; i++) {
-      redirectRaw(q.raw, settings);
-    }
-    const elapsed = Bun.nanoseconds() - t0;
-    times.push(elapsed / REDIRECT_ITERS);
-  }
-  const stats = summarizeRuns(times);
-  redirectStats.set(q.label, stats);
-  console.log(
-    `  ${q.label.padEnd(22)} ${fmt(stats.p50).padStart(10)} ${fmt(stats.p90).padStart(10)}`
-  );
-}
+const redirectStats = benchTable(
+  queries,
+  REDIRECT_ITERS,
+  (q) => {
+    redirectRaw(q.raw, settings);
+  },
+  22
+);
 
 const bangRedirect = redirectStats.get("Prefix bang");
 const nonBangRedirect = redirectStats.get("No bang (default)");
@@ -670,15 +515,10 @@ if (!(bangRedirect && nonBangRedirect)) {
   );
 }
 
-const redirectMixedTimes: number[] = [];
-for (let run = 0; run < RUNS; run++) {
-  const t0 = Bun.nanoseconds();
-  for (let i = 0; i < REDIRECT_ITERS; i++) {
-    redirectRaw(queries[(i + run) % queries.length].raw, settings);
-  }
-  redirectMixedTimes.push((Bun.nanoseconds() - t0) / REDIRECT_ITERS);
-}
-const redirectMixedStats = summarizeRuns(redirectMixedTimes);
+const redirectMixedStats = bench(REDIRECT_ITERS, (i, run) => {
+  const offset = run === -1 ? 0 : run;
+  redirectRaw(queries[(i + offset) % queries.length].raw, settings);
+});
 
 console.log(
   `\nMixed redirect workload (${queries.length} query shapes): ${fmt(redirectMixedStats.p50)} median, ${fmt(redirectMixedStats.p90)} p90`
@@ -692,55 +532,64 @@ const messageQueries = [
   "!zzzzz cats",
 ];
 const MESSAGE_ITERS = 500_000;
-const messageTimes: number[] = [];
-let messageSink = 0;
 
-for (let i = 0; i < 20_000; i++) {
-  const q = messageQueries[i % messageQueries.length];
-  messageSink += redirectUrl(q, settings).length;
-}
-
-for (let run = 0; run < RUNS; run++) {
-  const t0 = Bun.nanoseconds();
-  for (let i = 0; i < MESSAGE_ITERS; i++) {
-    const q = messageQueries[(i + run) % messageQueries.length];
-    messageSink += redirectUrl(q, settings).length;
-  }
-  messageTimes.push((Bun.nanoseconds() - t0) / MESSAGE_ITERS);
-}
-
-const messageStats = summarizeRuns(messageTimes);
-if (messageSink === -1) {
-  console.log("");
-}
+const messageStats = bench(
+  MESSAGE_ITERS,
+  (i, run) => {
+    const offset = run === -1 ? 0 : run;
+    sink += redirectUrl(
+      messageQueries[(i + offset) % messageQueries.length],
+      settings
+    ).length;
+  },
+  20_000
+);
 
 console.log(
   `SW message redirect path (redirectUrl): ${fmt(messageStats.p50)} median, ${fmt(messageStats.p90)} p90`
 );
 
-// ---------------------------------------------------------------------------
-// 6. SERVER ROUTE PATH PARSE PERFORMANCE
-// ---------------------------------------------------------------------------
+separator("5b. REDIRECT FIXUP ISOLATION");
+
+const fixupQueries = [
+  { label: "Query-safe: single word", raw: "!g+kittens" },
+  { label: "Query-safe: 3 spaces", raw: "!g+kittens+are+very+cute" },
+  { label: "Query-safe: 10 spaces", raw: "!g+a+b+c+d+e+f+g+h+i+j+k" },
+  { label: "Query-safe: %2F in term", raw: "!g+a%2Fb%2Fc" },
+  { label: "Query-safe: mixed +/%2F", raw: "!g+hello+a%2Fb+world" },
+  { label: "Path-based: single word", raw: "!tw+username" },
+  { label: "Path-based: 3 spaces", raw: "!tw+hello+beautiful+world" },
+  { label: "Path-based: %2F in term", raw: "!tw+a%2Fb%2Fc" },
+  { label: "Path-based: mixed +/%2F", raw: "!tw+hello+a%2Fb+world" },
+];
+
+const FIXUP_ITERS = 500_000;
+
+console.log(
+  `\nFixup isolation — ${FIXUP_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
+);
+console.log(
+  `${"Query type".padEnd(32)} ${"Median".padStart(10)} ${"p90".padStart(10)}`
+);
+console.log("-".repeat(54));
+
+benchTable(
+  fixupQueries,
+  FIXUP_ITERS,
+  (q) => {
+    redirectRaw(q.raw, settings);
+  },
+  30
+);
 
 separator("6. SERVER ROUTE PATH PARSE PERFORMANCE");
 
 const RAW_URL = "https://flashbang.local/suggest?q=%21g&sp=none#x";
 const PATH_ITERS = 500_000;
-const pathViaRawTimes: number[] = [];
 
-for (let i = 0; i < 10_000; i++) {
+const pathViaRawStats = bench(PATH_ITERS, () => {
   void readPathname(RAW_URL);
-}
-
-for (let run = 0; run < RUNS; run++) {
-  const t0 = Bun.nanoseconds();
-  for (let i = 0; i < PATH_ITERS; i++) {
-    void readPathname(RAW_URL);
-  }
-  pathViaRawTimes.push((Bun.nanoseconds() - t0) / PATH_ITERS);
-}
-
-const pathViaRawStats = summarizeRuns(pathViaRawTimes);
+});
 
 console.log(
   `\nPath parse benchmark — ${PATH_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
@@ -749,33 +598,20 @@ console.log(
   `  readPathname(url): ${fmt(pathViaRawStats.p50)} median, ${fmt(pathViaRawStats.p90)} p90`
 );
 
-// ---------------------------------------------------------------------------
-// 7. QUERY & COOKIE PARSING PERFORMANCE
-// ---------------------------------------------------------------------------
-
 separator("7. QUERY & COOKIE PARSING PERFORMANCE");
 
 const PARAM_URL =
   "https://flashbang.local/suggest?x=1&q=%21g%20kittens%20and%20cats&sp=none&src=prof#x";
 const PARAM_ITERS = 500_000;
-const queryParamTimes: number[] = [];
-let parseSink = 0;
 
-for (let i = 0; i < 20_000; i++) {
-  const [q, sp] = readTwoQueryParams(PARAM_URL, "q", "sp");
-  parseSink += (q?.length ?? 0) + (sp?.length ?? 0);
-}
-
-for (let run = 0; run < RUNS; run++) {
-  const t0 = Bun.nanoseconds();
-  for (let i = 0; i < PARAM_ITERS; i++) {
+const queryParamStats = bench(
+  PARAM_ITERS,
+  () => {
     const [q, sp] = readTwoQueryParams(PARAM_URL, "q", "sp");
-    parseSink += (q?.length ?? 0) + (sp?.length ?? 0);
-  }
-  queryParamTimes.push((Bun.nanoseconds() - t0) / PARAM_ITERS);
-}
-
-const queryParamStats = summarizeRuns(queryParamTimes);
+    sink += (q?.length ?? 0) + (sp?.length ?? 0);
+  },
+  20_000
+);
 
 console.log(
   `\nQuery param extraction — ${PARAM_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
@@ -783,10 +619,6 @@ console.log(
 console.log(
   `  readTwoQueryParams(q,sp): ${fmt(queryParamStats.p50)} median, ${fmt(queryParamStats.p90)} p90`
 );
-
-// ---------------------------------------------------------------------------
-// 7b. QUERY DECODER ISOLATION
-// ---------------------------------------------------------------------------
 
 separator("7b. QUERY DECODER ISOLATION");
 
@@ -805,22 +637,15 @@ console.log(
 );
 console.log("-".repeat(38));
 
-for (const input of decoderInputs) {
-  const url = `https://flashbang.local/suggest?q=${input.raw}`;
-  const times: number[] = [];
-  for (let run = 0; run < RUNS; run++) {
-    const t0 = Bun.nanoseconds();
-    for (let i = 0; i < DECODER_ITERS; i++) {
-      const parsed = readQueryParam(url, "q");
-      parseSink += parsed?.length ?? 0;
-    }
-    times.push((Bun.nanoseconds() - t0) / DECODER_ITERS);
-  }
-  const stats = summarizeRuns(times);
-  console.log(
-    `  ${input.label.padEnd(12)} ${fmt(stats.p50).padStart(10)} ${fmt(stats.p90).padStart(10)}`
-  );
-}
+benchTable(
+  decoderInputs,
+  DECODER_ITERS,
+  (input) => {
+    const url = `https://flashbang.local/suggest?q=${input.raw}`;
+    sink += readQueryParam(url, "q")?.length ?? 0;
+  },
+  12
+);
 
 const reqNoCookie = new Request("http://localhost/suggest?q=x");
 const reqLightCookie = new Request("http://localhost/suggest?q=x", {
@@ -838,87 +663,38 @@ const reqHeavyCookie = new Request("http://localhost/suggest?q=x", {
   },
 });
 const SETTINGS_PARSE_URL = "http://localhost/suggest?q=flashbang";
-
 const COOKIE_ITERS = 300_000;
-const cookieNoneTimes: number[] = [];
-const cookieLightTimes: number[] = [];
-const cookieHeavyTimes: number[] = [];
-const settingsFullContextTimes: number[] = [];
-const settingsPlainContextTimes: number[] = [];
 
-for (let i = 0; i < 10_000; i++) {
-  parseSink += parseCookie(reqNoCookie).provider.length;
-  parseSink += parseCookie(reqLightCookie).provider.length;
-  parseSink += parseCookie(reqHeavyCookie).provider.length;
-  parseSink += parseSettingsFromRawUrl(
+const cookieNoneStats = bench(COOKIE_ITERS, () => {
+  const s = parseCookie(reqNoCookie);
+  sink += s.provider.length + s.trigger.length + s.custom.length;
+});
+const cookieLightStats = bench(COOKIE_ITERS, () => {
+  const s = parseCookie(reqLightCookie);
+  sink += s.provider.length + s.trigger.length + s.custom.length;
+});
+const cookieHeavyStats = bench(COOKIE_ITERS, () => {
+  const s = parseCookie(reqHeavyCookie);
+  sink += s.provider.length + s.trigger.length + s.custom.length;
+});
+const settingsFullContextStats = bench(COOKIE_ITERS, () => {
+  const s = parseSettingsFromRawUrl(
     SETTINGS_PARSE_URL,
     reqHeavyCookie,
     "none",
     true
-  ).provider.length;
-  parseSink += parseSettingsFromRawUrl(
+  );
+  sink += s.provider.length + s.trigger.length + s.custom.length;
+});
+const settingsPlainContextStats = bench(COOKIE_ITERS, () => {
+  const s = parseSettingsFromRawUrl(
     SETTINGS_PARSE_URL,
     reqHeavyCookie,
     "none",
     false
-  ).provider.length;
-}
-
-for (let run = 0; run < RUNS; run++) {
-  let t0 = Bun.nanoseconds();
-  for (let i = 0; i < COOKIE_ITERS; i++) {
-    const s = parseCookie(reqNoCookie);
-    parseSink += s.provider.length + s.trigger.length + s.custom.length;
-  }
-  cookieNoneTimes.push((Bun.nanoseconds() - t0) / COOKIE_ITERS);
-
-  t0 = Bun.nanoseconds();
-  for (let i = 0; i < COOKIE_ITERS; i++) {
-    const s = parseCookie(reqLightCookie);
-    parseSink += s.provider.length + s.trigger.length + s.custom.length;
-  }
-  cookieLightTimes.push((Bun.nanoseconds() - t0) / COOKIE_ITERS);
-
-  t0 = Bun.nanoseconds();
-  for (let i = 0; i < COOKIE_ITERS; i++) {
-    const s = parseCookie(reqHeavyCookie);
-    parseSink += s.provider.length + s.trigger.length + s.custom.length;
-  }
-  cookieHeavyTimes.push((Bun.nanoseconds() - t0) / COOKIE_ITERS);
-
-  t0 = Bun.nanoseconds();
-  for (let i = 0; i < COOKIE_ITERS; i++) {
-    const s = parseSettingsFromRawUrl(
-      SETTINGS_PARSE_URL,
-      reqHeavyCookie,
-      "none",
-      true
-    );
-    parseSink += s.provider.length + s.trigger.length + s.custom.length;
-  }
-  settingsFullContextTimes.push((Bun.nanoseconds() - t0) / COOKIE_ITERS);
-
-  t0 = Bun.nanoseconds();
-  for (let i = 0; i < COOKIE_ITERS; i++) {
-    const s = parseSettingsFromRawUrl(
-      SETTINGS_PARSE_URL,
-      reqHeavyCookie,
-      "none",
-      false
-    );
-    parseSink += s.provider.length + s.trigger.length + s.custom.length;
-  }
-  settingsPlainContextTimes.push((Bun.nanoseconds() - t0) / COOKIE_ITERS);
-}
-
-const cookieNoneStats = summarizeRuns(cookieNoneTimes);
-const cookieLightStats = summarizeRuns(cookieLightTimes);
-const cookieHeavyStats = summarizeRuns(cookieHeavyTimes);
-const settingsFullContextStats = summarizeRuns(settingsFullContextTimes);
-const settingsPlainContextStats = summarizeRuns(settingsPlainContextTimes);
-if (parseSink === -1) {
-  console.log("");
-}
+  );
+  sink += s.provider.length + s.trigger.length + s.custom.length;
+});
 
 console.log(
   `\nCookie parsing — ${COOKIE_ITERS.toLocaleString()} iterations × ${RUNS} runs:`
@@ -939,10 +715,6 @@ console.log(
   `  parseSettings heavy (plain only context): ${fmt(settingsPlainContextStats.p50)} median, ${fmt(settingsPlainContextStats.p90)} p90`
 );
 
-// ---------------------------------------------------------------------------
-// 8. FRECENCY HOT-PATH PERFORMANCE
-// ---------------------------------------------------------------------------
-
 separator("8. FRECENCY HOT-PATH PERFORMANCE");
 
 const FRECENCY_ITERS = 200_000;
@@ -960,16 +732,11 @@ const FREQUENCY_TRIGGERS = [
 const FRECENCY_LIMIT = 8;
 
 const incrementalFrecencyTimes: number[] = [];
-let frecencySink = 0;
-
 for (let run = 0; run < RUNS; run++) {
   const incrementalCounts: Record<string, number> = {};
   for (let i = 0; i < 64; i++) {
-    const key = `seed-${i}`;
-    const value = ((i * 17) % 23) + 1;
-    incrementalCounts[key] = value;
+    incrementalCounts[`seed-${i}`] = ((i * 17) % 23) + 1;
   }
-
   const top = buildTopFrecency(incrementalCounts, FRECENCY_LIMIT);
   const t0 = Bun.nanoseconds();
   for (let i = 0; i < FRECENCY_ITERS; i++) {
@@ -977,13 +744,9 @@ for (let run = 0; run < RUNS; run++) {
     const next = (incrementalCounts[trigger] || 0) + 1;
     incrementalCounts[trigger] = next;
     updateTopFrecencyOnIncrement(top, trigger, next, FRECENCY_LIMIT);
-    frecencySink += JSON.stringify(top).length;
+    sink += JSON.stringify(top).length;
   }
   incrementalFrecencyTimes.push((Bun.nanoseconds() - t0) / FRECENCY_ITERS);
-}
-
-if (frecencySink === -1) {
-  console.log("");
 }
 
 const incrementalFrecencyStats = summarizeRuns(incrementalFrecencyTimes);
@@ -994,10 +757,6 @@ console.log(
 console.log(
   `  Incremental top-k update: ${fmt(incrementalFrecencyStats.p50)} median, ${fmt(incrementalFrecencyStats.p90)} p90`
 );
-
-// ---------------------------------------------------------------------------
-// 9. SUGGEST HANDLER PERFORMANCE
-// ---------------------------------------------------------------------------
 
 separator("9. SUGGEST HANDLER PERFORMANCE");
 
@@ -1066,10 +825,6 @@ console.log(
 console.log(
   `  Plain heavy-cookie:   ${fmt(handlerPlainHeavyStats.p50)} median, ${fmt(handlerPlainHeavyStats.p90)} p90, ${fmt(handlerPlainHeavyStats.p99)} p99`
 );
-
-// ---------------------------------------------------------------------------
-// 10. FIRST-HIT SUGGEST (ISOLATED PROCESS)
-// ---------------------------------------------------------------------------
 
 separator("10. FIRST-HIT SUGGEST (ISOLATED PROCESS)");
 
@@ -1152,10 +907,6 @@ console.log(
   `  spread ${fmt(warmThenBangStats.min)}..${fmt(warmThenBangStats.max)} (${COLD_RUNS} isolated runs)`
 );
 
-// ---------------------------------------------------------------------------
-// 11. MODULE PARSE/EVAL TIME
-// ---------------------------------------------------------------------------
-
 separator("11. MODULE PARSE/EVAL TIME");
 
 const minFile = await Bun.file(minPath).text();
@@ -1177,10 +928,8 @@ const evalMinTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
   const t0 = Bun.nanoseconds();
   new Function(minEvalCode)();
-  const elapsed = Bun.nanoseconds() - t0;
-  evalMinTimes.push(elapsed);
+  evalMinTimes.push(Bun.nanoseconds() - t0);
 }
-
 const evalMinStats = summarizeRuns(evalMinTimes);
 
 console.log(`\nbangs-min.js eval time (${fmtBytesExact(minBytes)}):`);
@@ -1195,10 +944,8 @@ const evalFullTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
   const t0 = Bun.nanoseconds();
   new Function(fullEvalCode)();
-  const elapsed = Bun.nanoseconds() - t0;
-  evalFullTimes.push(elapsed);
+  evalFullTimes.push(Bun.nanoseconds() - t0);
 }
-
 const evalFullStats = summarizeRuns(evalFullTimes);
 
 console.log(`\nbangs-meta.js eval time (${fmtBytesExact(metaBytes)}):`);
@@ -1213,10 +960,8 @@ const evalTrieTimes: number[] = [];
 for (let i = 0; i < EVAL_RUNS; i++) {
   const t0 = Bun.nanoseconds();
   new Function(trieEvalCode)();
-  const elapsed = Bun.nanoseconds() - t0;
-  evalTrieTimes.push(elapsed);
+  evalTrieTimes.push(Bun.nanoseconds() - t0);
 }
-
 const evalTrieStats = summarizeRuns(evalTrieTimes);
 
 console.log(`\nbangs-trie.js eval time (${fmtBytesExact(trieBytes)}):`);
@@ -1227,11 +972,11 @@ console.log(
   `  Spread: ${fmt(evalTrieStats.min)}..${fmt(evalTrieStats.max)} (cv ${evalTrieStats.cvPct.toFixed(1)}%)`
 );
 
-// ---------------------------------------------------------------------------
-// SUMMARY
-// ---------------------------------------------------------------------------
-
 separator("SUMMARY");
+
+if (sink === -Infinity) {
+  console.log("");
+}
 
 console.log(`
 ┌─────────────────────────────────────┬────────────┬──────────────┐
