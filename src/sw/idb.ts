@@ -65,7 +65,12 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
           settings.map((s) => [s.key, s.value])
         );
         const defaultBang = settingsMap["default-bang"] || "g";
-        const tpl = lookupBang(defaultBang);
+        let _h = 2166136261 >>> 0;
+        for (let i = 0; i < defaultBang.length; i++) {
+          _h ^= defaultBang.charCodeAt(i);
+          _h = Math.imul(_h, 16777619);
+        }
+        const tpl = lookupBang(defaultBang, _h >>> 0);
         const defaultUrl: UrlParts = tpl || splitUrl(DEFAULT_URL);
         const luckyProvider = settingsMap["lucky-provider"] ?? "default";
         let luckyUrl: UrlParts | null;

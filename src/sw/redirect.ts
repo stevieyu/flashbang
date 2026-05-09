@@ -295,9 +295,10 @@ function resolveBangFill(
   custom: Record<string, UrlParts>,
   rawQuery: string,
   termStart: number,
-  termEnd: number
+  termEnd: number,
+  hash: number
 ): string | null {
-  const entry = custom[bang] || lookupBang(bang);
+  const entry = custom[bang] || lookupBang(bang, hash);
   if (!entry) {
     return null;
   }
@@ -306,7 +307,8 @@ function resolveBangFill(
 
 function resolveBangOrigin(
   bang: string,
-  custom: Record<string, UrlParts>
+  custom: Record<string, UrlParts>,
+  hash: number
 ): string | null {
   const customEntry = custom[bang];
   if (customEntry) {
@@ -324,7 +326,7 @@ function resolveBangOrigin(
   if (builtIn !== undefined) {
     return builtIn;
   }
-  const entry = lookupBang(bang);
+  const entry = lookupBang(bang, hash);
   if (!entry) {
     return null;
   }
@@ -367,7 +369,8 @@ function getCustomDomainCache(
 
 function resolveSnapSiteFilter(
   bang: string,
-  custom: Record<string, UrlParts>
+  custom: Record<string, UrlParts>,
+  hash: number
 ): string | null {
   const customEntry = custom[bang];
   if (customEntry) {
@@ -388,7 +391,7 @@ function resolveSnapSiteFilter(
   if (cached !== undefined) {
     return cached;
   }
-  const entry = lookupBang(bang);
+  const entry = lookupBang(bang, hash);
   if (!entry) {
     return null;
   }
@@ -459,12 +462,24 @@ function findTrailingBareBang(
   return -1;
 }
 
-function toLowerIfNeeded(s: string, from: number, to: number): string {
+let _lastHash = 0;
+
+function extractTrigger(s: string, from: number, to: number): string {
+  let h = 2166136261 >>> 0;
+  let hasUpper = false;
   for (let i = from; i < to; i++) {
     const c = s.charCodeAt(i);
     if (c >= 65 && c <= 90) {
-      return s.slice(from, to).toLowerCase();
+      hasUpper = true;
+      h ^= c | 32;
+    } else {
+      h ^= c;
     }
+    h = Math.imul(h, 16777619);
+  }
+  _lastHash = h >>> 0;
+  if (hasUpper) {
+    return s.slice(from, to).toLowerCase();
   }
   return from === 0 && to === s.length ? s : s.substring(from, to);
 }
@@ -583,10 +598,10 @@ function resolveRaw(
     const sp = spPacked === -1 ? -1 : spPacked >> 2;
     const spLen = spPacked === -1 ? 0 : spPacked & 0b11;
     const bangEnd = sp === -1 ? end : sp;
-    const bang = toLowerIfNeeded(rawQuery, afterExcl, bangEnd);
+    const bang = extractTrigger(rawQuery, afterExcl, bangEnd);
 
     if (sp === -1 || sp + spLen >= end) {
-      const origin = resolveBangOrigin(bang, custom);
+      const origin = resolveBangOrigin(bang, custom, _lastHash);
       if (!origin) {
         return [
           buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
@@ -596,7 +611,7 @@ function resolveRaw(
       return [origin, bang];
     }
 
-    const filled = resolveBangFill(bang, custom, rawQuery, sp + spLen, end);
+    const filled = resolveBangFill(bang, custom, rawQuery, sp + spLen, end, _lastHash);
     if (filled === null) {
       return [
         buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
@@ -635,10 +650,10 @@ function resolveRaw(
     const sp = spPacked === -1 ? -1 : spPacked >> 2;
     const spLen = spPacked === -1 ? 0 : spPacked & 0b11;
     const triggerEnd = sp === -1 ? end : sp;
-    const trigger = toLowerIfNeeded(rawQuery, afterAt, triggerEnd);
+    const trigger = extractTrigger(rawQuery, afterAt, triggerEnd);
 
     if (sp === -1 || sp + spLen >= end) {
-      const origin = resolveBangOrigin(trigger, custom);
+      const origin = resolveBangOrigin(trigger, custom, _lastHash);
       if (!origin) {
         return [
           buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
@@ -648,7 +663,7 @@ function resolveRaw(
       return [origin, trigger];
     }
 
-    const siteFilter = resolveSnapSiteFilter(trigger, custom);
+    const siteFilter = resolveSnapSiteFilter(trigger, custom, _lastHash);
     if (!siteFilter) {
       return [
         buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
@@ -688,8 +703,8 @@ function resolveRaw(
           triggerStart < end &&
           findSpace(rawQuery, triggerStart, end) === -1
         ) {
-          const trigger = toLowerIfNeeded(rawQuery, triggerStart, end);
-          const siteFilter = resolveSnapSiteFilter(trigger, custom);
+          const trigger = extractTrigger(rawQuery, triggerStart, end);
+          const siteFilter = resolveSnapSiteFilter(trigger, custom, _lastHash);
           if (siteFilter) {
             return [
               buildSnapUrl(
@@ -725,15 +740,15 @@ function resolveRaw(
       spAfter = 3;
     }
     if (spAfter) {
-      const bang = toLowerIfNeeded(rawQuery, start, exclPos);
+      const bang = extractTrigger(rawQuery, start, exclPos);
       const termStart = afterExcl + spAfter;
       if (termStart >= end) {
-        const origin = resolveBangOrigin(bang, custom);
+        const origin = resolveBangOrigin(bang, custom, _lastHash);
         if (origin) {
           return [origin, bang];
         }
       } else {
-        const filled = resolveBangFill(bang, custom, rawQuery, termStart, end);
+        const filled = resolveBangFill(bang, custom, rawQuery, termStart, end, _lastHash);
         if (filled !== null) {
           return [filled, bang];
         }
@@ -748,8 +763,8 @@ function resolveRaw(
   // "g!"
   if (afterExcl >= end) {
     if (findSpace(rawQuery, start, end) === -1) {
-      const bang = toLowerIfNeeded(rawQuery, start, exclPos);
-      const origin = resolveBangOrigin(bang, custom);
+      const bang = extractTrigger(rawQuery, start, exclPos);
+      const origin = resolveBangOrigin(bang, custom, _lastHash);
       if (origin) {
         return [origin, bang];
       }
@@ -770,13 +785,14 @@ function resolveRaw(
       spaceBeforeBangPos + spaceBeforeBangWidth + suffixExclWidth;
     if (bangStart < end) {
       if (findSpace(rawQuery, bangStart, end) === -1) {
-        const bang = toLowerIfNeeded(rawQuery, bangStart, end);
+        const bang = extractTrigger(rawQuery, bangStart, end);
         const filled = resolveBangFill(
           bang,
           custom,
           rawQuery,
           start,
-          spaceBeforeBangPos
+          spaceBeforeBangPos,
+          _lastHash
         );
         if (filled !== null) {
           return [filled, bang];
@@ -801,13 +817,14 @@ function resolveRaw(
       const lastSpLen = lastSpPacked & 0b11;
       const suffixBangStart = lastSpPos + lastSpLen;
       if (suffixBangStart < bangExclEnd) {
-        const bang = toLowerIfNeeded(rawQuery, suffixBangStart, bangExclEnd);
+        const bang = extractTrigger(rawQuery, suffixBangStart, bangExclEnd);
         const filled = resolveBangFill(
           bang,
           custom,
           rawQuery,
           start,
-          lastSpPos
+          lastSpPos,
+          _lastHash
         );
         if (filled !== null) {
           return [filled, bang];

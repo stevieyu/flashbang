@@ -618,7 +618,7 @@ function renderMinOpenAddress(packed: PackedMinData): string {
   // Everything (decoders, blobs, offsets, id maps, caches) lives inside
   // an IIFE so V8 can GC the ~160KB of typed arrays once init is done.
   return (
-    "const{_TS,_TC,_HT,_HM,_MP}=(()=>{" +
+    "const{_TS,_TC,_HT,_HM}=(()=>{" +
     "function _b64bytes(s){if(typeof atob==='function'){const b=atob(s);const n=b.length;const o=new Uint8Array(n);for(let i=0;i<n;i++){o[i]=b.charCodeAt(i)}return o}if(typeof Buffer!=='undefined'){const b=Buffer.from(s,'base64');return new Uint8Array(b.buffer,b.byteOffset,b.byteLength)}throw new Error('No base64 decoder available')}" +
     "function _b64u8(s){return _b64bytes(s)}" +
     "function _b64u16(s){const b=_b64bytes(s);if((b.byteOffset&1)===0){return new Uint16Array(b.buffer,b.byteOffset,b.byteLength>>>1)}const c=new Uint8Array(b.byteLength);c.set(b);return new Uint16Array(c.buffer)}" +
@@ -636,17 +636,17 @@ function renderMinOpenAddress(packed: PackedMinData): string {
     `const _ES=_b64u16('${suffixIdsB64}');` +
     `const _HT=_b64u16('${hashTableB64}');` +
     `const _HM=${hashMask};` +
-    `const _MP=${maxProbe};` +
+    "" +
     `const _PC=new Array(${uniquePrefixes.length}).fill(null);` +
     `const _SC=new Array(${uniqueSuffixes.length}).fill(null);` +
     `const _TS=new Array(${entryCount});for(let _i=0;_i<${entryCount};_i++)_TS[_i]=_TB.substring(_TO[_i],_TO[_i+1]);` +
     "function _prefix(id){if(_PC[id]!==null){return _PC[id]}const s=_PB.substring(_PO[id],_PO[id+1]);_PC[id]=s;return s}" +
     "function _suffix(id){if(_SC[id]!==null){return _SC[id]}const s=_SB.substring(_SO[id],_SO[id+1]);_SC[id]=s;return s}" +
     `const _TC=new Array(${entryCount});for(let _i=0;_i<${entryCount};_i++){const _s=_ES[_i];_TC[_i]=_s===0?[_prefix(_EP[_i]),null]:[_prefix(_EP[_i]),_suffix(_s-1)]}` +
-    "return{_TS,_TC,_HT,_HM,_MP}" +
+    "return{_TS,_TC,_HT,_HM}" +
     "})();" +
     `export const BANG_COUNT=${entryCount};` +
-    "export function lookupBang(trigger){let h=2166136261>>>0;for(let i=0;i<trigger.length;i++){h^=trigger.charCodeAt(i);h=Math.imul(h,16777619)}let slot=(h>>>0)&_HM;for(let i=0;i<_MP;i++){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_TS[idx]===trigger){return _TC[idx]}slot=(slot+1)&_HM}return null}"
+    "export function lookupBang(trigger,h){let slot=(h>>>0)&_HM;for(;;){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_TS[idx]===trigger){return _TC[idx]}slot=(slot+1)&_HM}}"
   );
 }
 
@@ -1179,7 +1179,7 @@ async function writeGeneratedDeclarations(outDir: string): Promise<void> {
       `${outDir}/bangs-min.d.ts`,
       [
         "export declare const BANG_COUNT: number;",
-        "export declare function lookupBang(trigger: string): readonly [string, string | null] | null;",
+        "export declare function lookupBang(trigger: string, hash: number): readonly [string, string | null] | null;",
         "",
       ].join("\n")
     ),
