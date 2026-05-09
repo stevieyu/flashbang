@@ -64,7 +64,10 @@ export function setupCustomBangs(
       return;
     }
     try {
-      new URL(url.replace("{}", "test"));
+      const parsed = new URL(url.replace("{}", "test"));
+      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+        return;
+      }
     } catch {
       return;
     }

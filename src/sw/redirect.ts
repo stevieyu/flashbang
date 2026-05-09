@@ -13,6 +13,11 @@ import {
   CH_PLUS,
 } from "../shared/chars";
 
+// NOTE: pos + char-width packed into one int to skip tuple alloc:
+//   findExcl/findSpace:         (pos << 2) | width        → >> 2 for pos, & 0b11 for width
+//   findLastSpaceExcl/SpaceAt:  (pos << 4) | (sw << 2) | tw   → >> 4 pos, >> 2 & 0b11 sw, & 0b11 tw
+// width is 1 for literal char, 3 for percent-encoded (%21, %40, etc.)
+
 export type UrlParts = readonly [string, string | null];
 
 export interface RedirectSettings {

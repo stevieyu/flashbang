@@ -6,6 +6,7 @@ import {
   constants as zlibConstants,
 } from "node:zlib";
 import { $ } from "bun";
+import { hashFNV1a } from "../src/shared/hash";
 import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 
 interface Bang {
@@ -426,15 +427,6 @@ function dedupeStrings(values: readonly string[]): {
   return { ids, unique };
 }
 
-function hashFNV1a(s: string): number {
-  let h = 2166136261 >>> 0;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
 function toBase64U8(values: readonly number[]): string {
   return Buffer.from(Uint8Array.from(values)).toString("base64");
 }
@@ -603,7 +595,9 @@ function renderMinOpenAddress(packed: PackedMinData): string {
       }
     }
   }
-  const _maxProbe = Math.min(hashSize, longestCluster + 1);
+  console.log(
+    `  Hash table: size=${hashSize} load=${(entryCount / hashSize).toFixed(2)} longest_cluster=${longestCluster}`
+  );
 
   const triggerLensB64 =
     triggerLensKind === "u8"
@@ -615,7 +609,7 @@ function renderMinOpenAddress(packed: PackedMinData): string {
   const suffixIdsB64 = toBase64U16(suffixIdsPlusOne);
   const hashTableB64 = Buffer.from(hashTable.buffer).toString("base64");
 
-  // Everything (decoders, blobs, offsets, id maps, caches) lives inside
+  // NOTE: Everything (decoders, blobs, offsets, id maps, caches) lives inside
   // an IIFE so V8 can GC the ~160KB of typed arrays once init is done.
   return (
     "const{_TS,_TC,_HT,_HM}=(()=>{" +

@@ -10,6 +10,7 @@ import {
   parseFrecencyCompact,
   serializeFrecencyCompact,
 } from "../shared/frecency-serial";
+import { hashFNV1a } from "../shared/hash";
 import { idbWrap, openDB, resetDB } from "../shared/idb";
 import {
   buildTopFrecency,
@@ -65,12 +66,7 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
           settings.map((s) => [s.key, s.value])
         );
         const defaultBang = settingsMap["default-bang"] || "g";
-        let _h = 2166136261 >>> 0;
-        for (let i = 0; i < defaultBang.length; i++) {
-          _h ^= defaultBang.charCodeAt(i);
-          _h = Math.imul(_h, 16777619);
-        }
-        const tpl = lookupBang(defaultBang, _h >>> 0);
+        const tpl = lookupBang(defaultBang, hashFNV1a(defaultBang));
         const defaultUrl: UrlParts = tpl || splitUrl(DEFAULT_URL);
         const luckyProvider = settingsMap["lucky-provider"] ?? "default";
         let luckyUrl: UrlParts | null;
