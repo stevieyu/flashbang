@@ -4,7 +4,7 @@
 
 ![Flashbang](.github/images/landing.png)
 
-Turn your browser's address bar into a shortcut launcher. Type `!g kittens` to search Google, `!w dogs` for Wikipedia, `!gh react` for GitHub — over 14,000 shortcuts (called "bangs") that take you straight to the right site, instantly. No extra tabs, no round-trips, no waiting for a page to load.
+Turn your browser's address bar into a shortcut launcher. Type `!g kittens` to search Google, `!w dogs` for Wikipedia, `!gh react` for GitHub — over 14,000 shortcuts (called "bangs") that take you straight to the right site, instantly. No extra tabs, no round-trips, no waiting for a page to load. Or use **snaps** — type `@w quantum` to search your default engine restricted to Wikipedia, `@gh api` for GitHub-only results.
 
 Every other bang tool loads a full page before redirecting — adding hundreds of milliseconds — or routes through an edge server adding network latency. Flashbang skips the page entirely — a [Service Worker](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API) handles the redirect before your browser even starts rendering.
 
@@ -30,6 +30,7 @@ All three support bangs natively — but every query still round-trips through t
 - **Custom bangs** — Add your own bangs through the settings UI. They take priority over built-ins
 - **Search suggestions** — The only bang tool with bang-aware autocomplete in your browser's native address bar. Type `!y` and the browser itself suggests `!yt` (YouTube), `!ya` (Yandex), `!yf` (Yahoo Finance) — ranked by a combination of global popularity and your personal usage frequency. Regular queries return web search suggestions from Google, DuckDuckGo, Bing, Brave, or a custom provider. Both are unified through a single `/suggest` endpoint that plugs into your browser's built-in suggestion UI. **Rich suggestions** — Firefox and Firefox-based browsers (Zen, LibreWolf) display bang descriptions, site names, and favicons inline in the address bar dropdown via `google:suggestdetail`. Google proxy suggestions also pass through rich data (entity images, titles) when available. Chromium-based browsers do not support rich rendering for search-type suggestions from custom search engines — this is a Chrome limitation, not a Flashbang one
 - **Frecency** — The Service Worker tracks which bangs you use and how often, entirely in-memory for zero redirect overhead. Your most-used bangs are promoted in autocomplete suggestions so they surface first. Frecency data is persisted to IndexedDB across Service Worker restarts. This works automatically in Chromium-based browsers (Chrome, Edge, Arc) which send cookies with default search engine suggest requests. Firefox and Firefox-based browsers (Zen, LibreWolf) intentionally withhold cookies from suggest requests as a privacy measure, so suggestions use default popularity ranking in those browsers
+- **Snaps** — Type `@trigger query` to search your default engine with results restricted to that trigger's domain via `site:`. For example, `@w quantum` searches Google for `quantum site:en.wikipedia.org`. Works in prefix (`@w quantum`) and suffix (`quantum @w`) positions. A bare snap (`@w`) redirects to the trigger's homepage. Snaps reuse the same 14,000+ bang triggers — any bang can be used as a snap
 - **Feeling Lucky** — Prefix a query with `\`, or add a bare `!` before or after it, to skip the results page and jump straight to the first result. Works with Google's "I'm Feeling Lucky" when that's your default engine, falls back to DuckDuckGo's `\` redirect for others. Configurable per-engine or with a custom URL, or disable it entirely
 - **OpenSearch** — Browsers auto-discover Flashbang as a search engine via `/opensearch.xml`, including the suggestions endpoint. The XML is dynamically generated at request time using the current origin, so it works out of the box on any self-hosted domain or `localhost` — no hardcoded URLs to change
 
@@ -45,6 +46,18 @@ Flashbang supports 4 formats. All bangs are case-insensitive.
 | Suffix, bang first  | `g! kittens` | Google search for "kittens" |
 
 If the query is just a bang with no search term (e.g. `!g`), Flashbang redirects to the service's homepage.
+
+## Snap syntax
+
+Snaps use `@` instead of `!` to perform a **site-restricted search** — your query goes to your default search engine with `site:domain` appended. Any bang trigger works as a snap. All snaps are case-insensitive.
+
+| Format       | Example        | Result                                         |
+| ------------ | -------------- | ---------------------------------------------- |
+| Prefix snap  | `@w quantum`   | Default engine search for "quantum site:en.wikipedia.org" |
+| Suffix snap  | `quantum @w`   | Default engine search for "quantum site:en.wikipedia.org" |
+| Bare snap    | `@gh`          | Redirect to github.com homepage                |
+
+If a query contains both a bang (`!`) and a snap (`@`), the bang takes precedence. Unknown snap triggers fall back to a normal default search.
 
 ### Feeling Lucky
 
@@ -162,7 +175,7 @@ All settings are stored in IndexedDB locally on your device.
 
 ## How it works
 
-When you type `!gh react` in the address bar, the Service Worker intercepts the request before it reaches the network. It parses the bang trigger, looks it up in the bang map (checking custom bangs first, then built-ins), and responds with a 302 redirect. If no bang is found, your default search engine is used.
+When you type `!gh react` in the address bar, the Service Worker intercepts the request before it reaches the network. It parses the bang trigger, looks it up in the bang map (checking custom bangs first, then built-ins), and responds with a 302 redirect. Snaps (`@trigger`) work the same way — the Service Worker resolves the trigger's domain and redirects to your default search engine with `site:domain` appended. If no bang or snap is found, your default search engine is used.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for build pipeline and project structure details.
 
@@ -175,6 +188,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for build pipeline and project structure de
 | **Sources**                 | DDG + Kagi + custom                           | DDG                              | Kagi                             | DDG + Kagi                                             |
 | **Analytics**               | None†                                         | Plausible                        | None‡                            | Plausible+Vercel Analytics+Vercel Speed Insights       |
 | **Server required**         | No (redirects), yes (suggestions, OpenSearch) | No                               | No                               | Yes (Cloudflare Worker)                                |
+| **Snaps (site: search)**    | Yes (`@trigger`)                              | No                               | No                               | No                                                     |
 | **Feeling Lucky**           | Yes (configurable per-engine)                 | No                               | No                               | No                                                     |
 | **Search suggestions**      | Yes (bang autocomplete + configurable)        | No                               | No                               | No                                                     |
 | **OpenSearch**              | Yes (dynamic, self-host friendly)             | No                               | Yes                              | Yes                                                    |

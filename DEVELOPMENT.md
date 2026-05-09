@@ -40,8 +40,8 @@ flashbang/
 │   ├── ddg.json              # DuckDuckGo source (gitignored, fetched by codegen)
 │   └── kagi.json             # Kagi source (gitignored, fetched by codegen)
 ├── src/
-│   ├── suggest.ts            # Bang suggestions, search suggest proxy & cookie parsing
-│   ├── suggest-bang.ts        # Bang suggestion matching and scoring
+│   ├── suggest.ts            # Bang/snap suggestions, search suggest proxy & cookie parsing
+│   ├── suggest-bang.ts        # Bang/snap suggestion matching and scoring
 │   ├── opensearch.ts          # OpenSearch XML generation
 │   ├── server/
 │   │   ├── handlers.ts       # Production server request handlers
@@ -61,7 +61,7 @@ flashbang/
 │   │   └── *.d.ts             # TypeScript declarations for each generated .js file
 │   ├── sw/
 │   │   ├── sw.ts              # Service Worker lifecycle & fetch handler
-│   │   ├── redirect.ts        # Bang parsing & redirect logic (zero-copy raw + decoded paths)
+│   │   ├── redirect.ts        # Bang/snap parsing & redirect logic (zero-copy raw + decoded paths)
 │   │   ├── idb.ts             # IndexedDB access, settings cache & in-memory frecency
 │   │   └── frecency.ts        # Top-K frecency helpers used by SW
 │   └── ui/
@@ -99,8 +99,10 @@ bun run test:e2e   # run end-to-end tests (build + Playwright)
 
 Unit tests:
 
-- `tests/redirect.test.ts` — Bang parsing, routing logic, and URL encoding
-- `tests/suggest.test.ts` — Cookie parsing, bang suggestions, and provider proxying
+- `tests/redirect.test.ts` — Bang/snap parsing, routing logic, and URL encoding
+- `tests/redirect-perf.test.ts` — Redirect performance benchmarks
+- `tests/suggest.test.ts` — Cookie parsing, bang/snap suggestions, and provider proxying
+- `tests/codegen-transform.test.ts` — Codegen transformation and domain extraction
 - `tests/raw-url.test.ts` — Raw URL pathname and origin parsing
 - `tests/frecency.test.ts` — Top-K frecency ordering and serialization helpers
 - `tests/handlers.test.ts` — Server-side suggest handler behavior and cookie cleanup
