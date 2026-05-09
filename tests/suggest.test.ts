@@ -169,6 +169,7 @@ mock.module("../src/generated/bangs-trie.js", () => TEST_TRIE);
 
 const {
   parseCookie,
+  parsePartialBang,
   parseSettings,
   parseSettingsFromRawUrl,
   parseSettingsFromRawUrlWithCleanup,
@@ -960,5 +961,123 @@ describe("provider proxying — via suggest()", () => {
     const [query, completions] = await r.json();
     expect(query).toBe("cats");
     expect(completions).toEqual([]);
+  });
+});
+
+describe("parsePartialBang — snap detection", () => {
+  test('"@g" → prefix snap', () => {
+    const result = parsePartialBang("@g");
+    expect(result).toEqual({ prefix: "", partial: "g", isSnap: true });
+  });
+
+  test('"@gh" → prefix snap', () => {
+    const result = parsePartialBang("@gh");
+    expect(result).toEqual({ prefix: "", partial: "gh", isSnap: true });
+  });
+
+  test('"cats @g" → suffix snap', () => {
+    const result = parsePartialBang("cats @g");
+    expect(result).toEqual({ prefix: "cats ", partial: "g", isSnap: true });
+  });
+
+  test('"!g" → prefix bang, not snap', () => {
+    const result = parsePartialBang("!g");
+    expect(result).toEqual({ prefix: "", partial: "g", isSnap: undefined });
+  });
+
+  test('"cats !g" → suffix bang, not snap', () => {
+    const result = parsePartialBang("cats !g");
+    expect(result).toEqual({
+      prefix: "cats ",
+      partial: "g",
+      isSnap: undefined,
+    });
+  });
+
+  test('"@" → prefix snap with empty partial', () => {
+    const result = parsePartialBang("@");
+    expect(result).toEqual({ prefix: "", partial: "", isSnap: true });
+  });
+
+  test('"@g cats" → has space after trigger, returns null', () => {
+    expect(parsePartialBang("@g cats")).toBeNull();
+  });
+
+  test('"cats" → no trigger, returns null', () => {
+    expect(parsePartialBang("cats")).toBeNull();
+  });
+});
+
+describe("snap suggestions — via suggest()", () => {
+  test('"@gh" returns snap suggestions with @ prefix', async () => {
+    const r = await suggest("@gh", defaultSettings);
+    const [query, completions] = await r.json();
+    expect(query).toBe("@gh");
+    expect(completions.length).toBeGreaterThan(0);
+    for (const completion of completions) {
+      expect(completion.startsWith("@g")).toBe(true);
+    }
+  });
+
+  test('"@gh" completions use @ not !', async () => {
+    const r = await suggest("@gh", defaultSettings);
+    const [, completions] = await r.json();
+    for (const completion of completions) {
+      expect(completion.startsWith("@")).toBe(true);
+      expect(completion.startsWith("!")).toBe(false);
+    }
+  });
+
+  test('"cats @gh" keeps the leading query prefix with @ completions', async () => {
+    const r = await suggest("cats @gh", defaultSettings);
+    const [query, completions] = await r.json();
+    expect(query).toBe("cats @gh");
+    for (const completion of completions) {
+      expect(completion.startsWith("cats @")).toBe(true);
+    }
+  });
+
+  test('"@" → matches all keys, returns max TOP_K', async () => {
+    const r = await suggest("@", defaultSettings);
+    const [, completions] = await r.json();
+    expect(completions).toHaveLength(TOP_K);
+    for (const completion of completions) {
+      expect(completion.startsWith("@")).toBe(true);
+    }
+  });
+
+  test('"@zzz" → no matches, empty completions', async () => {
+    const r = await suggest("@zzz", defaultSettings);
+    const [, completions] = await r.json();
+    expect(completions).toEqual([]);
+  });
+
+  test("snap suggestions have same metadata structure as bang suggestions", async () => {
+    const r = await suggest("@gh", defaultSettings);
+    const data = await r.json();
+    const completions = data[1] as string[];
+    const descriptions = data[2] as string[];
+    const urls = data[3] as string[];
+    const details = data[4]["google:suggestdetail"] as Array<
+      Record<string, string>
+    >;
+    expect(descriptions).toHaveLength(completions.length);
+    expect(urls).toHaveLength(completions.length);
+    expect(details).toHaveLength(completions.length);
+  });
+});
+
+describe("snap JSON serialization", () => {
+  test("snap responseFromCandidates uses @ prefix", async () => {
+    const candidates = [
+      {
+        trigger: "",
+        terminalIndex: terminalIndexFor("gh"),
+        score: 42,
+      },
+    ];
+    const response = responseFromCandidates("@gh", "", candidates, "@");
+    const data = await response.json();
+    expect(data[1][0]).toBe("@gh");
   });
 });

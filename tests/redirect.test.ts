@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 
-mock.module("../generated/bangs-min.js", () => {
+mock.module("../src/generated/bangs-min.js", () => {
   const BANGS: Record<string, [string, string | null]> = Object.create(null);
   BANGS.g = ["https://www.google.com/search?q=", ""];
   BANGS.ddg = ["https://duckduckgo.com/?q=", ""];
@@ -29,6 +29,13 @@ import {
 
 function redirectRaw(rawQuery: string, settings: RedirectSettings): Response {
   return redirectRawTuple(rawQuery, settings)[0];
+}
+
+function redirectRawTrigger(
+  rawQuery: string,
+  settings: RedirectSettings
+): string | null {
+  return redirectRawTuple(rawQuery, settings)[1];
 }
 
 import type { UrlParts } from "../src/sw/redirect";
@@ -544,6 +551,226 @@ describe("redirectUrl ↔ redirect parity", () => {
     "!gh",
     "!zzz cats",
   ];
+
+  for (const query of queries) {
+    test(`"${query}" returns same Location as redirect()`, () => {
+      const s = settings();
+      expect(redirectUrl(query, s)).toBe(loc(redirect(query, s)));
+    });
+  }
+});
+
+// --- Snap (@) tests ---
+
+describe("snap — prefix @trigger patterns", () => {
+  test('"@w quantum" → default search with site:en.wikipedia.org', () => {
+    const r = redirect("@w quantum", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe(
+      "https://www.google.com/search?q=quantum+site:en.wikipedia.org"
+    );
+  });
+
+  test('"@gh api" → default search with site:github.com', () => {
+    const r = redirect("@gh api", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=api+site:github.com");
+  });
+
+  test('"@G CATS" → case-insensitive, site:google.com (www stripped)', () => {
+    const r = redirect("@G CATS", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=CATS+site:google.com");
+  });
+
+  test('"@yt music video" → site:youtube.com (www stripped)', () => {
+    const r = redirect("@yt music video", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe(
+      "https://www.google.com/search?q=music+video+site:youtube.com"
+    );
+  });
+
+  test('"@mdn array methods" → site:developer.mozilla.org, uses default URL not bang URL', () => {
+    const r = redirect("@mdn array methods", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe(
+      "https://www.google.com/search?q=array+methods+site:developer.mozilla.org"
+    );
+  });
+
+  test('"@w" → bare snap, no query → origin redirect', () => {
+    const r = redirect("@w", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://en.wikipedia.org");
+  });
+
+  test('"@g" → bare snap → google.com origin (www stripped from domain, but origin preserved)', () => {
+    const r = redirect("@g", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com");
+  });
+
+  test('"@zzz cats" → unknown trigger → default search', () => {
+    const r = redirect("@zzz cats", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=@zzz+cats");
+  });
+
+  test('"@ cats" → bare @ with space → default search', () => {
+    const r = redirect("@ cats", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=@+cats");
+  });
+
+  test('"@" → bare @ → home', () => {
+    const r = redirectRaw("@", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("/");
+  });
+});
+
+describe("snap — suffix query @trigger patterns", () => {
+  test('"headphones @w" → site:en.wikipedia.org', () => {
+    const r = redirect("headphones @w", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe(
+      "https://www.google.com/search?q=headphones+site:en.wikipedia.org"
+    );
+  });
+
+  test('"python async @gh" → site:github.com', () => {
+    const r = redirect("python async @gh", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe(
+      "https://www.google.com/search?q=python+async+site:github.com"
+    );
+  });
+
+  test('"headphones @zzz" → unknown trigger → default search', () => {
+    const r = redirect("headphones @zzz", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=headphones+@zzz");
+  });
+});
+
+describe("snap — raw URL-encoded patterns", () => {
+  test('"%40w+quantum" → same as @w quantum', () => {
+    const r = redirectRaw("%40w+quantum", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe(
+      "https://www.google.com/search?q=quantum+site:en.wikipedia.org"
+    );
+  });
+
+  test('"@w+quantum" → literal @, same result', () => {
+    const r = redirectRaw("@w+quantum", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe(
+      "https://www.google.com/search?q=quantum+site:en.wikipedia.org"
+    );
+  });
+
+  test('"headphones+%40w" → suffix snap with encoded @', () => {
+    const r = redirectRaw("headphones+%40w", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe(
+      "https://www.google.com/search?q=headphones+site:en.wikipedia.org"
+    );
+  });
+
+  test('"headphones+@w" → suffix snap with literal @', () => {
+    const r = redirectRaw("headphones+@w", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe(
+      "https://www.google.com/search?q=headphones+site:en.wikipedia.org"
+    );
+  });
+
+  test('"%40" → bare encoded @ → home', () => {
+    const r = redirectRaw("%40", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("/");
+  });
+
+  test('"%40w" → bare encoded snap → origin', () => {
+    const r = redirectRaw("%40w", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://en.wikipedia.org");
+  });
+});
+
+describe("snap — bang takes precedence over snap", () => {
+  test('"!g @w cats" → bang wins, searches google for @w cats', () => {
+    const r = redirect("!g @w cats", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=@w+cats");
+  });
+
+  test('"!g cats" still works as bang', () => {
+    const r = redirect("!g cats", settings());
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=cats");
+  });
+});
+
+describe("snap — custom bangs work as snaps", () => {
+  test('"@mysite test" → site:mysite.com with custom bang', () => {
+    const custom: Record<string, readonly [string, string | null]> =
+      Object.create(null);
+    custom.mysite = splitUrl("https://mysite.com/s?q={}");
+    const r = redirect("@mysite test", settings({ custom }));
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://www.google.com/search?q=test+site:mysite.com");
+  });
+
+  test('"@mysite" → bare snap with custom bang → origin', () => {
+    const custom: Record<string, readonly [string, string | null]> =
+      Object.create(null);
+    custom.mysite = splitUrl("https://mysite.com/s?q={}");
+    const r = redirect("@mysite", settings({ custom }));
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe("https://mysite.com");
+  });
+});
+
+describe("snap — frecency tracking", () => {
+  test('"@w quantum" returns trigger for frecency', () => {
+    const trigger = redirectRawTrigger("@w+quantum", settings());
+    expect(trigger).toBe("w");
+  });
+
+  test('"headphones+@gh" returns trigger for frecency', () => {
+    const trigger = redirectRawTrigger("headphones+@gh", settings());
+    expect(trigger).toBe("gh");
+  });
+
+  test('"@w" bare snap returns trigger for frecency', () => {
+    const trigger = redirectRawTrigger("@w", settings());
+    expect(trigger).toBe("w");
+  });
+
+  test('"@zzz+cats" unknown snap returns null trigger', () => {
+    const trigger = redirectRawTrigger("@zzz+cats", settings());
+    expect(trigger).toBeNull();
+  });
+});
+
+describe("snap — default URL with suffix", () => {
+  test("snap uses default URL suffix when present", () => {
+    const s = settings({
+      defaultUrl: ["https://search.example.com/q?s=", "&lang=en"],
+    });
+    const r = redirect("@w quantum", s);
+    expect(r.status).toBe(302);
+    expect(loc(r)).toBe(
+      "https://search.example.com/q?s=quantum+site:en.wikipedia.org&lang=en"
+    );
+  });
+});
+
+describe("snap — redirectUrl consistency", () => {
+  const queries = ["@w quantum", "@gh api", "@w", "@zzz cats", "cats @w"];
 
   for (const query of queries) {
     test(`"${query}" returns same Location as redirect()`, () => {

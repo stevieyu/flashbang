@@ -1,4 +1,5 @@
 import {
+  CH_AT,
   CH_CR,
   CH_EXCL,
   CH_FF,
@@ -35,6 +36,7 @@ export interface SuggestSettings
 export interface PartialBang {
   partial: string;
   prefix: string;
+  isSnap?: boolean;
 }
 
 function isTrimWs(code: number): boolean {
@@ -74,28 +76,37 @@ export function parsePartialBang(q: string): PartialBang | null {
     return null;
   }
 
-  if (q.charCodeAt(start) === CH_EXCL) {
-    for (let i = start; i < end; i++) {
+  const c0 = q.charCodeAt(start);
+
+  if (c0 === CH_EXCL || c0 === CH_AT) {
+    for (let i = start + 1; i < end; i++) {
       if (q.charCodeAt(i) === CH_SPACE) {
         return null;
       }
     }
-    return { prefix: "", partial: q.substring(start + 1, end).toLowerCase() };
+    return {
+      prefix: "",
+      partial: q.substring(start + 1, end).toLowerCase(),
+      isSnap: c0 === CH_AT || undefined,
+    };
   }
 
   for (let i = end - 2; i >= start; i--) {
-    if (q.charCodeAt(i) !== CH_SPACE || q.charCodeAt(i + 1) !== CH_EXCL) {
+    const ci = q.charCodeAt(i);
+    const ci1 = q.charCodeAt(i + 1);
+    if (ci !== CH_SPACE || (ci1 !== CH_EXCL && ci1 !== CH_AT)) {
       continue;
     }
-    const bangStart = i + 2;
-    for (let j = bangStart; j < end; j++) {
+    const triggerStart = i + 2;
+    for (let j = triggerStart; j < end; j++) {
       if (q.charCodeAt(j) === CH_SPACE) {
         return null;
       }
     }
     return {
       prefix: q.substring(start, i + 1),
-      partial: q.substring(bangStart, end).toLowerCase(),
+      partial: q.substring(triggerStart, end).toLowerCase(),
+      isSnap: ci1 === CH_AT || undefined,
     };
   }
 
@@ -277,7 +288,8 @@ export async function suggest(
       bang.prefix,
       bang.partial,
       settings.frecent,
-      settings.custom
+      settings.custom,
+      bang.isSnap
     );
   }
 

@@ -298,10 +298,11 @@ export function profileTopKCount(
 export function responseFromCandidates(
   query: string,
   prefix: string,
-  candidates: Candidate[]
+  candidates: Candidate[],
+  triggerChar = "!"
 ): Response {
   const len = candidates.length;
-  const prefixBang = `${prefix}!`;
+  const prefixBang = `${prefix}${triggerChar}`;
   const completions = new Array<string>(len);
   const descriptions = new Array<string>(len);
   const urls = new Array<string>(len);
@@ -340,9 +341,10 @@ function responseFromRanked(
   query: string,
   prefix: string,
   customMatches: Candidate[],
-  resultLen: number
+  resultLen: number,
+  triggerChar = "!"
 ): Response {
-  const prefixBang = `${prefix}!`;
+  const prefixBang = `${prefix}${triggerChar}`;
   const completions = new Array<string>(resultLen);
   const descriptions = new Array<string>(resultLen);
   const urls = new Array<string>(resultLen);
@@ -384,9 +386,11 @@ export function bangSuggestions(
   prefix: string,
   partial: string,
   frecent: Record<string, number>,
-  custom: string[]
+  custom: string[],
+  isSnap?: boolean
 ): Response {
   const result = walkPrefix(partial);
+  const triggerChar = isSnap ? "@" : "!";
   let hasFrecent = false;
   for (const _ in frecent) {
     hasFrecent = true;
@@ -416,10 +420,16 @@ export function bangSuggestions(
     if (customMatches.length > TOP_K) {
       customMatches.length = TOP_K;
     }
-    return responseFromCandidates(query, prefix, customMatches);
+    return responseFromCandidates(query, prefix, customMatches, triggerChar);
   }
 
   const [subtree] = result;
   const resultLen = topK(subtree, frecent, customMatches, hasFrecent);
-  return responseFromRanked(query, prefix, customMatches, resultLen);
+  return responseFromRanked(
+    query,
+    prefix,
+    customMatches,
+    resultLen,
+    triggerChar
+  );
 }

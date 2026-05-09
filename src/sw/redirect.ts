@@ -3,6 +3,8 @@ import {
   CH_0,
   CH_1,
   CH_2,
+  CH_4,
+  CH_AT,
   CH_BSLASH,
   CH_EXCL,
   CH_PERCENT,
@@ -22,6 +24,14 @@ function isEncodedExclAt(s: string, i: number): boolean {
     s.charCodeAt(i) === CH_PERCENT &&
     s.charCodeAt(i + 1) === CH_2 &&
     s.charCodeAt(i + 2) === CH_1
+  );
+}
+
+function isEncodedAtAt(s: string, i: number): boolean {
+  return (
+    s.charCodeAt(i) === CH_PERCENT &&
+    s.charCodeAt(i + 1) === CH_4 &&
+    s.charCodeAt(i + 2) === CH_0
   );
 }
 
@@ -87,6 +97,38 @@ function findLastSpaceExcl(s: string, start: number, end: number): number {
       s.charCodeAt(i - 1) === CH_0
     ) {
       return ((i - 3) << 4) | (3 << 2) | exclWidth;
+    }
+  }
+  return -1;
+}
+
+function findLastSpaceAt(s: string, start: number, end: number): number {
+  for (let i = end - 1; i >= start; i--) {
+    const c = s.charCodeAt(i);
+    let atWidth = 0;
+    if (c === CH_AT) {
+      atWidth = 1;
+    } else if (
+      c === CH_PERCENT &&
+      i + 2 < end &&
+      s.charCodeAt(i + 1) === CH_4 &&
+      s.charCodeAt(i + 2) === CH_0
+    ) {
+      atWidth = 3;
+    }
+    if (!atWidth) {
+      continue;
+    }
+    if (i >= start + 1 && s.charCodeAt(i - 1) === CH_PLUS) {
+      return ((i - 1) << 4) | (1 << 2) | atWidth;
+    }
+    if (
+      i >= start + 3 &&
+      s.charCodeAt(i - 3) === CH_PERCENT &&
+      s.charCodeAt(i - 2) === CH_2 &&
+      s.charCodeAt(i - 1) === CH_0
+    ) {
+      return ((i - 3) << 4) | (3 << 2) | atWidth;
     }
   }
   return -1;
@@ -244,6 +286,90 @@ function resolveBangOrigin(
   return origin;
 }
 
+function domainOfPrefix(prefix: string): string | null {
+  const protoEnd = prefix.indexOf("://");
+  if (protoEnd === -1) {
+    return null;
+  }
+  const hostStart = protoEnd + 3;
+  const pathStart = prefix.indexOf("/", hostStart);
+  const host =
+    pathStart === -1
+      ? prefix.substring(hostStart)
+      : prefix.substring(hostStart, pathStart);
+  return host.startsWith("www.") ? host.substring(4) : host;
+}
+
+const builtInDomainCache: Record<string, string> = Object.create(null);
+const customDomainCache = new WeakMap<
+  Record<string, UrlParts>,
+  Record<string, string>
+>();
+
+function getCustomDomainCache(
+  custom: Record<string, UrlParts>
+): Record<string, string> {
+  const existing = customDomainCache.get(custom);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const fresh: Record<string, string> = Object.create(null);
+  customDomainCache.set(custom, fresh);
+  return fresh;
+}
+
+function resolveSnapDomain(
+  bang: string,
+  custom: Record<string, UrlParts>
+): string | null {
+  const customEntry = custom[bang];
+  if (customEntry) {
+    const cached = getCustomDomainCache(custom);
+    const domain = cached[bang];
+    if (domain !== undefined) {
+      return domain;
+    }
+    const computed = domainOfPrefix(customEntry[0]);
+    if (computed) {
+      cached[bang] = computed;
+    }
+    return computed;
+  }
+
+  const builtIn = builtInDomainCache[bang];
+  if (builtIn !== undefined) {
+    return builtIn;
+  }
+  const entry = lookupBang(bang);
+  if (!entry) {
+    return null;
+  }
+  const domain = domainOfPrefix(entry[0]);
+  if (domain) {
+    builtInDomainCache[bang] = domain;
+  }
+  return domain;
+}
+
+function buildSnapUrl(
+  defaultUrl: UrlParts,
+  domain: string,
+  rawQuery: string,
+  termStart: number,
+  termEnd: number
+): string {
+  const prefix = defaultUrl[0];
+  const suffix = defaultUrl[1];
+  if (suffix === null) {
+    return prefix;
+  }
+  const raw =
+    termStart === 0 && termEnd === rawQuery.length
+      ? rawQuery
+      : rawQuery.substring(termStart, termEnd);
+  return `${prefix}${raw}+site:${domain}${suffix}`;
+}
+
 function findTrailingBareBang(
   s: string,
   start: number,
@@ -360,6 +486,18 @@ function resolveRaw(
     exclWidth = 3;
   }
 
+  let atStart = -1;
+  let atWidth = 0;
+  if (exclStart === -1) {
+    if (c0 === CH_AT) {
+      atStart = start;
+      atWidth = 1;
+    } else if (end - start >= 3 && isEncodedAtAt(rawQuery, start)) {
+      atStart = start;
+      atWidth = 3;
+    }
+  }
+
   if (exclStart !== -1) {
     const afterExcl = exclStart + exclWidth;
 
@@ -418,6 +556,61 @@ function resolveRaw(
     return [filled, bang];
   }
 
+  // "@trigger+query" or "@trigger" — prefix snap
+  if (atStart !== -1) {
+    const afterAt = atStart + atWidth;
+    if (afterAt >= end) {
+      return ["/", null];
+    }
+
+    const cAfterAt = rawQuery.charCodeAt(afterAt);
+    let atSpaceWidth = 0;
+    if (cAfterAt === CH_PLUS) {
+      atSpaceWidth = 1;
+    } else if (
+      cAfterAt === CH_PERCENT &&
+      rawQuery.charCodeAt(afterAt + 1) === CH_2 &&
+      rawQuery.charCodeAt(afterAt + 2) === CH_0
+    ) {
+      atSpaceWidth = 3;
+    }
+    if (atSpaceWidth) {
+      return [
+        buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
+        null,
+      ];
+    }
+
+    const spPacked = findSpace(rawQuery, afterAt, end);
+    const sp = spPacked === -1 ? -1 : spPacked >> 2;
+    const spLen = spPacked === -1 ? 0 : spPacked & 0b11;
+    const triggerEnd = sp === -1 ? end : sp;
+    const trigger = toLowerIfNeeded(rawQuery, afterAt, triggerEnd);
+
+    if (sp === -1 || sp + spLen >= end) {
+      const origin = resolveBangOrigin(trigger, custom);
+      if (!origin) {
+        return [
+          buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
+          null,
+        ];
+      }
+      return [origin, trigger];
+    }
+
+    const domain = resolveSnapDomain(trigger, custom);
+    if (!domain) {
+      return [
+        buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
+        null,
+      ];
+    }
+    return [
+      buildSnapUrl(defaultUrl, domain, rawQuery, sp + spLen, end),
+      trigger,
+    ];
+  }
+
   // "query+!" / "query%20!" / "query+%21" / "query%20%21" — trailing bare bang lucky
   const lastChar = rawQuery.charCodeAt(end - 1);
   const trailingTermEnd = findTrailingBareBang(rawQuery, start, end, lastChar);
@@ -433,6 +626,25 @@ function resolveRaw(
 
   const exclPacked = findExcl(rawQuery, start, end);
   if (exclPacked === -1) {
+    // "query+@trigger" — suffix snap
+    const snapPacked = findLastSpaceAt(rawQuery, start, end);
+    if (snapPacked !== -1) {
+      const spaceBeforeAtPos = snapPacked >> 4;
+      const spaceBeforeAtWidth = (snapPacked >> 2) & 0b11;
+      const suffixAtWidth = snapPacked & 0b11;
+      const triggerStart =
+        spaceBeforeAtPos + spaceBeforeAtWidth + suffixAtWidth;
+      if (triggerStart < end && findSpace(rawQuery, triggerStart, end) === -1) {
+        const trigger = toLowerIfNeeded(rawQuery, triggerStart, end);
+        const domain = resolveSnapDomain(trigger, custom);
+        if (domain) {
+          return [
+            buildSnapUrl(defaultUrl, domain, rawQuery, start, spaceBeforeAtPos),
+            trigger,
+          ];
+        }
+      }
+    }
     return [buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end), null];
   }
   const exclPos = exclPacked >> 2;
@@ -564,6 +776,7 @@ function encodeForRedirect(query: string): string {
     const c = query.charCodeAt(i);
     if (
       c === 0x20 ||
+      c === 0x40 ||
       c === 0x5c ||
       (c >= 0x41 && c <= 0x5a) ||
       (c >= 0x61 && c <= 0x7a) ||
