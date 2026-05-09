@@ -7,6 +7,8 @@ import {
   CH_AT,
   CH_BSLASH,
   CH_EXCL,
+  CH_F,
+  CH_f,
   CH_PERCENT,
   CH_PLUS,
 } from "../shared/chars";
@@ -181,12 +183,47 @@ function fixupForPath(raw: string): string {
     return raw.replaceAll("+", "%20");
   }
   if (!hasPlus) {
-    return raw.replaceAll("%2F", "/").replaceAll("%2f", "/");
+    const parts: string[] = [];
+    let seg = 0;
+    for (let i = 0; i < raw.length; i++) {
+      if (
+        raw.charCodeAt(i) === CH_PERCENT &&
+        i + 2 < raw.length &&
+        raw.charCodeAt(i + 1) === CH_2
+      ) {
+        const c2 = raw.charCodeAt(i + 2);
+        if (c2 === CH_F || c2 === CH_f) {
+          parts.push(raw.substring(seg, i), "/");
+          seg = i + 3;
+          i += 2;
+        }
+      }
+    }
+    parts.push(raw.substring(seg));
+    return parts.join("");
   }
-  return raw
-    .replaceAll("+", "%20")
-    .replaceAll("%2F", "/")
-    .replaceAll("%2f", "/");
+  const parts: string[] = [];
+  let seg = 0;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw.charCodeAt(i);
+    if (c === CH_PLUS) {
+      parts.push(raw.substring(seg, i), "%20");
+      seg = i + 1;
+    } else if (
+      c === CH_PERCENT &&
+      i + 2 < raw.length &&
+      raw.charCodeAt(i + 1) === CH_2
+    ) {
+      const c2 = raw.charCodeAt(i + 2);
+      if (c2 === CH_F || c2 === CH_f) {
+        parts.push(raw.substring(seg, i), "/");
+        seg = i + 3;
+        i += 2;
+      }
+    }
+  }
+  parts.push(raw.substring(seg));
+  return parts.join("");
 }
 
 function buildUrl(
