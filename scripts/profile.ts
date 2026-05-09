@@ -135,6 +135,15 @@ function benchTable<T extends { label: string }>(
 
 let sink = 0;
 
+function fnvHash(s: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
 await ensureGeneratedBangData(true);
 
 const [
@@ -288,7 +297,8 @@ const lookupBaselineStats = bench(LOOKUP_ITERS, (i, run) => {
 
 const lookupStats = bench(LOOKUP_ITERS, (i, run) => {
   const offset = run === -1 ? 0 : run;
-  if (lookupBang(allSamples[(i + offset) % allSamples.length])) {
+  const t = allSamples[(i + offset) % allSamples.length];
+  if (lookupBang(t, fnvHash(t))) {
     sink++;
   }
 });
@@ -311,7 +321,7 @@ const allTriggers = Object.keys(BANGS as Record<string, unknown>);
 
 const coldT0 = Bun.nanoseconds();
 for (const tr of allTriggers) {
-  lookupBang(tr);
+  lookupBang(tr, fnvHash(tr));
 }
 const coldNsPerLookup = (Bun.nanoseconds() - coldT0) / allTriggers.length;
 
@@ -319,7 +329,7 @@ const warmTimes: number[] = [];
 for (let run = 0; run < RUNS; run++) {
   const t0 = Bun.nanoseconds();
   for (const tr of allTriggers) {
-    lookupBang(tr);
+    lookupBang(tr, fnvHash(tr));
   }
   warmTimes.push((Bun.nanoseconds() - t0) / allTriggers.length);
 }
