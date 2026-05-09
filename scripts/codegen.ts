@@ -615,11 +615,9 @@ function renderMinOpenAddress(packed: PackedMinData): string {
   const suffixIdsB64 = toBase64U16(suffixIdsPlusOne);
   const hashTableB64 = Buffer.from(hashTable.buffer).toString("base64");
 
-  // _hash stays at module scope — needed by lookupBang at runtime.
-  // Everything else (decoders, blobs, offsets, id maps, caches) lives inside
+  // Everything (decoders, blobs, offsets, id maps, caches) lives inside
   // an IIFE so V8 can GC the ~160KB of typed arrays once init is done.
   return (
-    "function _hash(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)}return h>>>0}" +
     "const{_TS,_TC,_HT,_HM,_MP}=(()=>{" +
     "function _b64bytes(s){if(typeof atob==='function'){const b=atob(s);const n=b.length;const o=new Uint8Array(n);for(let i=0;i<n;i++){o[i]=b.charCodeAt(i)}return o}if(typeof Buffer!=='undefined'){const b=Buffer.from(s,'base64');return new Uint8Array(b.buffer,b.byteOffset,b.byteLength)}throw new Error('No base64 decoder available')}" +
     "function _b64u8(s){return _b64bytes(s)}" +
@@ -648,7 +646,7 @@ function renderMinOpenAddress(packed: PackedMinData): string {
     "return{_TS,_TC,_HT,_HM,_MP}" +
     "})();" +
     `export const BANG_COUNT=${entryCount};` +
-    "export function lookupBang(trigger){let slot=_hash(trigger)&_HM;for(let i=0;i<_MP;i++){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_TS[idx]===trigger){return _TC[idx]}slot=(slot+1)&_HM}return null}"
+    "export function lookupBang(trigger){let h=2166136261>>>0;for(let i=0;i<trigger.length;i++){h^=trigger.charCodeAt(i);h=Math.imul(h,16777619)}let slot=(h>>>0)&_HM;for(let i=0;i<_MP;i++){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_TS[idx]===trigger){return _TC[idx]}slot=(slot+1)&_HM}return null}"
   );
 }
 
