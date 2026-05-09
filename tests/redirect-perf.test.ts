@@ -56,4 +56,14 @@ describe("redirect performance regression", () => {
     const ms = benchRedirectRaw("!tw+hello+world");
     expect(ms).toBeLessThan(0.005);
   });
+
+  test("prefix snap redirect stays under 0.005ms", () => {
+    const ms = benchRedirectRaw("@g+kittens");
+    expect(ms).toBeLessThan(0.005);
+  });
+
+  test("suffix snap redirect stays under 0.005ms", () => {
+    const ms = benchRedirectRaw("kittens+@g");
+    expect(ms).toBeLessThan(0.005);
+  });
 });

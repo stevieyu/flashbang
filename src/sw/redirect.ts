@@ -35,21 +35,31 @@ function isEncodedAtAt(s: string, i: number): boolean {
   );
 }
 
+let _sawAt = false;
+
 function findExcl(s: string, start: number, end: number): number {
+  let sawAt = false;
   for (let i = start; i < end; i++) {
     const c = s.charCodeAt(i);
     if (c === CH_EXCL) {
+      _sawAt = sawAt;
       return (i << 2) | 1;
     }
-    if (
-      c === CH_PERCENT &&
-      i + 2 < end &&
-      s.charCodeAt(i + 1) === CH_2 &&
-      s.charCodeAt(i + 2) === CH_1
-    ) {
-      return (i << 2) | 3;
+    if (c === CH_AT) {
+      sawAt = true;
+    } else if (c === CH_PERCENT && i + 2 < end) {
+      const c1 = s.charCodeAt(i + 1);
+      const c2 = s.charCodeAt(i + 2);
+      if (c1 === CH_2 && c2 === CH_1) {
+        _sawAt = sawAt;
+        return (i << 2) | 3;
+      }
+      if (c1 === CH_4 && c2 === CH_0) {
+        sawAt = true;
+      }
     }
   }
+  _sawAt = sawAt;
   return -1;
 }
 
@@ -300,7 +310,7 @@ function domainOfPrefix(prefix: string): string | null {
   return host.startsWith("www.") ? host.substring(4) : host;
 }
 
-const builtInDomainCache: Record<string, string> = Object.create(null);
+const builtInSiteFilterCache: Record<string, string> = Object.create(null);
 const customDomainCache = new WeakMap<
   Record<string, UrlParts>,
   Record<string, string>
@@ -318,42 +328,45 @@ function getCustomDomainCache(
   return fresh;
 }
 
-function resolveSnapDomain(
+function resolveSnapSiteFilter(
   bang: string,
   custom: Record<string, UrlParts>
 ): string | null {
   const customEntry = custom[bang];
   if (customEntry) {
     const cached = getCustomDomainCache(custom);
-    const domain = cached[bang];
-    if (domain !== undefined) {
-      return domain;
-    }
-    const computed = domainOfPrefix(customEntry[0]);
-    if (computed) {
+    let domain = cached[bang];
+    if (domain === undefined) {
+      const computed = domainOfPrefix(customEntry[0]);
+      if (!computed) {
+        return null;
+      }
       cached[bang] = computed;
+      domain = computed;
     }
-    return computed;
+    return `+site:${domain}`;
   }
 
-  const builtIn = builtInDomainCache[bang];
-  if (builtIn !== undefined) {
-    return builtIn;
+  const cached = builtInSiteFilterCache[bang];
+  if (cached !== undefined) {
+    return cached;
   }
   const entry = lookupBang(bang);
   if (!entry) {
     return null;
   }
   const domain = domainOfPrefix(entry[0]);
-  if (domain) {
-    builtInDomainCache[bang] = domain;
+  if (!domain) {
+    return null;
   }
-  return domain;
+  const sf = `+site:${domain}`;
+  builtInSiteFilterCache[bang] = sf;
+  return sf;
 }
 
 function buildSnapUrl(
   defaultUrl: UrlParts,
-  domain: string,
+  siteFilter: string,
   rawQuery: string,
   termStart: number,
   termEnd: number
@@ -367,7 +380,7 @@ function buildSnapUrl(
     termStart === 0 && termEnd === rawQuery.length
       ? rawQuery
       : rawQuery.substring(termStart, termEnd);
-  return `${prefix}${raw}+site:${domain}${suffix}`;
+  return prefix + raw + siteFilter + suffix;
 }
 
 function findTrailingBareBang(
@@ -598,15 +611,15 @@ function resolveRaw(
       return [origin, trigger];
     }
 
-    const domain = resolveSnapDomain(trigger, custom);
-    if (!domain) {
+    const siteFilter = resolveSnapSiteFilter(trigger, custom);
+    if (!siteFilter) {
       return [
         buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
         null,
       ];
     }
     return [
-      buildSnapUrl(defaultUrl, domain, rawQuery, sp + spLen, end),
+      buildSnapUrl(defaultUrl, siteFilter, rawQuery, sp + spLen, end),
       trigger,
     ];
   }
@@ -626,22 +639,32 @@ function resolveRaw(
 
   const exclPacked = findExcl(rawQuery, start, end);
   if (exclPacked === -1) {
-    // "query+@trigger" — suffix snap
-    const snapPacked = findLastSpaceAt(rawQuery, start, end);
-    if (snapPacked !== -1) {
-      const spaceBeforeAtPos = snapPacked >> 4;
-      const spaceBeforeAtWidth = (snapPacked >> 2) & 0b11;
-      const suffixAtWidth = snapPacked & 0b11;
-      const triggerStart =
-        spaceBeforeAtPos + spaceBeforeAtWidth + suffixAtWidth;
-      if (triggerStart < end && findSpace(rawQuery, triggerStart, end) === -1) {
-        const trigger = toLowerIfNeeded(rawQuery, triggerStart, end);
-        const domain = resolveSnapDomain(trigger, custom);
-        if (domain) {
-          return [
-            buildSnapUrl(defaultUrl, domain, rawQuery, start, spaceBeforeAtPos),
-            trigger,
-          ];
+    if (_sawAt) {
+      const snapPacked = findLastSpaceAt(rawQuery, start, end);
+      if (snapPacked !== -1) {
+        const spaceBeforeAtPos = snapPacked >> 4;
+        const spaceBeforeAtWidth = (snapPacked >> 2) & 0b11;
+        const suffixAtWidth = snapPacked & 0b11;
+        const triggerStart =
+          spaceBeforeAtPos + spaceBeforeAtWidth + suffixAtWidth;
+        if (
+          triggerStart < end &&
+          findSpace(rawQuery, triggerStart, end) === -1
+        ) {
+          const trigger = toLowerIfNeeded(rawQuery, triggerStart, end);
+          const siteFilter = resolveSnapSiteFilter(trigger, custom);
+          if (siteFilter) {
+            return [
+              buildSnapUrl(
+                defaultUrl,
+                siteFilter,
+                rawQuery,
+                start,
+                spaceBeforeAtPos
+              ),
+              trigger,
+            ];
+          }
         }
       }
     }

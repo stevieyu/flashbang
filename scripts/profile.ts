@@ -486,6 +486,10 @@ const queries = [
   { label: "Unknown bang", raw: "!zzzzz+cats" },
   { label: "Long query", raw: `!g+${"a".repeat(200)}` },
   { label: "Encoded spaces", raw: "!g%20kittens%20are%20cute" },
+  { label: "Prefix snap", raw: "@g+kittens" },
+  { label: "Suffix snap", raw: "kittens+@g" },
+  { label: "Snap only", raw: "@g" },
+  { label: "Unknown snap", raw: "@zzzzz+cats" },
 ];
 
 const REDIRECT_ITERS = 500_000;
@@ -509,10 +513,12 @@ const redirectStats = benchTable(
 
 const bangRedirect = redirectStats.get("Prefix bang");
 const nonBangRedirect = redirectStats.get("No bang (default)");
-if (!(bangRedirect && nonBangRedirect)) {
-  throw new Error(
-    "redirect profile samples missing expected labels: Prefix bang / No bang (default)"
-  );
+const prefixSnapRedirect = redirectStats.get("Prefix snap");
+const suffixSnapRedirect = redirectStats.get("Suffix snap");
+if (
+  !(bangRedirect && nonBangRedirect && prefixSnapRedirect && suffixSnapRedirect)
+) {
+  throw new Error("redirect profile samples missing expected labels");
 }
 
 const redirectMixedStats = bench(REDIRECT_ITERS, (i, run) => {
@@ -530,6 +536,8 @@ const messageQueries = [
   "\\kittens",
   "cats g!",
   "!zzzzz cats",
+  "@g headphones",
+  "headphones @g",
 ];
 const MESSAGE_ITERS = 500_000;
 
@@ -1000,6 +1008,8 @@ console.log(`
 ├─────────────────────────────────────┼────────────┼──────────────┤
 │ Full redirect (bang query)          │ ${fmt(bangRedirect.p50).padStart(10)} │ Per redirect │
 │ Full redirect (non-bang query)      │ ${fmt(nonBangRedirect.p50).padStart(10)} │ Per redirect │
+│ Full redirect (prefix snap)        │ ${fmt(prefixSnapRedirect.p50).padStart(10)} │ Per redirect │
+│ Full redirect (suffix snap)        │ ${fmt(suffixSnapRedirect.p50).padStart(10)} │ Per redirect │
 │ SW message redirect (redirectUrl)   │ ${fmt(messageStats.p50).padStart(10)} │ Per message  │
 └─────────────────────────────────────┴────────────┴──────────────┘
 `);
