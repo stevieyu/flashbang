@@ -603,7 +603,7 @@ function renderMinOpenAddress(packed: PackedMinData): string {
       }
     }
   }
-  const maxProbe = Math.min(hashSize, longestCluster + 1);
+  const _maxProbe = Math.min(hashSize, longestCluster + 1);
 
   const triggerLensB64 =
     triggerLensKind === "u8"

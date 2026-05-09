@@ -164,13 +164,23 @@ function findLastSpace(s: string, start: number, before: number): number {
   return -1;
 }
 
-function isQuerySafe(prefix: string): boolean {
+const _querySafeCache = new WeakMap<UrlParts, boolean>();
+
+function isQuerySafe(entry: UrlParts): boolean {
+  let safe = _querySafeCache.get(entry);
+  if (safe !== undefined) {
+    return safe;
+  }
+  const prefix = entry[0];
   const q = prefix.indexOf("?");
   if (q === -1) {
+    _querySafeCache.set(entry, false);
     return false;
   }
   const h = prefix.indexOf("#");
-  return h === -1 || q < h;
+  safe = h === -1 || q < h;
+  _querySafeCache.set(entry, safe);
+  return safe;
 }
 
 function fixupForPath(raw: string): string {
@@ -183,7 +193,7 @@ function fixupForPath(raw: string): string {
     return raw.replaceAll("+", "%20");
   }
   if (!hasPlus) {
-    const parts: string[] = [];
+    let result = "";
     let seg = 0;
     for (let i = 0; i < raw.length; i++) {
       if (
@@ -193,21 +203,20 @@ function fixupForPath(raw: string): string {
       ) {
         const c2 = raw.charCodeAt(i + 2);
         if (c2 === CH_F || c2 === CH_f) {
-          parts.push(raw.substring(seg, i), "/");
+          result += `${raw.substring(seg, i)}/`;
           seg = i + 3;
           i += 2;
         }
       }
     }
-    parts.push(raw.substring(seg));
-    return parts.join("");
+    return result + raw.substring(seg);
   }
-  const parts: string[] = [];
+  let result = "";
   let seg = 0;
   for (let i = 0; i < raw.length; i++) {
     const c = raw.charCodeAt(i);
     if (c === CH_PLUS) {
-      parts.push(raw.substring(seg, i), "%20");
+      result += `${raw.substring(seg, i)}%20`;
       seg = i + 1;
     } else if (
       c === CH_PERCENT &&
@@ -216,31 +225,31 @@ function fixupForPath(raw: string): string {
     ) {
       const c2 = raw.charCodeAt(i + 2);
       if (c2 === CH_F || c2 === CH_f) {
-        parts.push(raw.substring(seg, i), "/");
+        result += `${raw.substring(seg, i)}/`;
         seg = i + 3;
         i += 2;
       }
     }
   }
-  parts.push(raw.substring(seg));
-  return parts.join("");
+  return result + raw.substring(seg);
 }
 
 function buildUrl(
-  prefix: string,
-  suffix: string | null,
+  entry: UrlParts,
   s: string,
   termStart: number,
   termEnd: number
 ): string {
+  const suffix = entry[1];
   if (suffix === null) {
-    return prefix;
+    return entry[0];
   }
+  const prefix = entry[0];
   const raw =
     termStart === 0 && termEnd === s.length
       ? s
       : s.substring(termStart, termEnd);
-  if (isQuerySafe(prefix)) {
+  if (isQuerySafe(entry)) {
     return prefix + raw + suffix;
   }
   return prefix + fixupForPath(raw) + suffix;
@@ -253,8 +262,7 @@ function luckyOrDefault(
   termStart: number,
   termEnd: number
 ): string {
-  const parts = luckyUrl ?? defaultUrl;
-  return buildUrl(parts[0], parts[1], rawQuery, termStart, termEnd);
+  return buildUrl(luckyUrl ?? defaultUrl, rawQuery, termStart, termEnd);
 }
 
 function originOfPrefix(prefix: string): string {
@@ -302,7 +310,7 @@ function resolveBangFill(
   if (!entry) {
     return null;
   }
-  return buildUrl(entry[0], entry[1], rawQuery, termStart, termEnd);
+  return buildUrl(entry, rawQuery, termStart, termEnd);
 }
 
 function resolveBangOrigin(
@@ -603,20 +611,21 @@ function resolveRaw(
     if (sp === -1 || sp + spLen >= end) {
       const origin = resolveBangOrigin(bang, custom, _lastHash);
       if (!origin) {
-        return [
-          buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
-          null,
-        ];
+        return [buildUrl(defaultUrl, rawQuery, start, end), null];
       }
       return [origin, bang];
     }
 
-    const filled = resolveBangFill(bang, custom, rawQuery, sp + spLen, end, _lastHash);
+    const filled = resolveBangFill(
+      bang,
+      custom,
+      rawQuery,
+      sp + spLen,
+      end,
+      _lastHash
+    );
     if (filled === null) {
-      return [
-        buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
-        null,
-      ];
+      return [buildUrl(defaultUrl, rawQuery, start, end), null];
     }
     return [filled, bang];
   }
@@ -640,10 +649,7 @@ function resolveRaw(
       atSpaceWidth = 3;
     }
     if (atSpaceWidth) {
-      return [
-        buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
-        null,
-      ];
+      return [buildUrl(defaultUrl, rawQuery, start, end), null];
     }
 
     const spPacked = findSpace(rawQuery, afterAt, end);
@@ -655,20 +661,14 @@ function resolveRaw(
     if (sp === -1 || sp + spLen >= end) {
       const origin = resolveBangOrigin(trigger, custom, _lastHash);
       if (!origin) {
-        return [
-          buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
-          null,
-        ];
+        return [buildUrl(defaultUrl, rawQuery, start, end), null];
       }
       return [origin, trigger];
     }
 
     const siteFilter = resolveSnapSiteFilter(trigger, custom, _lastHash);
     if (!siteFilter) {
-      return [
-        buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
-        null,
-      ];
+      return [buildUrl(defaultUrl, rawQuery, start, end), null];
     }
     return [
       buildSnapUrl(defaultUrl, siteFilter, rawQuery, sp + spLen, end),
@@ -720,7 +720,7 @@ function resolveRaw(
         }
       }
     }
-    return [buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end), null];
+    return [buildUrl(defaultUrl, rawQuery, start, end), null];
   }
   const exclPos = exclPacked >> 2;
   const exclCharWidth = exclPacked & 0b11;
@@ -748,15 +748,19 @@ function resolveRaw(
           return [origin, bang];
         }
       } else {
-        const filled = resolveBangFill(bang, custom, rawQuery, termStart, end, _lastHash);
+        const filled = resolveBangFill(
+          bang,
+          custom,
+          rawQuery,
+          termStart,
+          end,
+          _lastHash
+        );
         if (filled !== null) {
           return [filled, bang];
         }
       }
-      return [
-        buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
-        null,
-      ];
+      return [buildUrl(defaultUrl, rawQuery, start, end), null];
     }
   }
 
@@ -768,10 +772,7 @@ function resolveRaw(
       if (origin) {
         return [origin, bang];
       }
-      return [
-        buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
-        null,
-      ];
+      return [buildUrl(defaultUrl, rawQuery, start, end), null];
     }
   }
 
@@ -797,10 +798,7 @@ function resolveRaw(
         if (filled !== null) {
           return [filled, bang];
         }
-        return [
-          buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
-          null,
-        ];
+        return [buildUrl(defaultUrl, rawQuery, start, end), null];
       }
     }
   }
@@ -829,15 +827,12 @@ function resolveRaw(
         if (filled !== null) {
           return [filled, bang];
         }
-        return [
-          buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end),
-          null,
-        ];
+        return [buildUrl(defaultUrl, rawQuery, start, end), null];
       }
     }
   }
 
-  return [buildUrl(defaultUrl[0], defaultUrl[1], rawQuery, start, end), null];
+  return [buildUrl(defaultUrl, rawQuery, start, end), null];
 }
 
 export function redirectRaw(
