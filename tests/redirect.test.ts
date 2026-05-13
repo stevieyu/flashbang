@@ -1,24 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
-
-mock.module("../src/generated/bangs-min.js", () => {
-  const BANGS: Record<string, [string, string | null]> = Object.create(null);
-  BANGS.g = ["https://www.google.com/search?q=", ""];
-  BANGS.ddg = ["https://duckduckgo.com/?q=", ""];
-  BANGS.gh = ["https://github.com/search?q=", "&type=repositories"];
-  BANGS.w = ["https://en.wikipedia.org/wiki/Special:Search?search=", ""];
-  BANGS.yt = ["https://www.youtube.com/results?search_query=", ""];
-  BANGS.b = ["https://www.bing.com/search?q=", ""];
-  BANGS.mdn = [
-    "https://developer.mozilla.org/en-US/search?q=",
-    "&topic=api&topic=js",
-  ];
-  return {
-    BANG_COUNT: Object.keys(BANGS).length,
-    lookupBang(trigger: string) {
-      return BANGS[trigger] ?? null;
-    },
-  };
-});
+import { describe, expect, test } from "bun:test";
 
 import {
   type RedirectSettings,
@@ -43,6 +23,22 @@ import type { UrlParts } from "../src/sw/redirect";
 const DEFAULT_URL: UrlParts = ["https://www.google.com/search?q=", ""];
 const LUCKY_URL: UrlParts = ["https://www.google.com/search?btnI&q=", ""];
 
+const TEST_BANGS: Record<string, UrlParts> = {
+  b: ["https://www.bing.com/search?q=", ""],
+  ddg: ["https://duckduckgo.com/?q=", ""],
+  g: ["https://www.google.com/search?q=", ""],
+  gh: ["https://github.com/search?q=", "&type=repositories"],
+  mdn: ["https://developer.mozilla.org/en-US/search?q=", "&topic=api&topic=js"],
+  w: ["https://en.wikipedia.org/wiki/Special:Search?search=", ""],
+  yt: ["https://www.youtube.com/results?search_query=", ""],
+};
+
+function testBangs(
+  overrides?: Record<string, UrlParts>
+): Record<string, UrlParts> {
+  return { ...TEST_BANGS, ...overrides };
+}
+
 function splitUrl(url: string): UrlParts {
   const idx = url.indexOf("{}");
   return idx === -1
@@ -51,11 +47,12 @@ function splitUrl(url: string): UrlParts {
 }
 
 function settings(overrides: Partial<RedirectSettings> = {}): RedirectSettings {
+  const { custom, ...rest } = overrides;
   return {
     defaultUrl: DEFAULT_URL,
-    custom: Object.create(null),
+    custom: testBangs(custom),
     luckyUrl: LUCKY_URL,
-    ...overrides,
+    ...rest,
   };
 }
 

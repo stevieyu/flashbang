@@ -1,16 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
-
-mock.module("../generated/bangs-min.js", () => {
-  const BANGS: Record<string, [string, string | null]> = Object.create(null);
-  BANGS.g = ["https://www.google.com/search?q=", ""];
-  BANGS.tw = ["https://twitter.com/", ""];
-  return {
-    BANG_COUNT: Object.keys(BANGS).length,
-    lookupBang(trigger: string) {
-      return BANGS[trigger] ?? null;
-    },
-  };
-});
+import { describe, expect, test } from "bun:test";
 
 import type { UrlParts } from "../src/sw/redirect";
 import { type RedirectSettings, redirectRaw } from "../src/sw/redirect";
@@ -21,7 +9,10 @@ const LUCKY_URL: UrlParts = ["https://www.google.com/search?btnI&q=", ""];
 function settings(): RedirectSettings {
   return {
     defaultUrl: DEFAULT_URL,
-    custom: Object.create(null),
+    custom: {
+      g: ["https://www.google.com/search?q=", ""],
+      tw: ["https://twitter.com/", ""],
+    },
     luckyUrl: LUCKY_URL,
   };
 }
