@@ -12,6 +12,8 @@ Every other bang tool loads a full page before redirecting — adding hundreds o
 
 Visit **[flashbang-dyr.pages.dev](https://flashbang-dyr.pages.dev)** — if your browser supports [OpenSearch](https://developer.mozilla.org/en-US/docs/Web/OpenSearch), flashbang will appear in your search engine list automatically. Otherwise, add **`https://flashbang-dyr.pages.dev?q=%s`** as a custom search engine in your browser. Optionally, set **`https://flashbang-dyr.pages.dev/suggest?q=%s`** as the suggestion URL for address bar autocomplete. That's it.
 
+> **Note for Microsoft Edge users:** Edge needs a one-time setup tweak (the auto-discovered entry has to be deleted and re-added manually) — see [Browser quirks](#browser-quirks). Without it, your default search engine gets overwritten after the first bang you use.
+
 ### Already using DuckDuckGo, Brave, or Kagi?
 
 All three support bangs natively — but every query still round-trips through their servers before redirecting, adding significant network latency you can feel. Flashbang's Service Worker resolves the bang locally in sub 1ms and redirects before any network request leaves your machine. You also get bang-aware search suggestions in your address bar, custom bangs, feeling lucky, and it works in any browser — not just the one your engine ships with.
@@ -28,8 +30,8 @@ All three support bangs natively — but every query still round-trips through t
 - **Private** — No analytics, no tracking. All data stays on your device for the core feature - redirects
 - **14,000+ bangs** — Merged from DuckDuckGo, Kagi, and custom sources. Updated daily via automated CI
 - **Custom bangs** — Add your own bangs through the settings UI. They take priority over built-ins
-- **Search suggestions** — The only bang tool with bang-aware autocomplete in your browser's native address bar. Type `!y` and the browser itself suggests `!yt` (YouTube), `!ya` (Yandex), `!yf` (Yahoo Finance) — ranked by a combination of global popularity and your personal usage frequency. Regular queries return web search suggestions from Google, DuckDuckGo, Bing, Brave, or a custom provider. Both are unified through a single `/suggest` endpoint that plugs into your browser's built-in suggestion UI. **Rich suggestions** — Firefox and Firefox-based browsers (Zen, LibreWolf) display bang descriptions, site names, and favicons inline in the address bar dropdown via `google:suggestdetail`. Google proxy suggestions also pass through rich data (entity images, titles) when available. Chromium-based browsers do not support rich rendering for search-type suggestions from custom search engines — this is a Chrome limitation, not a Flashbang one
-- **Frecency** — The Service Worker tracks which bangs you use and how often, entirely in-memory for zero redirect overhead. Your most-used bangs are promoted in autocomplete suggestions so they surface first. Frecency data is persisted to IndexedDB across Service Worker restarts. This works automatically in Chromium-based browsers (Chrome, Edge, Arc) which send cookies with default search engine suggest requests. Firefox and Firefox-based browsers (Zen, LibreWolf) intentionally withhold cookies from suggest requests as a privacy measure, so suggestions use default popularity ranking in those browsers
+- **Search suggestions** — The only bang tool with bang-aware autocomplete in your browser's native address bar. Type `!y` and the browser itself suggests `!yt` (YouTube), `!ya` (Yandex), `!yf` (Yahoo Finance) — ranked by a combination of global popularity and your personal usage frequency. Regular queries return web search suggestions from Google, DuckDuckGo, Bing, Brave, or a custom provider. Both are unified through a single `/suggest` endpoint that plugs into your browser's built-in suggestion UI. Firefox-based browsers also render bang descriptions, site names, and favicons inline in the dropdown via `google:suggestdetail`. See [Browser quirks](#browser-quirks) for rendering and cookie differences across browsers
+- **Frecency** — The Service Worker tracks which bangs you use and how often, entirely in-memory for zero redirect overhead. Your most-used bangs are promoted in autocomplete suggestions so they surface first. Frecency data is persisted to IndexedDB across Service Worker restarts. Available in Chromium-based browsers; not available in Firefox-based browsers — see [Browser quirks](#browser-quirks)
 - **Snaps** — Type `@trigger query` to search your default engine with results restricted to that trigger's domain via `site:`. For example, `@w quantum` searches Google for `quantum site:en.wikipedia.org`. Works in prefix (`@w quantum`) and suffix (`quantum @w`) positions. A bare snap (`@w`) redirects to the trigger's homepage. Snaps reuse the same 14,000+ bang triggers — any bang can be used as a snap
 - **Feeling Lucky** — Prefix a query with `\`, or add a bare `!` before or after it, to skip the results page and jump straight to the first result. Works with Google's "I'm Feeling Lucky" when that's your default engine, falls back to DuckDuckGo's `\` redirect for others. Configurable per-engine or with a custom URL, or disable it entirely
 - **OpenSearch** — Browsers auto-discover Flashbang as a search engine via `/opensearch.xml`, including the suggestions endpoint. The XML is dynamically generated at request time using the current origin, so it works out of the box on any self-hosted domain or `localhost` — no hardcoded URLs to change
@@ -94,7 +96,7 @@ Example suggestion URL with a provider override:
 https://flashbang-dyr.pages.dev/suggest?q=%s&sp=ddg
 ```
 
-**Why this exists:** Chromium-based browsers (Chrome, Edge, Arc) send cookies with suggest requests when flashbang is the default search engine, so settings configured in the UI are automatically picked up. Firefox and Firefox-based browsers (Zen, LibreWolf) intentionally [withhold cookies from suggest requests](https://bugzilla.mozilla.org/show_bug.cgi?id=1624457) as a privacy measure. For those browsers, `sp` is the only way to choose a suggestion provider — without it, suggestions default to Google. Custom bangs and frecency-ranked suggestions are not available in browsers that withhold cookies, since the suggest endpoint has no way to receive that data.
+**Why this exists:** in Chromium-based browsers, cookies are sent with suggest requests and settings configured in the UI are picked up automatically — `sp` is rarely needed. In Firefox-based browsers, cookies are withheld and `sp` is the only way to pick a provider. See [Browser quirks](#browser-quirks) for details.
 
 ### Use the hosted version
 
@@ -104,6 +106,26 @@ A public instance is available at **[flashbang-dyr.pages.dev](https://flashbang-
 - **Suggestion URL:** `https://flashbang-dyr.pages.dev/suggest?q=%s` (Optional)
 
 Nothing to build or deploy.
+
+### Browser quirks
+
+These apply equally to the hosted version and any self-hosted instance — worth a quick read before adding flashbang as your default.
+
+- **Microsoft Edge — bang destinations hijack the default search.** After you use a bang like `!gm`, Edge auto-registers the destination (Google Maps, GitHub, etc.) as a separate search engine with the *same* shortcut as flashbang (the host). When two engines share a shortcut, Edge picks the most-recently-used one for default searches — so your plain queries start going to Google Maps. Not observed in Chrome or Firefox.
+
+  **Fix** — in `edge://settings/searchEngines`:
+  1. Delete the auto-discovered flashbang entry.
+  2. Click **Add** and re-add it manually:
+     - **Search engine:** `flashbang`
+     - **Shortcut:** something short and unique like `f`
+     - **URL with %s:** `https://flashbang-dyr.pages.dev?q=%s` (or your self-hosted URL)
+  3. Set it as your default.
+
+  **Important:** *editing* the auto-discovered entry's Shortcut doesn't persist — Edge re-derives it from `/opensearch.xml` on restart and reverts to the host. The delete-and-readd step is what makes the fix stick, because a manually-added entry is independent of the discovery XML.
+
+- **Firefox / Zen / LibreWolf — no frecency, no custom bangs in suggestions.** Firefox-based browsers intentionally [withhold cookies from OpenSearch suggest requests](https://bugzilla.mozilla.org/show_bug.cgi?id=1624457) as a privacy measure. Flashbang's settings (default suggestion provider, custom bangs, frecency data) are stored in the cookie sent with `/suggest` requests, so none of those features are available in these browsers — suggestions fall back to Google with default popularity ranking. To pick a different suggestion provider, register the suggestion URL with the `sp` parameter (e.g. `…/suggest?q=%s&sp=ddg`) — see [Suggestion URL parameters](#suggestion-url-parameters).
+
+- **Chromium — plain-text suggestions only.** Chrome, Edge, Arc, and other Chromium-based browsers don't render rich suggestion details (descriptions, favicons, entity images) for search-type suggestions from custom search engines; they're shown as plain text. Firefox-based browsers render the rich data passed through `google:suggestdetail`. This is a Chromium limitation, not flashbang's.
 
 ### Deploy your own
 
