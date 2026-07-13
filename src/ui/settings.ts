@@ -111,7 +111,7 @@ export async function initSettings(db: DB) {
     suggestUrlInput.value = savedUrl;
   }
 
-  if (/Firefox\/|FxiOS\//.test(navigator.userAgent)) {
+  if (/Firefox\//.test(navigator.userAgent)) {
     let firefoxProvider = "google";
     let menuHideTimer: ReturnType<typeof setTimeout>;
     let providerMenuPinned = false;
