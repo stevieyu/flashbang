@@ -17,6 +17,29 @@ afterEach(() => {
 });
 
 describe("custom bang import and export", () => {
+  test("atomically renames an existing custom bang", async () => {
+    const db = new DB();
+    await db.addCustomBang({
+      trigger: "old",
+      name: "Old",
+      url: "https://example.com/old?q={}",
+    });
+
+    await db.updateCustomBang("old", {
+      trigger: "new",
+      name: "New",
+      url: "https://example.com/new?q={}",
+    });
+
+    expect(await db.getAllCustomBangs()).toEqual([
+      {
+        trigger: "new",
+        name: "New",
+        url: "https://example.com/new?q={}",
+      },
+    ]);
+  });
+
   test("round-trips capture pattern and encoding", async () => {
     const db = new DB();
     await db.importAll({

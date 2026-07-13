@@ -493,6 +493,68 @@ test("settings create and execute a custom snap target", async ({ page }) => {
   expect(redirected.searchParams.get("q")).toBe("arrays site:example.com/docs");
 });
 
+test("settings edit and rename an existing custom bang", async ({ page }) => {
+  await mockCustomHostRoute(page);
+  await mockGoogleSearchRoute(page);
+  await ensureWarmController(page);
+  await seedCustomBangs(page, [
+    {
+      trigger: "before",
+      name: "Before",
+      url: `${CUSTOM_HOST}/before?q={}`,
+      snap: "example.com/before",
+    },
+  ]);
+  await openSettingsModal(page);
+
+  const row = page.locator("#custom-list").filter({ hasText: "!before" });
+  await row.getByRole("button", { name: "edit" }).click();
+  await expect(page.locator('input[name="shortcut"]')).toHaveValue("before");
+  await expect(page.locator('input[name="name"]')).toHaveValue("Before");
+  await expect(page.locator('input[name="url"]')).toHaveValue(
+    `${CUSTOM_HOST}/before?q={}`
+  );
+  await expect(page.locator('input[name="snap"]')).toHaveValue(
+    "example.com/before"
+  );
+  await expect(page.locator("#add-bang-form details")).toHaveAttribute(
+    "open",
+    ""
+  );
+  await expect(page.locator("#custom-bang-submit")).toHaveText("Save Changes");
+  await expect(page.locator("#custom-bang-cancel")).toBeVisible();
+
+  await page.fill('input[name="name"]', "Discarded");
+  await page.click("#custom-bang-cancel");
+  await expect(page.locator('input[name="shortcut"]')).toHaveValue("");
+  await expect(page.locator("#custom-bang-submit")).toHaveText("Add Bang");
+  await expect(page.locator("#custom-bang-cancel")).toBeHidden();
+  await expect(page.locator("#custom-list")).toContainText("Before");
+
+  await row.getByRole("button", { name: "edit" }).click();
+  await page.fill('input[name="shortcut"]', "after");
+  await page.fill('input[name="name"]', "After");
+  await page.fill('input[name="url"]', `${CUSTOM_HOST}/after?q={}`);
+  await page.fill('input[name="snap"]', "example.com/after");
+  await submitCustomBangForm(page);
+
+  await expect(page.locator("#custom-list")).toContainText("!after");
+  await expect(page.locator("#custom-list")).not.toContainText("!before");
+  await expect(page.locator("#custom-bang-submit")).toHaveText("Add Bang");
+  await expect(page.locator("#custom-bang-cancel")).toBeHidden();
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await ensureWarmController(page);
+  await navigateAndWaitForRedirect(
+    page,
+    "/?q=%40after%20updated",
+    /google\.com\/search/
+  );
+  expect(new URL(page.url()).searchParams.get("q")).toBe(
+    "updated site:example.com/after"
+  );
+});
+
 test("settings persist custom lucky URL across reload", async ({ page }) => {
   await mockCustomHostRoute(page);
   await ensureWarmController(page);

@@ -58,6 +58,16 @@ export class DB {
     await idbWrap(s.put(bang));
   }
 
+  async updateCustomBang(previousTrigger: string, bang: CustomBangRecord) {
+    const s = await this.store("custom-bangs", "readwrite");
+    const ops: Promise<unknown>[] = [];
+    if (previousTrigger !== bang.trigger) {
+      ops.push(idbWrap(s.delete(previousTrigger)));
+    }
+    ops.push(idbWrap(s.put(bang)));
+    await Promise.all(ops);
+  }
+
   async removeCustomBang(trigger: string) {
     const s = await this.store("custom-bangs", "readwrite");
     await idbWrap(s.delete(trigger));

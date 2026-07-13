@@ -355,7 +355,18 @@
               class="hidden text-xs text-danger"
               role="alert"
             ></p>
-            <button type="submit" class="btn-primary w-full">Add Bang</button>
+            <div class="flex gap-2">
+              <button
+                type="submit"
+                id="custom-bang-submit"
+                class="btn-primary flex-1"
+              >
+                Add Bang
+              </button>
+              <button type="button" id="custom-bang-cancel" class="btn hidden">
+                Cancel
+              </button>
+            </div>
           </form>
           <div id="custom-list"></div>
         </section>
