@@ -275,13 +275,13 @@ describe("parseCookie", () => {
     });
   });
 
-  test("cookie with frecency section ignored (sf cookie is sole source)", () => {
+  test("legacy unprefixed frecency section is ignored", () => {
     const s = parseCookie(req("suggest=google,g,|gh:50.yt:30.w:12"));
     expect(s.frecent).toEqual({});
     expect(s.custom).toEqual([]);
   });
 
-  test("cookie with frecency and custom sections — frecency ignored, custom works", () => {
+  test("legacy unprefixed context sections are ignored", () => {
     const s = parseCookie(
       req("suggest=google,g,|gh:50.yt:30|test8.mysite.proj")
     );
@@ -314,14 +314,14 @@ describe("parseCookie", () => {
     expect(s.custom).toEqual([]);
   });
 
-  test("sf cookie is the sole source of frecency", () => {
+  test("legacy sf cookie is ignored", () => {
     const s = parseCookie(req("suggest=google,g,|gh:10.yt:5; sf=w:50.b:30"));
     expect(s.frecent).toEqual({});
     expect(s.provider).toBe("google");
     expect(s.trigger).toBe("g");
   });
 
-  test("sf cookie with suggest= cookie together", () => {
+  test("legacy sf and unprefixed suggest sections are ignored", () => {
     const s = parseCookie(
       req("sf=ddg:100.g:80; suggest=brave,b,|mdn:20|mysite")
     );
@@ -331,7 +331,7 @@ describe("parseCookie", () => {
     expect(s.custom).toEqual([]);
   });
 
-  test("new suggest format takes precedence over sf frecency", () => {
+  test("unified suggest sections are used while legacy sf is ignored", () => {
     const s = parseCookie(
       req(
         `sf=ddg:100.g:80; suggest=brave,b,|f:meta:9|c:${encodeURIComponent(JSON.stringify(["mysite"]))}`
