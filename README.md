@@ -241,7 +241,7 @@ That lookup path is also pre-optimized by `scripts/codegen.ts` at build time. In
 
 ### Will I actually notice the difference?
 
-Yes. Try it yourself: open unduck or unduckified, type `!g cats`, and watch the screen. You'll likely see a white flash or brief page load before Google appears. This is evident by the issues opened in unduckified repo [#6](https://github.com/taciturnaxolotl/unduckified/issues/6) and in unduck repo [#70](https://github.com/T3-Content/unduck/issues/70). Now do the same with Flashbang. The browser navigates directly to Google — there is no intermediate page to see. The difference is immediately obvious, especially on mobile devices or enivronments where JavaScript parse time is higher.
+Yes. Try it yourself: open unduck or unduckified, type `!g cats`, and watch the screen. You'll likely see a white flash or brief page load before Google appears. This is evident by the issues opened in unduckified repo [#6](https://github.com/taciturnaxolotl/unduckified/issues/6) and in unduck repo [#70](https://github.com/T3-Content/unduck/issues/70), [#141](https://github.com/T3-Content/unduck/issues/141). Now do the same with Flashbang. The browser navigates directly to Google — there is no intermediate page to see. The difference is immediately obvious, especially on mobile devices or enivronments where JavaScript parse time is higher.
 
 [Run the benchmark yourself](https://flashbang-dyr.pages.dev/bench) to see measured redirect latency on your device.
 
