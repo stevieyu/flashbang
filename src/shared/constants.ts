@@ -21,6 +21,7 @@ export const SUGGEST_URLS: Record<string, string> = {
   yahoo: "https://ff.search.yahoo.com/gossip?output=fxjson&command={}",
   ecosia: "https://ac.ecosia.org/autocomplete?q={}&type=list",
   kagi: "https://kagi.com/api/autosuggest?q={}",
+  startpage: "https://www.startpage.com/osuggestions?q={}",
   yandex: "https://suggest.yandex.com/suggest-ff.cgi?part={}",
   baidu: "https://suggestion.baidu.com/su?wd={}&action=opensearch",
 };

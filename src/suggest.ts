@@ -126,6 +126,8 @@ const TRIGGER_ALIAS: Record<string, string> = {
   ec: "ecosia",
   ecosia: "ecosia",
   kagi: "kagi",
+  sp: "startpage",
+  startpage: "startpage",
   ya: "yandex",
   yandex: "yandex",
   bd: "baidu",

@@ -88,7 +88,7 @@ The redirect destination depends on your lucky provider (configurable in setting
 The suggestion endpoint accepts an optional `sp` (suggestion provider) query parameter to choose which search engine provides autocomplete results, without relying on cookies:
 
 ```
-google, ddg, bing, brave, yahoo, ecosia, kagi, yandex, baidu, none
+google, ddg, bing, brave, yahoo, ecosia, kagi, startpage, yandex, baidu, none
 ```
 
 Example suggestion URL with a provider override:

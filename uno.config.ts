@@ -137,6 +137,12 @@ export default defineConfig({
           background: ${theme.colors.bg.hover};
           color: ${theme.colors.text.DEFAULT};
         }
+        select.select-locked {
+          padding-right: 0.75rem;
+          background-image: none;
+          cursor: not-allowed;
+          opacity: 0.65;
+        }
 
         a {
           color: ${theme.colors.text.secondary};

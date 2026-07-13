@@ -828,6 +828,14 @@ describe("provider proxying — via suggest()", () => {
     );
   });
 
+  test("provider=startpage → fetches Startpage suggest URL", async () => {
+    fetchSpy.mockResolvedValueOnce(Response.json(["cats", []]));
+    await suggest("cats", { ...defaultSettings, provider: "startpage" });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://www.startpage.com/osuggestions?q=cats"
+    );
+  });
+
   test("provider=yandex → fetches yandex suggest URL", async () => {
     fetchSpy.mockResolvedValueOnce(Response.json(["cats", []]));
     await suggest("cats", { ...defaultSettings, provider: "yandex" });
@@ -905,6 +913,14 @@ describe("provider proxying — via suggest()", () => {
     await suggest("cats", { ...defaultSettings, trigger: "kagi" });
     expect(fetchSpy).toHaveBeenCalledWith(
       "https://kagi.com/api/autosuggest?q=cats"
+    );
+  });
+
+  test("provider=default + trigger=sp → resolves to Startpage", async () => {
+    fetchSpy.mockResolvedValueOnce(Response.json(["cats", []]));
+    await suggest("cats", { ...defaultSettings, trigger: "sp" });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://www.startpage.com/osuggestions?q=cats"
     );
   });
 

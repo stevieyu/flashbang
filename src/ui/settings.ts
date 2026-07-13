@@ -9,6 +9,16 @@ export async function initSettings(db: DB) {
   const defaultInput = $<HTMLInputElement>("#default-bang");
   const suggestSelect = $<HTMLSelectElement>("#suggest-provider");
   const suggestUrlInput = $<HTMLInputElement>("#suggest-url");
+  const suggestFirefoxNote = $("#suggest-firefox-note");
+  const suggestFirefoxProviderPickerWrap = $(
+    "#suggest-firefox-provider-picker-wrap"
+  );
+  const suggestFirefoxProviderPicker = $<HTMLButtonElement>(
+    "#suggest-firefox-provider-picker"
+  );
+  const suggestFirefoxProviderLabel = $("#suggest-firefox-provider-label");
+  const suggestFirefoxUrl = $<HTMLButtonElement>("#suggest-firefox-url");
+  const suggestFirefoxProviderMenu = $("#suggest-firefox-provider-menu");
   const luckySelect = $<HTMLSelectElement>("#lucky-provider");
   const luckyUrlInput = $<HTMLInputElement>("#lucky-url");
 
@@ -47,12 +57,135 @@ export async function initSettings(db: DB) {
   }
 
   defaultInput.value = defaultBang;
-  suggestSelect.value = savedProvider;
-  if (savedProvider === "custom") {
-    suggestUrlInput.classList.remove("hidden");
-  }
   if (savedUrl) {
     suggestUrlInput.value = savedUrl;
+  }
+
+  if (/Firefox\/|FxiOS\//.test(navigator.userAgent)) {
+    let firefoxProvider = "google";
+    let menuHideTimer: ReturnType<typeof setTimeout>;
+    let providerMenuPinned = false;
+    const firefoxSuggestionUrl = () =>
+      `${location.origin}/suggest?q=%s&sp=${firefoxProvider}`;
+    const showProviderMenu = () => {
+      clearTimeout(menuHideTimer);
+      suggestFirefoxProviderMenu.classList.remove("hidden");
+      suggestFirefoxProviderPicker.setAttribute("aria-expanded", "true");
+    };
+    const hideProviderMenu = () => {
+      suggestFirefoxProviderMenu.classList.add("hidden");
+      suggestFirefoxProviderPicker.setAttribute("aria-expanded", "false");
+    };
+    const renderFirefoxSuggestionUrl = () => {
+      const providerToken = el(
+        "span",
+        "rounded bg-success px-1 py-0.5 text-bg",
+        firefoxProvider
+      );
+      suggestFirefoxProviderLabel.textContent = firefoxProvider;
+      suggestFirefoxUrl.replaceChildren(
+        `${location.origin}/suggest?q=%s&sp=`,
+        providerToken
+      );
+      for (const option of suggestFirefoxProviderMenu.children) {
+        const selected =
+          (option as HTMLElement).dataset.provider === firefoxProvider;
+        option.setAttribute("aria-selected", String(selected));
+        option.classList.toggle("bg-bg-active", selected);
+      }
+    };
+
+    const providerOptions = Array.from(suggestSelect.options).filter(
+      (option) => !["default", "custom", "none"].includes(option.value)
+    );
+    suggestFirefoxProviderMenu.replaceChildren(
+      ...providerOptions.map((provider) => {
+        const option = el(
+          "button",
+          "block w-full rounded-md border-none bg-transparent px-2.5 py-1.5 text-left text-xs text-text cursor-pointer hover:bg-bg-hover",
+          provider.text
+        );
+        option.type = "button";
+        option.dataset.provider = provider.value;
+        option.setAttribute("role", "option");
+        option.addEventListener("click", () => {
+          firefoxProvider = provider.value;
+          providerMenuPinned = false;
+          renderFirefoxSuggestionUrl();
+          hideProviderMenu();
+          suggestFirefoxProviderPicker.focus();
+        });
+        option.addEventListener("focus", showProviderMenu);
+        return option;
+      })
+    );
+
+    suggestSelect.value = "google";
+    suggestSelect.disabled = true;
+    suggestSelect.classList.add("select-locked");
+    suggestUrlInput.disabled = true;
+    suggestSelect.setAttribute("aria-describedby", "suggest-firefox-note");
+    suggestFirefoxNote.classList.remove("hidden");
+    renderFirefoxSuggestionUrl();
+    suggestFirefoxProviderPickerWrap.addEventListener("pointerenter", () => {
+      if (!providerMenuPinned) {
+        showProviderMenu();
+      }
+    });
+    suggestFirefoxProviderPickerWrap.addEventListener("pointerleave", () => {
+      if (!providerMenuPinned) {
+        menuHideTimer = setTimeout(hideProviderMenu, 150);
+      }
+    });
+    suggestFirefoxProviderPicker.addEventListener("click", () => {
+      if (providerMenuPinned) {
+        providerMenuPinned = false;
+        hideProviderMenu();
+      } else {
+        providerMenuPinned = true;
+        showProviderMenu();
+      }
+    });
+    suggestFirefoxProviderPicker.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        providerMenuPinned = true;
+        showProviderMenu();
+        (suggestFirefoxProviderMenu.firstElementChild as HTMLElement)?.focus();
+      }
+    });
+    suggestFirefoxProviderMenu.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        providerMenuPinned = false;
+        hideProviderMenu();
+        suggestFirefoxProviderPicker.focus();
+      }
+    });
+    document.addEventListener("click", (event) => {
+      if (
+        providerMenuPinned &&
+        event.target instanceof Node &&
+        !suggestFirefoxProviderPickerWrap.contains(event.target)
+      ) {
+        providerMenuPinned = false;
+        hideProviderMenu();
+      }
+    });
+    suggestFirefoxUrl.addEventListener("click", async () => {
+      const url = firefoxSuggestionUrl();
+      hideProviderMenu();
+      await navigator.clipboard.writeText(url);
+      suggestFirefoxUrl.textContent = "Copied suggestion URL";
+      flashAnim(suggestFirefoxUrl);
+      setTimeout(() => {
+        renderFirefoxSuggestionUrl();
+      }, 1500);
+    });
+  } else {
+    suggestSelect.value = savedProvider;
+    if (savedProvider === "custom") {
+      suggestUrlInput.classList.remove("hidden");
+    }
   }
 
   syncCookie();

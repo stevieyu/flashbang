@@ -189,6 +189,71 @@ test("suggest endpoint respects provider override via sp=none", async ({
   await expect(response.json()).resolves.toEqual(["hello", []]);
 });
 
+test("Firefox locks cookie-backed suggestion settings", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "userAgent", {
+      configurable: true,
+      value:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:128.0) Gecko/20100101 Firefox/128.0",
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText(value: string) {
+          (
+            window as typeof window & { copiedSuggestionUrl?: string }
+          ).copiedSuggestionUrl = value;
+          return Promise.resolve();
+        },
+      },
+    });
+  });
+
+  await openSettingsModal(page);
+
+  await expect(page.locator("#suggest-provider")).toBeDisabled();
+  await expect(page.locator("#suggest-provider")).toHaveValue("google");
+  await expect(page.locator("#suggest-provider")).toHaveClass(/select-locked/);
+  await expect(page.locator("#suggest-url")).toBeDisabled();
+  await expect(page.locator("#suggest-firefox-note")).toBeVisible();
+  await expect(page.locator("#suggest-firefox-note")).toContainText(
+    "Firefox does not send cookies for suggestions"
+  );
+  const origin = new URL(page.url()).origin;
+  await expect(page.locator("#suggest-firefox-url")).toHaveText(
+    `${origin}/suggest?q=%s&sp=google`
+  );
+  await expect(page.locator("#suggest-firefox-url span")).toHaveText("google");
+  const providerPicker = page.locator("#suggest-firefox-provider-picker");
+  await expect(providerPicker).toContainText("google");
+  await providerPicker.hover();
+  await expect(page.locator("#suggest-firefox-provider-menu")).toBeVisible();
+  await page
+    .locator('#suggest-firefox-provider-menu [data-provider="startpage"]')
+    .click();
+  const expectedUrl = `${origin}/suggest?q=%s&sp=startpage`;
+  await expect(page.locator("#suggest-provider")).toHaveValue("google");
+  await expect(page.locator("#suggest-firefox-url")).toHaveText(expectedUrl);
+  await expect(page.locator("#suggest-firefox-url span")).toHaveText(
+    "startpage"
+  );
+  await expect(providerPicker).toContainText("startpage");
+  await providerPicker.click();
+  await expect(page.locator("#suggest-firefox-provider-menu")).toBeVisible();
+  await providerPicker.click();
+  await expect(page.locator("#suggest-firefox-provider-menu")).toBeHidden();
+  await page.locator("#suggest-firefox-url").click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as typeof window & { copiedSuggestionUrl?: string })
+            .copiedSuggestionUrl
+      )
+    )
+    .toBe(expectedUrl);
+});
+
 test("suggest endpoint rewrites malformed suggest cookie context", async ({
   request,
 }) => {

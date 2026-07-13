@@ -162,7 +162,7 @@
         </section>
 
         <!-- Suggestion Provider -->
-        <section class="card mb-5">
+        <section id="suggest-settings" class="card mb-5">
           <h3 class="section-title">Search Suggestions</h3>
           <p class="label-text mb-2">
             Source for address bar autocomplete suggestions
@@ -176,6 +176,7 @@
             <option value="yahoo">Yahoo</option>
             <option value="ecosia">Ecosia</option>
             <option value="kagi">Kagi</option>
+            <option value="startpage">Startpage</option>
             <option value="yandex">Yandex</option>
             <option value="baidu">Baidu</option>
             <option value="custom">Custom</option>
@@ -187,6 +188,55 @@
             placeholder="URL with {} for query"
             class="input-field font-mono text-sm mt-2 hidden"
           >
+          <div
+            id="suggest-firefox-note"
+            class="label-text mt-2 hidden"
+            role="note"
+          >
+            Firefox does not send cookies for suggestions, so Google is used by
+            default. Open the
+            <span
+              id="suggest-firefox-provider-picker-wrap"
+              class="relative inline-block align-middle"
+            >
+              <button
+                type="button"
+                id="suggest-firefox-provider-picker"
+                class="inline-flex items-center gap-1 rounded-full border-none bg-success px-2 py-0.5 font-mono text-xs text-bg cursor-pointer"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+              >
+                <span id="suggest-firefox-provider-label">google</span>
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+              <span
+                id="suggest-firefox-provider-menu"
+                class="absolute top-full left-0 z-10 mt-1 hidden max-h-48 min-w-36 overflow-y-auto rounded-lg border border-border bg-bg-secondary p-1 shadow-xl"
+                role="listbox"
+                aria-label="Suggestion providers"
+              ></span>
+            </span>
+            menu to see supported providers and choose another. Click the URL
+            below to copy it into Firefox's search engine settings.
+            <button
+              type="button"
+              id="suggest-firefox-url"
+              class="mt-2 block w-full overflow-hidden text-ellipsis whitespace-nowrap rounded-full border border-border bg-bg-hover px-3 py-1.5 text-left font-mono text-xs text-text cursor-copy hover:bg-bg-active"
+              aria-label="Copy Firefox suggestion URL"
+            ></button>
+          </div>
         </section>
 
         <!-- Bang Search -->
