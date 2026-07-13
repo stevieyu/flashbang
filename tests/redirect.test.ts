@@ -870,6 +870,9 @@ describe("snap — Kagi alternate domains", () => {
       "https://news.ycombinator.com"
     );
     expect(loc(redirect("!hn", settings()))).toBe("https://hn.algolia.com");
+    expect(loc(redirect("@hn", settings()))).toBe(
+      "https://news.ycombinator.com"
+    );
   });
 
   test("preserves path-scoped ad values", () => {

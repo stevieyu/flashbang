@@ -50,5 +50,8 @@ describe("capture templates", () => {
     expect(validateCaptureBang("https://example.com/$1", "(a)\\1")).toContain(
       "Backreferences"
     );
+    expect(
+      validateCaptureBang("https://example.com/$1", "(?<value>a)\\k<value>")
+    ).toContain("Backreferences");
   });
 });

@@ -13,6 +13,7 @@ import {
   NODE_STRIDE,
   NODE_TERMINAL_INDEX,
 } from "../src/suggest-bang";
+import type { RedirectSettings } from "../src/sw/redirect";
 import { ensureGeneratedBangData, GENERATED_BANG_DATA_FILES } from "./codegen";
 
 const [minPath, metaPath, triePath] = GENERATED_BANG_DATA_FILES;
@@ -719,13 +720,12 @@ const profileSnapTarget = compileSnapTarget("docs.example.com/reference")!;
 const settings = {
   defaultUrl: ["https://www.google.com/search?q=", ""] as const,
   luckyUrl: ["https://duckduckgo.com/?q=\\", ""] as const,
-  hasCustom: true,
   custom: {
     tw: ["https://twitter.com/", ""] as readonly [string, string | null],
     tr: profileCaptureUrl,
     docs: ["https://search.example.com?q=", "", profileSnapTarget] as const,
   },
-};
+} satisfies RedirectSettings;
 
 const queries = [
   { label: "Prefix bang", raw: "!g+kittens" },

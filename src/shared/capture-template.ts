@@ -90,7 +90,7 @@ function inspectPatternSafety(
     const c = pattern.charCodeAt(i);
     if (c === 0x5c) {
       const next = pattern.charCodeAt(++i);
-      if (!inClass && next >= 0x31 && next <= 0x39) {
+      if (!inClass && ((next >= 0x31 && next <= 0x39) || next === 0x6b)) {
         return ["Backreferences are not supported", captureCount];
       }
       continue;

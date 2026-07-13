@@ -277,6 +277,11 @@ function buildUrl(
 }
 
 function decodeCaptureInput(raw: string): string | null {
+  // A percent-encoded astral character uses at most six raw characters per
+  // UTF-16 code unit. Reject larger inputs before decodeURIComponent allocates.
+  if (raw.length > MAX_CAPTURE_INPUT_LENGTH * 6) {
+    return null;
+  }
   const hasPlus = raw.indexOf("+") !== -1;
   const hasPercent = raw.indexOf("%") !== -1;
   if (!(hasPlus || hasPercent)) {
@@ -365,8 +370,9 @@ function originOfPrefix(prefix: string): string {
   return tailStart === prefix.length ? prefix : prefix.substring(0, tailStart);
 }
 
-const builtInOriginCache: Record<string, string> = Object.create(null);
-const customOriginCache = new WeakMap<
+const builtInBangOriginCache: Record<string, string> = Object.create(null);
+const builtInSnapOriginCache: Record<string, string> = Object.create(null);
+const customBangOriginCache = new WeakMap<
   Record<string, CustomUrlParts>,
   Record<string, string>
 >();
@@ -374,12 +380,12 @@ const customOriginCache = new WeakMap<
 function getCustomOriginCache(
   custom: Record<string, CustomUrlParts>
 ): Record<string, string> {
-  const existing = customOriginCache.get(custom);
+  const existing = customBangOriginCache.get(custom);
   if (existing !== undefined) {
     return existing;
   }
   const fresh: Record<string, string> = Object.create(null);
-  customOriginCache.set(custom, fresh);
+  customBangOriginCache.set(custom, fresh);
   return fresh;
 }
 
@@ -433,20 +439,22 @@ function resolveSnapOrigin(
   const customEntry = custom[bang];
   if (customEntry) {
     const snap = customSnapTarget(customEntry);
-    if (snap) {
-      return snap[1];
-    }
-  } else {
-    const cached = builtInOriginCache[bang];
-    if (cached !== undefined) {
-      return cached;
-    }
-    const snap = lookupSnapOverride(bang, hash, true);
-    if (snap) {
-      return snap;
-    }
+    return snap ? snap[1] : resolveBangOrigin(bang, custom, hash);
   }
-  return resolveBangOrigin(bang, custom, hash);
+  const cached = builtInSnapOriginCache[bang];
+  if (cached !== undefined) {
+    return cached;
+  }
+  const snap = lookupSnapOverride(bang, hash, true);
+  if (snap) {
+    builtInSnapOriginCache[bang] = snap;
+    return snap;
+  }
+  const origin = resolveBangOrigin(bang, custom, hash);
+  if (origin) {
+    builtInSnapOriginCache[bang] = origin;
+  }
+  return origin;
 }
 
 function resolveBangOrigin(
@@ -466,7 +474,7 @@ function resolveBangOrigin(
     return computed;
   }
 
-  const builtIn = builtInOriginCache[bang];
+  const builtIn = builtInBangOriginCache[bang];
   if (builtIn !== undefined) {
     return builtIn;
   }
@@ -476,7 +484,7 @@ function resolveBangOrigin(
     return null;
   }
   const origin = originOfPrefix(resolved[0]);
-  builtInOriginCache[bang] = origin;
+  builtInBangOriginCache[bang] = origin;
   return origin;
 }
 
@@ -491,8 +499,8 @@ function domainOfPrefix(prefix: string): string | null {
   return host.startsWith("www.") ? host.substring(4) : host;
 }
 
-const builtInSiteFilterCache: Record<string, string> = Object.create(null);
-const customDomainCache = new WeakMap<
+const builtInSnapSiteFilterCache: Record<string, string> = Object.create(null);
+const customSnapDomainCache = new WeakMap<
   Record<string, CustomUrlParts>,
   Record<string, string>
 >();
@@ -500,12 +508,12 @@ const customDomainCache = new WeakMap<
 function getCustomDomainCache(
   custom: Record<string, CustomUrlParts>
 ): Record<string, string> {
-  const existing = customDomainCache.get(custom);
+  const existing = customSnapDomainCache.get(custom);
   if (existing !== undefined) {
     return existing;
   }
   const fresh: Record<string, string> = Object.create(null);
-  customDomainCache.set(custom, fresh);
+  customSnapDomainCache.set(custom, fresh);
   return fresh;
 }
 
@@ -533,12 +541,13 @@ function resolveSnapSiteFilter(
     return `+site:${domain}`;
   }
 
-  const cached = builtInSiteFilterCache[bang];
+  const cached = builtInSnapSiteFilterCache[bang];
   if (cached !== undefined) {
     return cached;
   }
   const snap = lookupSnapOverride(bang, hash, false);
   if (snap) {
+    builtInSnapSiteFilterCache[bang] = snap;
     return snap;
   }
   const entry = lookupBang(bang, hash);
@@ -551,7 +560,7 @@ function resolveSnapSiteFilter(
     return null;
   }
   const sf = `+site:${domain}`;
-  builtInSiteFilterCache[bang] = sf;
+  builtInSnapSiteFilterCache[bang] = sf;
   return sf;
 }
 
