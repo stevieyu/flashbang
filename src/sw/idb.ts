@@ -1,5 +1,10 @@
 import { lookupBang } from "../generated/bangs-min.js";
 import {
+  type CaptureUrlParts,
+  type CustomBangRecord,
+  compileCaptureUrl,
+} from "../shared/capture-template";
+import {
   DEFAULT_LUCKY_URL,
   DEFAULT_URL,
   FRECENCY_HALF_LIFE_MS,
@@ -13,18 +18,26 @@ import {
 } from "../shared/frecency-serial";
 import { hashFNV1a } from "../shared/hash";
 import { idbWrap, openDB, resetDB } from "../shared/idb";
+import { compileSnapTarget, type SnapTargetParts } from "../shared/snap-target";
 import {
   buildTopFrecency,
   type TopFrecencyEntry,
   updateTopFrecencyOnIncrement,
 } from "./frecency";
-import type { RedirectSettings, UrlParts } from "./redirect";
+import type { CustomUrlParts, RedirectSettings, UrlParts } from "./redirect";
 
 function splitUrl(url: string): UrlParts {
   const idx = url.indexOf("{}");
   return idx === -1
     ? [url, null]
     : [url.substring(0, idx), url.substring(idx + 2)];
+}
+
+function attachSnapTarget(
+  entry: UrlParts | CaptureUrlParts,
+  snap: SnapTargetParts | null
+): CustomUrlParts {
+  return snap ? ([...entry, snap] as CustomUrlParts) : entry;
 }
 
 const FRECENCY_COOKIE_ENTRIES = 8;
@@ -59,9 +72,7 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
           idbWrap<Array<{ key: string; value?: string }>>(
             tx.objectStore("settings").getAll()
           ),
-          idbWrap<Array<{ trigger: string; url: string }>>(
-            tx.objectStore("custom-bangs").getAll()
-          ),
+          idbWrap<CustomBangRecord[]>(tx.objectStore("custom-bangs").getAll()),
         ]);
         const settingsMap = Object.fromEntries(
           settings.map((s) => [s.key, s.value])
@@ -97,9 +108,17 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
             break;
         }
 
-        const custom: Record<string, UrlParts> = Object.create(null);
+        const custom: Record<string, CustomUrlParts> = Object.create(null);
         for (const e of all) {
-          custom[e.trigger] = splitUrl(e.url);
+          const snap = e.snap ? compileSnapTarget(e.snap) : null;
+          if (e.regex) {
+            const advanced = compileCaptureUrl(e.url, e.regex, e.encoding);
+            if (advanced) {
+              custom[e.trigger] = attachSnapTarget(advanced, snap);
+            }
+          } else {
+            custom[e.trigger] = attachSnapTarget(splitUrl(e.url), snap);
+          }
         }
 
         cachedRedirect = { defaultUrl, custom, luckyUrl };

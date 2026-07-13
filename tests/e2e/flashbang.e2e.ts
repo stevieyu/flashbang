@@ -89,7 +89,14 @@ async function navigateAndWaitForRedirect(
 
 async function seedCustomBangs(
   page: Page,
-  bangs: Array<{ trigger: string; name: string; url: string }>
+  bangs: Array<{
+    trigger: string;
+    name: string;
+    url: string;
+    regex?: string;
+    encoding?: "percent" | "plus" | "raw";
+    snap?: string;
+  }>
 ): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
@@ -431,6 +438,59 @@ test("settings reject invalid custom bang URL format", async ({ page }) => {
   await expect(page.locator("#custom-list")).toContainText(
     "No custom bangs yet"
   );
+});
+
+test("settings create and execute a custom capture bang", async ({ page }) => {
+  await mockCustomHostRoute(page);
+  await ensureWarmController(page);
+  await openSettingsModal(page);
+
+  await page.fill('input[name="shortcut"]', "trurl");
+  await page.fill('input[name="name"]', "Translate URL");
+  await page.fill('input[name="url"]', `${CUSTOM_HOST}/translate/$1?target=$2`);
+  await page.locator("#add-bang-form details summary").click();
+  await page.fill('input[name="regex"]', "(\\w+)\\s+(.*)");
+  await page.selectOption('select[name="encoding"]', "percent");
+  await submitCustomBangForm(page);
+  await expect(page.locator("#custom-list")).toContainText("!trurl");
+  await expect(page.locator("#custom-list")).toContainText("regex");
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await ensureWarmController(page);
+  await navigateAndWaitForRedirect(
+    page,
+    "/?q=%21trurl%20ja%20https%3A%2F%2Fexample.org%2Farticle",
+    /example\.com\/translate\/ja/
+  );
+  const redirected = new URL(page.url());
+  expect(redirected.pathname).toBe("/translate/ja");
+  expect(redirected.searchParams.get("target")).toBe(
+    "https://example.org/article"
+  );
+});
+
+test("settings create and execute a custom snap target", async ({ page }) => {
+  await mockGoogleSearchRoute(page);
+  await openSettingsModal(page);
+
+  await page.fill('input[name="shortcut"]', "snapdocs");
+  await page.fill('input[name="name"]', "Snap Docs");
+  await page.fill('input[name="url"]', `${CUSTOM_HOST}/search?q={}`);
+  await page.locator("#add-bang-form details summary").click();
+  await page.fill('input[name="snap"]', "example.com/docs");
+  await submitCustomBangForm(page);
+  await expect(page.locator("#custom-list")).toContainText("!snapdocs");
+  await expect(page.locator("#custom-list")).toContainText("snap");
+
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await ensureWarmController(page);
+  await navigateAndWaitForRedirect(
+    page,
+    "/?q=%40snapdocs%20arrays",
+    /google\.com\/search/
+  );
+  const redirected = new URL(page.url());
+  expect(redirected.searchParams.get("q")).toBe("arrays site:example.com/docs");
 });
 
 test("settings persist custom lucky URL across reload", async ({ page }) => {

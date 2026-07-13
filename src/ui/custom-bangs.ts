@@ -1,3 +1,9 @@
+import {
+  type CaptureEncoding,
+  validateCaptureBang,
+  validateSimpleBangUrl,
+} from "../shared/capture-template";
+import { validateSnapTarget } from "../shared/snap-target";
 import type { DB } from "./db";
 import { $, el } from "./dom";
 import { notifySW } from "./sw-bridge";
@@ -34,6 +40,24 @@ async function renderCustom(
           `!${b.trigger}`
         ),
         el("span", "flex-1 text-[13px] font-medium", b.name),
+        ...(b.regex
+          ? [
+              el(
+                "span",
+                "rounded-full bg-bg-active px-2 py-0.5 text-[10px] uppercase tracking-wide text-text-secondary",
+                "regex"
+              ),
+            ]
+          : []),
+        ...(b.snap
+          ? [
+              el(
+                "span",
+                "rounded-full bg-bg-active px-2 py-0.5 text-[10px] uppercase tracking-wide text-text-secondary",
+                "snap"
+              ),
+            ]
+          : []),
         rmBtn
       );
       return row;
@@ -57,21 +81,32 @@ export function setupCustomBangs(
       .trim();
     const name = (fd.get("name") as string).trim();
     const url = (fd.get("url") as string).trim();
+    const regex = (fd.get("regex") as string).trim();
+    const snap = (fd.get("snap") as string).trim();
+    const encoding = fd.get("encoding") as CaptureEncoding;
+    const error = $("#custom-bang-error");
+    error.textContent = "";
+    error.classList.add("hidden");
     if (!(trigger && name && url)) {
       return;
     }
-    if (!url.includes("{}")) {
+    const urlError = regex
+      ? validateCaptureBang(url, regex)
+      : validateSimpleBangUrl(url);
+    const validationError =
+      urlError ?? (snap ? validateSnapTarget(snap) : null);
+    if (validationError) {
+      error.textContent = validationError;
+      error.classList.remove("hidden");
       return;
     }
-    try {
-      const parsed = new URL(url.replace("{}", "test"));
-      if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-        return;
-      }
-    } catch {
-      return;
-    }
-    await db.addCustomBang({ trigger, name, url });
+    await db.addCustomBang({
+      trigger,
+      name,
+      url,
+      ...(regex ? { regex, encoding } : {}),
+      ...(snap ? { snap } : {}),
+    });
     notifySW("invalidate");
     form.reset();
     await renderCustom(db, onChange);

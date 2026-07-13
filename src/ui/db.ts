@@ -1,4 +1,11 @@
+import {
+  type CustomBangRecord,
+  isCaptureEncoding,
+  validateCaptureBang,
+  validateSimpleBangUrl,
+} from "../shared/capture-template";
 import { idbWrap, openDB } from "../shared/idb";
+import { validateSnapTarget } from "../shared/snap-target";
 
 const VALID_SETTING_KEYS: Record<string, string> = {
   defaultBang: "default-bang",
@@ -41,16 +48,12 @@ export class DB {
     await idbWrap(s.put({ key, value }));
   }
 
-  async getAllCustomBangs(): Promise<
-    Array<{ trigger: string; name: string; url: string }>
-  > {
+  async getAllCustomBangs(): Promise<CustomBangRecord[]> {
     const s = await this.store("custom-bangs");
-    return idbWrap<Array<{ trigger: string; name: string; url: string }>>(
-      s.getAll()
-    );
+    return idbWrap<CustomBangRecord[]>(s.getAll());
   }
 
-  async addCustomBang(bang: { trigger: string; name: string; url: string }) {
+  async addCustomBang(bang: CustomBangRecord) {
     const s = await this.store("custom-bangs", "readwrite");
     await idbWrap(s.put(bang));
   }
@@ -87,9 +90,7 @@ export class DB {
       idbWrap<{ key: string; value: string } | undefined>(
         settingsStore.get("lucky-url")
       ),
-      idbWrap<Array<{ trigger: string; name: string; url: string }>>(
-        tx.objectStore("custom-bangs").getAll()
-      ),
+      idbWrap<CustomBangRecord[]>(tx.objectStore("custom-bangs").getAll()),
     ]);
     return {
       settings: {
@@ -142,7 +143,15 @@ export class DB {
         ) {
           continue;
         }
-        if (!b.url.includes("{}")) {
+        const regex = typeof b.regex === "string" ? b.regex : undefined;
+        const snap = typeof b.snap === "string" ? b.snap : undefined;
+        const encoding = isCaptureEncoding(b.encoding) ? b.encoding : undefined;
+        const urlError = regex
+          ? validateCaptureBang(b.url, regex)
+          : validateSimpleBangUrl(b.url);
+        const validationError =
+          urlError ?? (snap ? validateSnapTarget(snap) : null);
+        if (validationError) {
           continue;
         }
         ops.push(
@@ -151,6 +160,8 @@ export class DB {
               trigger: b.trigger,
               name: b.name,
               url: b.url,
+              ...(regex ? { regex, encoding: encoding ?? "percent" } : {}),
+              ...(snap ? { snap } : {}),
             })
           )
         );

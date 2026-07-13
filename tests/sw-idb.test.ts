@@ -12,7 +12,13 @@ function loadSwIdb() {
 }
 
 async function seedDb(data: {
-  customBangs?: Array<{ trigger: string; url: string }>;
+  customBangs?: Array<{
+    trigger: string;
+    url: string;
+    regex?: string;
+    encoding?: "percent" | "plus" | "raw";
+    snap?: string;
+  }>;
   settings?: Array<{ key: string; value: string }>;
 }): Promise<void> {
   const shared = await loadSharedIdb();
@@ -88,6 +94,68 @@ describe("sw/idb redirect settings", () => {
     expect(settings.defaultUrl[0]).toContain("google.com/search?q=");
     expect(settings.luckyUrl?.[0]).toContain("duckduckgo.com/?q=");
     expect(settings.custom).toEqual(Object.create(null));
+  });
+
+  test("compiles custom capture bangs once while loading settings", async () => {
+    await seedDb({
+      customBangs: [
+        {
+          trigger: "translate",
+          url: "https://translate.example/$1/$2",
+          regex: "(\\w+)\\s+(.*)",
+          encoding: "percent",
+          snap: "translate.example/docs",
+        },
+      ],
+    });
+
+    const mod = await loadSwIdb();
+    const settings = await mod.readRedirectSettings();
+    expect(settings.custom.translate?.[3]).toBeInstanceOf(RegExp);
+    expect(settings.custom.translate?.[2]).toEqual([1, 2]);
+    expect(settings.custom.translate?.[5]).toEqual([
+      "+site:translate.example/docs",
+      "https://translate.example/docs",
+    ]);
+  });
+
+  test("ignores invalid persisted capture patterns", async () => {
+    await seedDb({
+      customBangs: [
+        {
+          trigger: "unsafe",
+          url: "https://example.com/$1",
+          regex: "(a+)+$",
+        },
+      ],
+    });
+
+    const mod = await loadSwIdb();
+    const settings = await mod.readRedirectSettings();
+    expect(settings.custom.unsafe).toBeUndefined();
+  });
+
+  test("precompiles custom snap targets into the custom tuple", async () => {
+    await seedDb({
+      customBangs: [
+        {
+          trigger: "docs",
+          url: "https://search.example.com?q={}",
+          snap: "docs.example.com/reference",
+        },
+      ],
+    });
+
+    const mod = await loadSwIdb();
+    const settings = await mod.readRedirectSettings();
+    expect(settings.custom.docs).toEqual([
+      "https://search.example.com?q=",
+      "",
+      [
+        "+site:docs.example.com/reference",
+        "https://docs.example.com/reference",
+      ],
+    ]);
   });
 
   test("falls back to DuckDuckGo lucky for an unmatched default bang", async () => {

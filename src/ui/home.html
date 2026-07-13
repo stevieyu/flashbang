@@ -304,10 +304,57 @@
             <input
               type="text"
               name="url"
-              placeholder="URL with {} for query"
+              placeholder="URL with {} or $1, $2..."
               class="input-field font-mono text-sm"
               required
             >
+            <details class="rounded-lg bg-bg-secondary px-3 py-2">
+              <summary
+                class="cursor-pointer text-xs font-medium text-text-secondary"
+              >
+                Advanced options
+              </summary>
+              <p class="label-text mt-2 mb-2">
+                Optionally use a different domain or path for
+                <code>@snap</code>
+                searches.
+              </p>
+              <input
+                type="text"
+                name="snap"
+                placeholder="Snap target, e.g. docs.example.com/api"
+                class="input-field font-mono text-sm"
+                maxlength="512"
+              >
+              <p class="label-text mt-3 mb-2">
+                Match the query with a regular expression and use
+                <code>$1</code>, <code>$2</code>, etc. in the URL.
+              </p>
+              <input
+                type="text"
+                name="regex"
+                placeholder="Regex, e.g. (\w+)\s+(.*)"
+                class="input-field font-mono text-sm"
+                maxlength="512"
+              >
+              <label class="label-text mt-2 block" for="capture-encoding"
+                >Capture encoding</label
+              >
+              <select
+                id="capture-encoding"
+                name="encoding"
+                class="input-field mt-1 text-sm"
+              >
+                <option value="percent">URL encoded (%20)</option>
+                <option value="plus">URL encoded (+)</option>
+                <option value="raw">Unencoded</option>
+              </select>
+            </details>
+            <p
+              id="custom-bang-error"
+              class="hidden text-xs text-danger"
+              role="alert"
+            ></p>
             <button type="submit" class="btn-primary w-full">Add Bang</button>
           </form>
           <div id="custom-list"></div>

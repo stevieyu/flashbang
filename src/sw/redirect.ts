@@ -1,4 +1,14 @@
-import { lookupBang } from "../generated/bangs-min.js";
+import {
+  lookupAdvancedBang,
+  lookupBang,
+  lookupSnapOverride,
+} from "../generated/bangs-min.js";
+import {
+  CAPTURE_ENCODE_PLUS,
+  CAPTURE_ENCODE_RAW,
+  type CaptureUrlParts,
+  MAX_CAPTURE_INPUT_LENGTH,
+} from "../shared/capture-template";
 import {
   CH_0,
   CH_1,
@@ -12,6 +22,7 @@ import {
   CH_PERCENT,
   CH_PLUS,
 } from "../shared/chars";
+import type { SnapTargetParts } from "../shared/snap-target";
 
 // NOTE: pos + char-width packed into one int to skip tuple alloc:
 //   findExcl/findSpace:         (pos << 2) | width        → >> 2 for pos, & 0b11 for width
@@ -19,9 +30,14 @@ import {
 // width is 1 for literal char, 3 for percent-encoded (%21, %40, etc.)
 
 export type UrlParts = readonly [string, string | null];
+type UrlPartsWithSnap = readonly [string, string | null, SnapTargetParts];
+type CaptureUrlPartsWithSnap = readonly [...CaptureUrlParts, SnapTargetParts];
+type SimpleEntry = UrlParts | UrlPartsWithSnap;
+type CaptureEntry = CaptureUrlParts | CaptureUrlPartsWithSnap;
+export type CustomUrlParts = SimpleEntry | CaptureEntry;
 
 export interface RedirectSettings {
-  custom: Record<string, UrlParts>;
+  custom: Record<string, CustomUrlParts>;
   defaultUrl: UrlParts;
   luckyUrl: UrlParts | null;
 }
@@ -169,9 +185,9 @@ function findLastSpace(s: string, start: number, before: number): number {
   return -1;
 }
 
-const _querySafeCache = new WeakMap<UrlParts, boolean>();
+const _querySafeCache = new WeakMap<SimpleEntry, boolean>();
 
-function isQuerySafe(entry: UrlParts): boolean {
+function isQuerySafe(entry: SimpleEntry): boolean {
   let safe = _querySafeCache.get(entry);
   if (safe !== undefined) {
     return safe;
@@ -240,7 +256,7 @@ function fixupForPath(raw: string): string {
 }
 
 function buildUrl(
-  entry: UrlParts,
+  entry: SimpleEntry,
   s: string,
   termStart: number,
   termEnd: number
@@ -260,6 +276,59 @@ function buildUrl(
   return prefix + fixupForPath(raw) + suffix;
 }
 
+function decodeCaptureInput(raw: string): string | null {
+  const hasPlus = raw.indexOf("+") !== -1;
+  const hasPercent = raw.indexOf("%") !== -1;
+  if (!(hasPlus || hasPercent)) {
+    return raw.length <= MAX_CAPTURE_INPUT_LENGTH ? raw : null;
+  }
+  const normalized = hasPlus ? raw.replaceAll("+", " ") : raw;
+  try {
+    const decoded = hasPercent ? decodeURIComponent(normalized) : normalized;
+    return decoded.length <= MAX_CAPTURE_INPUT_LENGTH ? decoded : null;
+  } catch {
+    return null;
+  }
+}
+
+function encodeCapture(value: string, encoding: number): string {
+  if (encoding === CAPTURE_ENCODE_RAW) {
+    return value;
+  }
+  const encoded = encodeURIComponent(value);
+  return encoding === CAPTURE_ENCODE_PLUS
+    ? encoded.replaceAll("%20", "+")
+    : encoded;
+}
+
+function buildCaptureUrl(
+  entry: CaptureEntry,
+  s: string,
+  termStart: number,
+  termEnd: number
+): string | null {
+  const raw =
+    termStart === 0 && termEnd === s.length
+      ? s
+      : s.substring(termStart, termEnd);
+  const decoded = decodeCaptureInput(raw);
+  if (decoded === null) {
+    return null;
+  }
+  const match = entry[3].exec(decoded);
+  if (!match) {
+    return null;
+  }
+  const suffixes = entry[1];
+  const indexes = entry[2];
+  const encoding = entry[4];
+  let url = entry[0];
+  for (let i = 0; i < indexes.length; i++) {
+    url += encodeCapture(match[indexes[i]] ?? "", encoding) + suffixes[i];
+  }
+  return url;
+}
+
 function luckyOrDefault(
   luckyUrl: UrlParts | null,
   defaultUrl: UrlParts,
@@ -270,23 +339,40 @@ function luckyOrDefault(
   return buildUrl(luckyUrl ?? defaultUrl, rawQuery, termStart, termEnd);
 }
 
+function findUrlTail(prefix: string, start: number): number {
+  let end = prefix.length;
+  const slash = prefix.indexOf("/", start);
+  if (slash !== -1) {
+    end = slash;
+  }
+  const query = prefix.indexOf("?", start);
+  if (query !== -1 && query < end) {
+    end = query;
+  }
+  const fragment = prefix.indexOf("#", start);
+  if (fragment !== -1 && fragment < end) {
+    end = fragment;
+  }
+  return end;
+}
+
 function originOfPrefix(prefix: string): string {
   const protoEnd = prefix.indexOf("://");
   if (protoEnd === -1) {
     return prefix;
   }
-  const pathStart = prefix.indexOf("/", protoEnd + 3);
-  return pathStart === -1 ? prefix : prefix.substring(0, pathStart);
+  const tailStart = findUrlTail(prefix, protoEnd + 3);
+  return tailStart === prefix.length ? prefix : prefix.substring(0, tailStart);
 }
 
 const builtInOriginCache: Record<string, string> = Object.create(null);
 const customOriginCache = new WeakMap<
-  Record<string, UrlParts>,
+  Record<string, CustomUrlParts>,
   Record<string, string>
 >();
 
 function getCustomOriginCache(
-  custom: Record<string, UrlParts>
+  custom: Record<string, CustomUrlParts>
 ): Record<string, string> {
   const existing = customOriginCache.get(custom);
   if (existing !== undefined) {
@@ -305,22 +391,67 @@ function redir(url: string): Response {
 
 function resolveBangFill(
   bang: string,
-  custom: Record<string, UrlParts>,
+  custom: Record<string, CustomUrlParts>,
   rawQuery: string,
   termStart: number,
   termEnd: number,
   hash: number
 ): string | null {
-  const entry = custom[bang] || lookupBang(bang, hash);
-  if (!entry) {
-    return null;
+  const customEntry = custom[bang];
+  if (customEntry) {
+    return customEntry.length < 5
+      ? buildUrl(customEntry as SimpleEntry, rawQuery, termStart, termEnd)
+      : buildCaptureUrl(
+          customEntry as CaptureEntry,
+          rawQuery,
+          termStart,
+          termEnd
+        );
   }
-  return buildUrl(entry, rawQuery, termStart, termEnd);
+  const entry = lookupBang(bang, hash);
+  if (entry) {
+    return buildUrl(entry, rawQuery, termStart, termEnd);
+  }
+  const advanced = lookupAdvancedBang(bang);
+  return advanced
+    ? buildCaptureUrl(advanced, rawQuery, termStart, termEnd)
+    : null;
+}
+
+function customSnapTarget(entry: CustomUrlParts): SnapTargetParts | null {
+  if (entry.length === 3) {
+    return entry[2];
+  }
+  return entry.length === 6 ? entry[5] : null;
+}
+
+function resolveSnapOrigin(
+  bang: string,
+  custom: Record<string, CustomUrlParts>,
+  hash: number
+): string | null {
+  const customEntry = custom[bang];
+  if (customEntry) {
+    const snap = customSnapTarget(customEntry);
+    if (snap) {
+      return snap[1];
+    }
+  } else {
+    const cached = builtInOriginCache[bang];
+    if (cached !== undefined) {
+      return cached;
+    }
+    const snap = lookupSnapOverride(bang, hash, true);
+    if (snap) {
+      return snap;
+    }
+  }
+  return resolveBangOrigin(bang, custom, hash);
 }
 
 function resolveBangOrigin(
   bang: string,
-  custom: Record<string, UrlParts>,
+  custom: Record<string, CustomUrlParts>,
   hash: number
 ): string | null {
   const customEntry = custom[bang];
@@ -340,10 +471,11 @@ function resolveBangOrigin(
     return builtIn;
   }
   const entry = lookupBang(bang, hash);
-  if (!entry) {
+  const resolved = entry || lookupAdvancedBang(bang);
+  if (!resolved) {
     return null;
   }
-  const origin = originOfPrefix(entry[0]);
+  const origin = originOfPrefix(resolved[0]);
   builtInOriginCache[bang] = origin;
   return origin;
 }
@@ -354,22 +486,19 @@ function domainOfPrefix(prefix: string): string | null {
     return null;
   }
   const hostStart = protoEnd + 3;
-  const pathStart = prefix.indexOf("/", hostStart);
-  const host =
-    pathStart === -1
-      ? prefix.substring(hostStart)
-      : prefix.substring(hostStart, pathStart);
+  const tailStart = findUrlTail(prefix, hostStart);
+  const host = prefix.substring(hostStart, tailStart);
   return host.startsWith("www.") ? host.substring(4) : host;
 }
 
 const builtInSiteFilterCache: Record<string, string> = Object.create(null);
 const customDomainCache = new WeakMap<
-  Record<string, UrlParts>,
+  Record<string, CustomUrlParts>,
   Record<string, string>
 >();
 
 function getCustomDomainCache(
-  custom: Record<string, UrlParts>
+  custom: Record<string, CustomUrlParts>
 ): Record<string, string> {
   const existing = customDomainCache.get(custom);
   if (existing !== undefined) {
@@ -382,11 +511,15 @@ function getCustomDomainCache(
 
 function resolveSnapSiteFilter(
   bang: string,
-  custom: Record<string, UrlParts>,
+  custom: Record<string, CustomUrlParts>,
   hash: number
 ): string | null {
   const customEntry = custom[bang];
   if (customEntry) {
+    const snap = customSnapTarget(customEntry);
+    if (snap) {
+      return snap[0];
+    }
     const cached = getCustomDomainCache(custom);
     let domain = cached[bang];
     if (domain === undefined) {
@@ -404,11 +537,16 @@ function resolveSnapSiteFilter(
   if (cached !== undefined) {
     return cached;
   }
+  const snap = lookupSnapOverride(bang, hash, false);
+  if (snap) {
+    return snap;
+  }
   const entry = lookupBang(bang, hash);
-  if (!entry) {
+  const resolved = entry || lookupAdvancedBang(bang);
+  if (!resolved) {
     return null;
   }
-  const domain = domainOfPrefix(entry[0]);
+  const domain = domainOfPrefix(resolved[0]);
   if (!domain) {
     return null;
   }
@@ -664,7 +802,7 @@ function resolveRaw(
     const trigger = extractTrigger(rawQuery, afterAt, triggerEnd);
 
     if (sp === -1 || sp + spLen >= end) {
-      const origin = resolveBangOrigin(trigger, custom, _lastHash);
+      const origin = resolveSnapOrigin(trigger, custom, _lastHash);
       if (!origin) {
         return [buildUrl(defaultUrl, rawQuery, start, end), null];
       }

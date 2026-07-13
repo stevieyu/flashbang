@@ -6,13 +6,27 @@ import {
   constants as zlibConstants,
 } from "node:zlib";
 import { $ } from "bun";
+import {
+  CAPTURE_ENCODE_PERCENT,
+  CAPTURE_ENCODE_PLUS,
+  CAPTURE_ENCODE_RAW,
+  parseCaptureTemplate,
+  validateCaptureBang,
+} from "../src/shared/capture-template";
 import { hashFNV1a } from "../src/shared/hash";
+import {
+  compileSnapTarget,
+  type SnapTargetParts,
+} from "../src/shared/snap-target";
 import { type BuildNode, buildRadixTrie } from "../src/shared/trie";
 
 interface Bang {
+  captureEncoding?: number;
   domain: string;
   name: string;
+  regex?: string;
   relevance: number;
+  snap?: string;
   trigger: string;
   url: string;
 }
@@ -27,11 +41,14 @@ interface RawDdgEntry {
 }
 
 interface RawKagiEntry {
+  ad?: string;
   d: string;
+  fmt?: string[];
   s: string;
   t: string;
   ts?: string[];
   u: string;
+  x?: string;
 }
 
 export const GENERATED_BANG_DATA_FILES = [
@@ -107,9 +124,12 @@ function appendBangWithAliases(
   out: Bang[],
   entry: {
     aliases?: readonly string[];
+    captureEncoding?: number;
     domain: string;
     name: string;
     relevance: number;
+    regex?: string;
+    snap?: string;
     trigger: string;
     url: string;
   }
@@ -120,6 +140,10 @@ function appendBangWithAliases(
     domain: entry.domain,
     url: entry.url,
     relevance: entry.relevance,
+    ...(entry.regex
+      ? { regex: entry.regex, captureEncoding: entry.captureEncoding }
+      : {}),
+    ...(entry.snap ? { snap: entry.snap } : {}),
   });
   if (!entry.aliases) {
     return;
@@ -131,6 +155,10 @@ function appendBangWithAliases(
       domain: entry.domain,
       url: entry.url,
       relevance: entry.relevance,
+      ...(entry.regex
+        ? { regex: entry.regex, captureEncoding: entry.captureEncoding }
+        : {}),
+      ...(entry.snap ? { snap: entry.snap } : {}),
     });
   }
 }
@@ -155,6 +183,19 @@ function parseKagi(raw: string): Bang[] {
   const entries: RawKagiEntry[] = JSON.parse(raw);
   const bangs: Bang[] = [];
   for (const entry of entries) {
+    let captureEncoding: number | undefined;
+    if (entry.x) {
+      const fmt = entry.fmt;
+      const encode =
+        fmt === undefined || fmt.includes("url_encode_placeholder");
+      const plus =
+        fmt === undefined || fmt.includes("url_encode_space_to_plus");
+      if (encode) {
+        captureEncoding = plus ? CAPTURE_ENCODE_PLUS : CAPTURE_ENCODE_PERCENT;
+      } else {
+        captureEncoding = CAPTURE_ENCODE_RAW;
+      }
+    }
     appendBangWithAliases(bangs, {
       trigger: entry.t,
       aliases: entry.ts,
@@ -162,6 +203,9 @@ function parseKagi(raw: string): Bang[] {
       domain: entry.d,
       url: normalizeUrl(entry.u, "https://kagi.com"),
       relevance: 0,
+      regex: entry.x,
+      captureEncoding,
+      snap: entry.ad,
     });
   }
   return bangs;
@@ -202,7 +246,15 @@ function validateBangs(bangs: Bang[]): Bang[] {
     if (!b.trigger) {
       return false;
     }
-    if (!b.url.includes("{}")) {
+    if (b.regex) {
+      const error = validateCaptureBang(b.url, b.regex);
+      if (error) {
+        console.error(
+          `Warning: bang !${b.trigger} has invalid regex: ${error}`
+        );
+        return false;
+      }
+    } else if (!b.url.includes("{}")) {
       console.error(`Warning: bang !${b.trigger} has no {} placeholder in URL`);
     }
     return true;
@@ -288,6 +340,9 @@ function transformSiteFilterBangs(bangs: Bang[]): Bang[] {
   const byEngine: Record<string, number> = {};
 
   const result = bangs.map((bang) => {
+    if (bang.regex) {
+      return bang;
+    }
     const siteFilter = extractSiteFilterDomain(bang.url);
     if (!siteFilter) {
       return bang;
@@ -549,7 +604,132 @@ function packMinData(bangs: Bang[]): PackedMinData {
   };
 }
 
-function renderMinOpenAddress(packed: PackedMinData): string {
+function renderAdvancedLookup(bangs: readonly Bang[]): string {
+  if (bangs.length === 0) {
+    return "export function lookupAdvancedBang(){return null}";
+  }
+
+  const definitions: string[] = [];
+  const definitionByKey = new Map<string, number>();
+  const definitionIds = new Array<number>(bangs.length);
+  for (let i = 0; i < bangs.length; i++) {
+    const bang = bangs[i];
+    const encoding = bang.captureEncoding ?? CAPTURE_ENCODE_PERCENT;
+    const key = `${bang.url}\0${bang.regex}\0${encoding}`;
+    let id = definitionByKey.get(key);
+    if (id === undefined) {
+      id = definitions.length;
+      definitionByKey.set(key, id);
+      const parsed = parseCaptureTemplate(bang.url);
+      if (!(parsed && bang.regex)) {
+        throw new Error(`Invalid advanced bang !${bang.trigger}`);
+      }
+      definitions.push(
+        `const _A${id}=['${jsEscape(parsed[0])}',${JSON.stringify(parsed[1])},${JSON.stringify(parsed[2])},new RegExp('${jsEscape(bang.regex)}'),${encoding}];`
+      );
+    }
+    definitionIds[i] = id;
+  }
+
+  let lookup = "export function lookupAdvancedBang(trigger){switch(trigger){";
+  for (let i = 0; i < bangs.length; i++) {
+    lookup += `case'${jsEscape(bangs[i].trigger)}':return _A${definitionIds[i]};`;
+  }
+  lookup += "default:return null}}";
+  return definitions.join("") + lookup;
+}
+
+interface GeneratedSnapOverride {
+  parts: SnapTargetParts;
+  trigger: string;
+}
+
+function derivedSnapTarget(url: string): SnapTargetParts | null {
+  try {
+    const sample = url.replace("{}", "test").replace(/\$[1-9]\d*/g, "test");
+    const parsed = new URL(sample);
+    const host = parsed.host.startsWith("www.")
+      ? parsed.host.substring(4)
+      : parsed.host;
+    return [`+site:${host}`, parsed.origin];
+  } catch {
+    return null;
+  }
+}
+
+function collectSnapOverrides(bangs: readonly Bang[]): GeneratedSnapOverride[] {
+  const overrides: GeneratedSnapOverride[] = [];
+  for (const bang of bangs) {
+    if (!bang.snap) {
+      continue;
+    }
+    const parts = compileSnapTarget(bang.snap);
+    if (!parts) {
+      console.error(
+        `Warning: bang !${bang.trigger} has invalid ad: ${bang.snap}`
+      );
+      continue;
+    }
+    const derived = derivedSnapTarget(bang.url);
+    if (
+      derived &&
+      derived[0] === parts[0] &&
+      derived[1].replace("://www.", "://") ===
+        parts[1].replace("://www.", "://")
+    ) {
+      continue;
+    }
+    overrides.push({ trigger: bang.trigger, parts });
+  }
+  return overrides;
+}
+
+function renderSnapLookup(overrides: readonly GeneratedSnapOverride[]): string {
+  if (overrides.length === 0) {
+    return "export function lookupSnapOverride(){return null}";
+  }
+
+  const definitions: string[] = [];
+  const definitionByKey = new Map<string, number>();
+  const byHash = new Map<number, Array<{ trigger: string; id: number }>>();
+  for (const override of overrides) {
+    const key = `${override.parts[0]}\0${override.parts[1]}`;
+    let id = definitionByKey.get(key);
+    if (id === undefined) {
+      id = definitions.length;
+      definitionByKey.set(key, id);
+      definitions.push(
+        `'${jsEscape(override.parts[0])}','${jsEscape(override.parts[1])}'`
+      );
+    }
+    const hash = hashFNV1a(override.trigger);
+    const entries = byHash.get(hash);
+    const item = { trigger: override.trigger, id };
+    if (entries) {
+      entries.push(item);
+    } else {
+      byHash.set(hash, [item]);
+    }
+  }
+
+  let lookup = "export function lookupSnapOverride(t,h,o){switch(h>>>0){";
+  for (const [hash, entries] of byHash) {
+    lookup += `case ${hash}:`;
+    for (const entry of entries) {
+      lookup += `if(t==='${jsEscape(entry.trigger)}')return _ST[${entry.id * 2}+(o?1:0)];`;
+    }
+    lookup += "return null;";
+  }
+  lookup += "default:return null}}";
+  return `const _ST=[${definitions.join(",")}];${lookup}`;
+}
+
+function renderMinOpenAddress(
+  packed: PackedMinData,
+  advanced: readonly Bang[],
+  snapOverrides: readonly GeneratedSnapOverride[],
+  totalCount: number
+): string {
   const {
     entryCount,
     triggerBlob,
@@ -639,8 +819,10 @@ function renderMinOpenAddress(packed: PackedMinData): string {
     `const _TC=new Array(${entryCount});for(let _i=0;_i<${entryCount};_i++){const _s=_ES[_i];_TC[_i]=_s===0?[_prefix(_EP[_i]),null]:[_prefix(_EP[_i]),_suffix(_s-1)]}` +
     "return{_TS,_TC,_HT,_HM}" +
     "})();" +
-    `export const BANG_COUNT=${entryCount};` +
-    "export function lookupBang(trigger,h){let slot=(h>>>0)&_HM;for(;;){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_TS[idx]===trigger){return _TC[idx]}slot=(slot+1)&_HM}}"
+    `export const BANG_COUNT=${totalCount};` +
+    "export function lookupBang(trigger,h){let slot=(h>>>0)&_HM;for(;;){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_TS[idx]===trigger){return _TC[idx]}slot=(slot+1)&_HM}}" +
+    renderAdvancedLookup(advanced) +
+    renderSnapLookup(snapOverrides)
   );
 }
 
@@ -751,14 +933,23 @@ interface BrotliCandidateInput {
 }
 
 function createBrotliCandidateInputs(
-  base: PackedMinData
+  base: PackedMinData,
+  advanced: readonly Bang[],
+  snapOverrides: readonly GeneratedSnapOverride[],
+  totalCount: number
 ): BrotliCandidateInput[] {
   const inputs: BrotliCandidateInput[] = [
-    { label: "insertion", js: renderMinOpenAddress(base) },
+    {
+      label: "insertion",
+      js: renderMinOpenAddress(base, advanced, snapOverrides, totalCount),
+    },
   ];
   for (const mode of BROTLI_SORT_ORDERS) {
     const packed = reorderPackedForBrotli(base, mode);
-    inputs.push({ label: mode, js: renderMinOpenAddress(packed) });
+    inputs.push({
+      label: mode,
+      js: renderMinOpenAddress(packed, advanced, snapOverrides, totalCount),
+    });
   }
   return inputs;
 }
@@ -780,9 +971,17 @@ function brotliSizeBytes(source: string): Promise<number> {
 }
 
 async function buildBrotliCandidates(
-  base: PackedMinData
+  base: PackedMinData,
+  advanced: readonly Bang[],
+  snapOverrides: readonly GeneratedSnapOverride[],
+  totalCount: number
 ): Promise<BrotliCandidate[]> {
-  const inputs = createBrotliCandidateInputs(base);
+  const inputs = createBrotliCandidateInputs(
+    base,
+    advanced,
+    snapOverrides,
+    totalCount
+  );
   const compressedSizes = await Promise.all(
     inputs.map((input) => brotliSizeBytes(input.js))
   );
@@ -829,8 +1028,17 @@ function selectBestCandidate(
 }
 
 async function generateMin(bangs: Bang[]): Promise<string> {
-  const base = packMinData(bangs);
-  const candidates = await buildBrotliCandidates(base);
+  const advanced = bangs.filter((bang) => bang.regex);
+  const regular = bangs.filter((bang) => !bang.regex);
+  const snapOverrides = collectSnapOverrides(bangs);
+  console.log(`  Snap overrides: ${snapOverrides.length} generated`);
+  const base = packMinData(regular);
+  const candidates = await buildBrotliCandidates(
+    base,
+    advanced,
+    snapOverrides,
+    bangs.length
+  );
   const best = selectBestCandidate(candidates);
   console.log(
     best.evalNs === null
@@ -1174,6 +1382,8 @@ async function writeGeneratedDeclarations(outDir: string): Promise<void> {
       [
         "export declare const BANG_COUNT: number;",
         "export declare function lookupBang(trigger: string, hash: number): readonly [string, string | null] | null;",
+        "export declare function lookupAdvancedBang(trigger: string): readonly [string, readonly string[], readonly number[], RegExp, number] | null;",
+        "export declare function lookupSnapOverride(trigger: string, hash: number, origin: boolean): string | null;",
         "",
       ].join("\n")
     ),

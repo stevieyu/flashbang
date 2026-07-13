@@ -190,11 +190,15 @@ Open the settings modal from the gear icon on the home page, or type **`!setting
 - **Default bang** — The bang used when no `!` is in the query. Defaults to `g` (Google). Change it to `ddg`, `b`, or any valid bang trigger
 - **Feeling Lucky** — Choose how lucky redirects resolve: Default (match your default bang), Google, DuckDuckGo, Custom (your own URL template with `{}` as query placeholder), or Disabled
 - **Search suggestions** — Choose the source for address bar autocomplete: Default (matches your default bang), Google, DuckDuckGo, Bing, Brave, Custom (provide your own URL template with `{}` as query placeholder), or None
-- **Custom bangs** — Add bangs with a trigger, name, and URL template (use `{}` as the query placeholder). Custom bangs override built-in ones
+- **Custom bangs** — Add bangs with a trigger, name, and URL template (use `{}` as the query placeholder). Advanced bangs can match the query with a regular expression, substitute `$1`, `$2`, etc., and set a separate domain or path for `@snap` searches. Custom bangs override built-in ones
 - **Search bangs** — Real-time search across all 14,000+ bangs by trigger, name, or domain
 - **Import/Export** — Export your settings and custom bangs as JSON. Import to restore or sync across devices
 
 All settings are stored in IndexedDB locally on your device.
+
+For example, a capture bang with URL `https://translate.example/$1/$2` and regex `(\w+)\s+(.*)` turns `!trurl ja https://example.com` into a URL containing `ja` and the encoded source URL. Capture values can use percent, plus-space, or raw encoding.
+
+An optional snap target such as `docs.example.com/api` makes `@mybang query` search only that domain and path, while `!mybang query` continues to use the bang's normal URL.
 
 ## How it works
 

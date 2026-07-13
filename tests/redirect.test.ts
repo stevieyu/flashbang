@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-
+import { compileCaptureUrl } from "../src/shared/capture-template";
+import { compileSnapTarget } from "../src/shared/snap-target";
 import {
   type RedirectSettings,
   redirect,
@@ -18,7 +19,7 @@ function redirectRawTrigger(
   return redirectRawTuple(rawQuery, settings)[1];
 }
 
-import type { UrlParts } from "../src/sw/redirect";
+import type { CustomUrlParts, UrlParts } from "../src/sw/redirect";
 
 const DEFAULT_URL: UrlParts = ["https://www.google.com/search?q=", ""];
 const LUCKY_URL: UrlParts = ["https://www.google.com/search?btnI&q=", ""];
@@ -34,8 +35,8 @@ const TEST_BANGS: Record<string, UrlParts> = {
 };
 
 function testBangs(
-  overrides?: Record<string, UrlParts>
-): Record<string, UrlParts> {
+  overrides?: Record<string, CustomUrlParts>
+): Record<string, CustomUrlParts> {
   return { ...TEST_BANGS, ...overrides };
 }
 
@@ -175,6 +176,92 @@ describe("redirect — routing logic", () => {
     );
     expect(r.status).toBe(302);
     expect(loc(r)).toBe("not-a-url/");
+  });
+
+  test("bare custom bang strips a query without an intervening slash", () => {
+    const r = redirect(
+      "!g",
+      settings({ custom: { g: splitUrl("https://custom.search?q={}") } })
+    );
+    expect(loc(r)).toBe("https://custom.search");
+  });
+});
+
+describe("redirect — capture bangs", () => {
+  test("built-in ktr fills and percent-encodes both captures", () => {
+    expect(
+      redirectUrl(
+        "!ktr japanese https://example.com/article?q=hello world",
+        settings()
+      )
+    ).toBe(
+      "https://translate.kagi.com/japanese/https%3A%2F%2Fexample.com%2Farticle%3Fq%3Dhello%20world"
+    );
+  });
+
+  test("built-in ktr supports suffix syntax", () => {
+    expect(redirectUrl("japanese https://example.com ktr!", settings())).toBe(
+      "https://translate.kagi.com/japanese/https%3A%2F%2Fexample.com"
+    );
+  });
+
+  test("capture bang without a term opens its origin", () => {
+    expect(redirectUrl("!ktr", settings())).toBe("https://translate.kagi.com");
+  });
+
+  test("capture no-match falls back to the full default query", () => {
+    expect(redirectUrl("!ktr japanese", settings())).toBe(
+      "https://www.google.com/search?q=!ktr+japanese"
+    );
+    expect(redirectRawTrigger("!ktr+japanese", settings())).toBeNull();
+  });
+
+  test("oversized capture input bypasses regex execution", () => {
+    const query = `!ktr+japanese+${"a".repeat(2049)}`;
+    expect(redirectRawTrigger(query, settings())).toBeNull();
+    expect(loc(redirectRaw(query, settings()))).toBe(
+      `https://www.google.com/search?q=${query}`
+    );
+  });
+
+  test("custom capture bang overrides a built-in", () => {
+    const advanced = compileCaptureUrl(
+      "https://custom.example/$1?q=$2",
+      "(\\w+)\\s+(.*)",
+      "plus"
+    )!;
+    const s = settings({
+      custom: { ktr: advanced },
+    });
+    expect(redirectUrl("!ktr en hello world", s)).toBe(
+      "https://custom.example/en?q=hello+world"
+    );
+  });
+
+  test("custom raw captures are substituted without encoding", () => {
+    const advanced = compileCaptureUrl(
+      "https://example.com/search?$1",
+      "(.*)",
+      "raw"
+    )!;
+    const s = settings({
+      custom: { raw: advanced },
+    });
+    expect(redirectUrl("!raw q=hello&lang=en", s)).toBe(
+      "https://example.com/search?q=hello&lang=en"
+    );
+  });
+
+  test("capture bangs work as snaps", () => {
+    expect(redirectUrl("@ktr translation", settings())).toBe(
+      "https://www.google.com/search?q=translation+site:translate.kagi.com"
+    );
+  });
+
+  test("invalid percent encoding does not execute a capture regex", () => {
+    expect(
+      redirectRaw("!ktr+japanese+%E0%A4%A", settings()).headers.get("Location")
+    ).toBe("https://www.google.com/search?q=!ktr+japanese+%E0%A4%A");
   });
 });
 
@@ -728,6 +815,67 @@ describe("snap — custom bangs work as snaps", () => {
     const r = redirect("@mysite", settings({ custom }));
     expect(r.status).toBe(302);
     expect(loc(r)).toBe("https://mysite.com");
+  });
+
+  test("custom snap extracts a host before query parameters", () => {
+    const custom: Record<string, UrlParts> = Object.create(null);
+    custom.mysite = splitUrl("https://mysite.com?q={}");
+    expect(loc(redirect("@mysite test", settings({ custom })))).toBe(
+      "https://www.google.com/search?q=test+site:mysite.com"
+    );
+  });
+
+  test("custom snap target overrides the URL-derived domain and path", () => {
+    const snap = compileSnapTarget("docs.example.com/reference")!;
+    const custom: Record<string, CustomUrlParts> = {
+      docs: ["https://search.example.com?q=", "", snap],
+    };
+    const s = settings({ custom });
+    expect(loc(redirect("@docs arrays", s))).toBe(
+      "https://www.google.com/search?q=arrays+site:docs.example.com/reference"
+    );
+    expect(loc(redirect("@docs", s))).toBe(
+      "https://docs.example.com/reference"
+    );
+    expect(loc(redirect("!docs arrays", s))).toBe(
+      "https://search.example.com?q=arrays"
+    );
+    expect(loc(redirect("!docs", s))).toBe("https://search.example.com");
+  });
+
+  test("custom capture and snap metadata share one compiled tuple", () => {
+    const capture = compileCaptureUrl(
+      "https://translate.example/$1/$2",
+      "(\\w+)\\s+(.*)",
+      "percent"
+    )!;
+    const snap = compileSnapTarget("translate.example/docs")!;
+    const entry = [...capture, snap] as CustomUrlParts;
+    const s = settings({ custom: { multi: entry } });
+    expect(loc(redirect("!multi ja hello", s))).toBe(
+      "https://translate.example/ja/hello"
+    );
+    expect(loc(redirect("@multi hello", s))).toBe(
+      "https://www.google.com/search?q=hello+site:translate.example/docs"
+    );
+  });
+});
+
+describe("snap — Kagi alternate domains", () => {
+  test("uses ad for snap searches without changing normal bangs", () => {
+    expect(loc(redirect("@hn story", settings()))).toBe(
+      "https://www.google.com/search?q=story+site:news.ycombinator.com"
+    );
+    expect(loc(redirect("@hn", settings()))).toBe(
+      "https://news.ycombinator.com"
+    );
+    expect(loc(redirect("!hn", settings()))).toBe("https://hn.algolia.com");
+  });
+
+  test("preserves path-scoped ad values", () => {
+    expect(loc(redirect("@nr nix flake", settings()))).toBe(
+      "https://www.google.com/search?q=nix+flake+site:github.com/NixOS/nixpkgs"
+    );
   });
 });
 
