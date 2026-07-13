@@ -1,3 +1,8 @@
+import {
+  DEFAULT_LUCKY_PROVIDER,
+  LUCKY_TRIGGER_PROVIDERS,
+  SUGGEST_TRIGGER_PROVIDERS,
+} from "../shared/constants";
 import { flashAnim, shakeAnim } from "./animations";
 import { setSuggestCookie } from "./cookie";
 import { setupCustomBangs } from "./custom-bangs";
@@ -8,6 +13,9 @@ import { notifySW } from "./sw-bridge";
 export async function initSettings(db: DB) {
   const defaultInput = $<HTMLInputElement>("#default-bang");
   const suggestSelect = $<HTMLSelectElement>("#suggest-provider");
+  const suggestDefaultDisplay = $("#suggest-default-display");
+  const suggestDefaultPrefix = $("#suggest-default-prefix");
+  const suggestDefaultProvider = $("#suggest-default-provider");
   const suggestUrlInput = $<HTMLInputElement>("#suggest-url");
   const suggestFirefoxNote = $("#suggest-firefox-note");
   const suggestFirefoxProviderPickerWrap = $(
@@ -20,6 +28,9 @@ export async function initSettings(db: DB) {
   const suggestFirefoxUrl = $<HTMLButtonElement>("#suggest-firefox-url");
   const suggestFirefoxProviderMenu = $("#suggest-firefox-provider-menu");
   const luckySelect = $<HTMLSelectElement>("#lucky-provider");
+  const luckyDefaultDisplay = $("#lucky-default-display");
+  const luckyDefaultPrefix = $("#lucky-default-prefix");
+  const luckyDefaultProvider = $("#lucky-default-provider");
   const luckyUrlInput = $<HTMLInputElement>("#lucky-url");
 
   const [rawSettings, initialCustom] = await Promise.all([
@@ -37,7 +48,46 @@ export async function initSettings(db: DB) {
   const savedUrl = rawSettings[2] || "";
   const savedLucky = rawSettings[3] || "default";
   const savedLuckyUrl = rawSettings[4] || "";
+  let activeDefaultBang = defaultBang;
   let custom = initialCustom;
+
+  function setDefaultDisplay(
+    select: HTMLSelectElement,
+    display: HTMLElement,
+    prefix: HTMLElement,
+    providerBadge: HTMLElement,
+    matchedProvider: string | undefined,
+    fallbackProvider: string
+  ) {
+    const provider = matchedProvider || fallbackProvider;
+    const providerOption = Array.from(select.options).find(
+      (option) => option.value === provider
+    );
+    prefix.textContent = matchedProvider ? "Match bang" : "Fallback";
+    providerBadge.textContent = providerOption?.text || provider;
+    const visible = select.value === "default";
+    display.classList.toggle("hidden", !visible);
+    display.classList.toggle("flex", visible);
+  }
+
+  function updateDefaultDisplays(trigger: string) {
+    setDefaultDisplay(
+      luckySelect,
+      luckyDefaultDisplay,
+      luckyDefaultPrefix,
+      luckyDefaultProvider,
+      LUCKY_TRIGGER_PROVIDERS[trigger],
+      DEFAULT_LUCKY_PROVIDER
+    );
+    setDefaultDisplay(
+      suggestSelect,
+      suggestDefaultDisplay,
+      suggestDefaultPrefix,
+      suggestDefaultProvider,
+      SUGGEST_TRIGGER_PROVIDERS[trigger],
+      "none"
+    );
+  }
 
   function syncCookie() {
     setSuggestCookie(
@@ -188,6 +238,7 @@ export async function initSettings(db: DB) {
     }
   }
 
+  updateDefaultDisplays(activeDefaultBang);
   syncCookie();
 
   const mod = await import("../generated/bangs-meta.js");
@@ -199,9 +250,11 @@ export async function initSettings(db: DB) {
   defaultInput.addEventListener("change", async () => {
     const val = defaultInput.value.replace(/^!+/, "").toLowerCase().trim();
     if (full[val]) {
+      activeDefaultBang = val;
       await db.setSetting("default-bang", val);
       notifySW("invalidate");
       syncCookie();
+      updateDefaultDisplays(activeDefaultBang);
       flashAnim(defaultInput);
       $("#bang-status").textContent = full[val].s;
       $("#bang-status").className = "text-sm text-success";
@@ -216,6 +269,7 @@ export async function initSettings(db: DB) {
     await db.setSetting("suggest-provider", suggestSelect.value);
     notifySW("invalidate");
     syncCookie();
+    updateDefaultDisplays(activeDefaultBang);
     if (suggestSelect.value === "custom") {
       suggestUrlInput.classList.remove("hidden");
     } else {
@@ -232,6 +286,7 @@ export async function initSettings(db: DB) {
   luckySelect.addEventListener("change", async () => {
     await db.setSetting("lucky-provider", luckySelect.value);
     notifySW("invalidate");
+    updateDefaultDisplays(activeDefaultBang);
     if (luckySelect.value === "custom") {
       luckyUrlInput.classList.remove("hidden");
     } else {

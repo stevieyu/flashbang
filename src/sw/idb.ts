@@ -3,6 +3,7 @@ import {
   DEFAULT_LUCKY_URL,
   DEFAULT_URL,
   FRECENCY_HALF_LIFE_MS,
+  LUCKY_TRIGGER_PROVIDERS,
   LUCKY_URLS,
   MAX_FRECENCY_ENTRIES,
 } from "../shared/constants";
@@ -75,7 +76,7 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
             luckyUrl = null;
             break;
           case "google":
-            luckyUrl = splitUrl(LUCKY_URLS.g);
+            luckyUrl = splitUrl(LUCKY_URLS.google);
             break;
           case "ddg":
             luckyUrl = splitUrl(LUCKY_URLS.ddg);
@@ -89,7 +90,10 @@ export function readRedirectSettings(): Promise<RedirectSettings> {
               : null;
             break;
           default:
-            luckyUrl = splitUrl(LUCKY_URLS[defaultBang] || DEFAULT_LUCKY_URL);
+            luckyUrl = splitUrl(
+              LUCKY_URLS[LUCKY_TRIGGER_PROVIDERS[defaultBang]] ||
+                DEFAULT_LUCKY_URL
+            );
             break;
         }
 

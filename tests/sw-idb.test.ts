@@ -89,6 +89,31 @@ describe("sw/idb redirect settings", () => {
     expect(settings.luckyUrl?.[0]).toContain("duckduckgo.com/?q=");
     expect(settings.custom).toEqual(Object.create(null));
   });
+
+  test("falls back to DuckDuckGo lucky for an unmatched default bang", async () => {
+    await seedDb({
+      settings: [{ key: "default-bang", value: "w" }],
+    });
+
+    const mod = await loadSwIdb();
+    const settings = await mod.readRedirectSettings();
+
+    expect(settings.luckyUrl?.[0]).toContain("duckduckgo.com/?q=");
+  });
+
+  test("matches the google bang to Google lucky", async () => {
+    await seedDb({
+      settings: [{ key: "default-bang", value: "google" }],
+    });
+
+    const mod = await loadSwIdb();
+    const settings = await mod.readRedirectSettings();
+
+    expect(settings.luckyUrl).toEqual([
+      "https://www.google.com/search?q=",
+      "&btnI=1",
+    ]);
+  });
 });
 
 describe("sw/idb frecency", () => {

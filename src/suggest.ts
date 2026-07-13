@@ -8,7 +8,11 @@ import {
   CH_TAB,
   CH_VTAB,
 } from "./shared/chars";
-import { JSON_HEADERS, SUGGEST_URLS } from "./shared/constants";
+import {
+  JSON_HEADERS,
+  SUGGEST_TRIGGER_PROVIDERS,
+  SUGGEST_URLS,
+} from "./shared/constants";
 import { readQueryParam } from "./shared/raw-query";
 import {
   encodeSuggestCookieValue,
@@ -113,33 +117,12 @@ export function parsePartialBang(q: string): PartialBang | null {
   return null;
 }
 
-const TRIGGER_ALIAS: Record<string, string> = {
-  g: "google",
-  google: "google",
-  ddg: "ddg",
-  duckduckgo: "ddg",
-  b: "bing",
-  bing: "bing",
-  brave: "brave",
-  y: "yahoo",
-  yahoo: "yahoo",
-  ec: "ecosia",
-  ecosia: "ecosia",
-  kagi: "kagi",
-  sp: "startpage",
-  startpage: "startpage",
-  ya: "yandex",
-  yandex: "yandex",
-  bd: "baidu",
-  baidu: "baidu",
-};
-
 function resolveEndpoint(provider: string, trigger: string): string | null {
   return (
     SUGGEST_URLS[provider] ??
     (provider === "none"
       ? null
-      : (SUGGEST_URLS[TRIGGER_ALIAS[trigger]] ?? null))
+      : (SUGGEST_URLS[SUGGEST_TRIGGER_PROVIDERS[trigger]] ?? null))
   );
 }
 

@@ -145,14 +145,27 @@
             <code>! query</code>
             to jump to the first search result
           </p>
-          <select id="lucky-provider" class="input-field text-sm">
-            <option value="default">Default (match bang)</option>
-            <option value="google">Google</option>
-            <option value="ddg">DuckDuckGo</option>
-            <option value="kagi">Kagi</option>
-            <option value="custom">Custom</option>
-            <option value="none">Disabled</option>
-          </select>
+          <div class="relative">
+            <select id="lucky-provider" class="input-field text-sm">
+              <option value="default">Match bang</option>
+              <option value="google">Google</option>
+              <option value="ddg">DuckDuckGo</option>
+              <option value="kagi">Kagi</option>
+              <option value="custom">Custom</option>
+              <option value="none">Disabled</option>
+            </select>
+            <div
+              id="lucky-default-display"
+              class="pointer-events-none absolute inset-y-px left-px right-9 hidden items-center gap-2 rounded-l-lg bg-bg-hover px-3 text-sm text-text"
+              aria-hidden="true"
+            >
+              <span id="lucky-default-prefix">Match bang</span>
+              <span
+                id="lucky-default-provider"
+                class="rounded-full bg-success px-2 py-0.5 font-mono text-xs text-bg"
+              ></span>
+            </div>
+          </div>
           <input
             type="text"
             id="lucky-url"
@@ -167,21 +180,34 @@
           <p class="label-text mb-2">
             Source for address bar autocomplete suggestions
           </p>
-          <select id="suggest-provider" class="input-field text-sm">
-            <option value="default">Default (match bang)</option>
-            <option value="google">Google</option>
-            <option value="ddg">DuckDuckGo</option>
-            <option value="bing">Bing</option>
-            <option value="brave">Brave</option>
-            <option value="yahoo">Yahoo</option>
-            <option value="ecosia">Ecosia</option>
-            <option value="kagi">Kagi</option>
-            <option value="startpage">Startpage</option>
-            <option value="yandex">Yandex</option>
-            <option value="baidu">Baidu</option>
-            <option value="custom">Custom</option>
-            <option value="none">None</option>
-          </select>
+          <div class="relative">
+            <select id="suggest-provider" class="input-field text-sm">
+              <option value="default">Match bang</option>
+              <option value="google">Google</option>
+              <option value="ddg">DuckDuckGo</option>
+              <option value="bing">Bing</option>
+              <option value="brave">Brave</option>
+              <option value="yahoo">Yahoo</option>
+              <option value="ecosia">Ecosia</option>
+              <option value="kagi">Kagi</option>
+              <option value="startpage">Startpage</option>
+              <option value="yandex">Yandex</option>
+              <option value="baidu">Baidu</option>
+              <option value="custom">Custom</option>
+              <option value="none">None</option>
+            </select>
+            <div
+              id="suggest-default-display"
+              class="pointer-events-none absolute inset-y-px left-px right-9 hidden items-center gap-2 rounded-l-lg bg-bg-hover px-3 text-sm text-text"
+              aria-hidden="true"
+            >
+              <span id="suggest-default-prefix">Match bang</span>
+              <span
+                id="suggest-default-provider"
+                class="rounded-full bg-success px-2 py-0.5 font-mono text-xs text-bg"
+              ></span>
+            </div>
+          </div>
           <input
             type="text"
             id="suggest-url"

@@ -924,6 +924,14 @@ describe("provider proxying — via suggest()", () => {
     );
   });
 
+  test("provider=default + trigger=s → resolves to Startpage", async () => {
+    fetchSpy.mockResolvedValueOnce(Response.json(["cats", []]));
+    await suggest("cats", { ...defaultSettings, trigger: "s" });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://www.startpage.com/osuggestions?q=cats"
+    );
+  });
+
   test("provider=default + trigger=yandex → resolves to yandex", async () => {
     fetchSpy.mockResolvedValueOnce(Response.json(["cats", []]));
     await suggest("cats", { ...defaultSettings, trigger: "yandex" });

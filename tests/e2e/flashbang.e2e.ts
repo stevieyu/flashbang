@@ -338,6 +338,35 @@ test("settings persist default bang and affect fallback redirects", async ({
   expect(redirected.searchParams.get("q")).toBe("hello");
 });
 
+test("default provider labels follow the selected bang", async ({ page }) => {
+  await openSettingsModal(page);
+
+  const luckyDefault = page.locator("#lucky-default-display");
+  const suggestDefault = page.locator("#suggest-default-display");
+  await expect(luckyDefault).toHaveText(/Match bang\s*Google/);
+  await expect(suggestDefault).toHaveText(/Match bang\s*Google/);
+
+  await page.fill("#default-bang", "google");
+  await page.dispatchEvent("#default-bang", "change");
+  await expect(luckyDefault).toHaveText(/Match bang\s*Google/);
+  await expect(suggestDefault).toHaveText(/Match bang\s*Google/);
+
+  await page.fill("#default-bang", "s");
+  await page.dispatchEvent("#default-bang", "change");
+  await expect(luckyDefault).toHaveText(/Fallback\s*DuckDuckGo/);
+  await expect(suggestDefault).toHaveText(/Match bang\s*Startpage/);
+
+  await page.fill("#default-bang", "w");
+  await page.dispatchEvent("#default-bang", "change");
+  await expect(luckyDefault).toHaveText(/Fallback\s*DuckDuckGo/);
+  await expect(suggestDefault).toHaveText(/Fallback\s*None/);
+
+  await page.selectOption("#suggest-provider", "google");
+  await expect(suggestDefault).toBeHidden();
+  await page.selectOption("#suggest-provider", "default");
+  await expect(suggestDefault).toBeVisible();
+});
+
 test("settings persist suggest provider none across reload", async ({
   page,
   request,
