@@ -34,6 +34,7 @@ const ASSETS = [
 const OPTIONAL_ASSETS = [...new Set(ASSETS)];
 const PRECACHE_CONCURRENCY = 4;
 let optionalPrecachePromise: Promise<void> | null = null;
+let benchmarkClientId: string | null = null;
 const RESOLVED_PROMISE: Promise<void> = Promise.resolve();
 const swallowError = () => {
   /* best-effort */
@@ -143,6 +144,17 @@ self.addEventListener("activate", (e: ExtendableEvent) => {
 });
 
 self.addEventListener("message", (e: ExtendableMessageEvent) => {
+  if (e.data?.type === "benchmark-mode") {
+    const sourceId = (e.source as Client | null)?.id ?? null;
+    const enable = e.data.enabled === true && sourceId !== null;
+    if (enable) {
+      benchmarkClientId = sourceId;
+    } else if (benchmarkClientId === sourceId) {
+      benchmarkClientId = null;
+    }
+    e.ports[0]?.postMessage({ enabled: benchmarkClientId === sourceId });
+    return;
+  }
   if (e.data?.type === "invalidate") {
     invalidateCache();
   }
@@ -188,7 +200,10 @@ self.addEventListener("fetch", (e: FetchEvent) => {
       const cached = getCachedSettings();
       if (cached) {
         const [resp, trigger] = redirectRaw(rawQ, cached);
-        if (trigger) {
+        if (
+          trigger &&
+          (benchmarkClientId === null || e.clientId !== benchmarkClientId)
+        ) {
           queueBangSideEffects(e, trigger);
         }
         e.respondWith(resp);
@@ -196,7 +211,10 @@ self.addEventListener("fetch", (e: FetchEvent) => {
         e.respondWith(
           readRedirectSettings().then((s) => {
             const [resp, trigger] = redirectRaw(rawQ, s);
-            if (trigger) {
+            if (
+              trigger &&
+              (benchmarkClientId === null || e.clientId !== benchmarkClientId)
+            ) {
               queueBangSideEffects(e, trigger);
             }
             return resp;

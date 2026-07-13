@@ -60,6 +60,12 @@
   <body>
     <div class="max-w-[720px] mx-auto px-6 pt-10 pb-16">
       <h1 class="text-[2rem] font-800 tracking-tight mb-1">
+        <a
+          href="/"
+          aria-label="Back to flashbang"
+          class="inline-block mr-0.5 text-white no-underline"
+          >&lsaquo;</a
+        >
         <a href="/" class="text-inherit no-underline hover:text-white"
           >flashbang</a
         >
@@ -97,6 +103,12 @@
               Run Benchmark
             </button>
           </div>
+          <p class="text-[0.78rem] text-text-secondary mt-1">
+            <strong class="text-[#facc15] font-600"
+              >Keep only one benchmark page open</strong
+            >
+            at a time so Service Worker isolation remains active for this tab.
+          </p>
         </div>
 
         <div id="progress" class="hidden">
@@ -149,8 +161,8 @@
               >fetch('/?q=...', { redirect: 'manual' })</code
             >
             which stops at the Service Worker&rsquo;s 302 redirect response
-            without following it. This measures the actual SW processing time
-            with no network overhead.
+            without following it. This measures browser-to-worker round-trip
+            latency without making a request to the redirect destination.
           </p>
           <ul class="my-2 ml-5">
             <li class="mb-1">
@@ -166,6 +178,10 @@
               for high-resolution timing per iteration
             </li>
             <li class="mb-1">
+              <strong class="text-text">Isolated benchmark mode</strong>
+              prevents requests from changing frecency or cookies
+            </li>
+            <li class="mb-1">
               Stats computed: <strong class="text-text">median</strong>, mean,
               p95, p99, min, max
             </li>
@@ -173,6 +189,8 @@
           <p class="mb-3">
             Run with DevTools <strong class="text-text">closed</strong> &mdash;
             Chrome adds huge instrumentation overhead to Service Worker timing.
+            The maximum is sensitive to browser scheduling and GC pauses; use
+            the median and percentiles for comparisons.
           </p>
         </div>
       </div>

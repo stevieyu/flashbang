@@ -60,6 +60,28 @@ async function ensureSW(): Promise<void> {
   setTimeout(() => status.classList.add("hidden"), 1500);
 }
 
+function setBenchmarkMode(enabled: boolean): Promise<boolean> {
+  const controller = navigator.serviceWorker.controller;
+  if (!controller) {
+    return Promise.resolve(false);
+  }
+
+  return new Promise<boolean>((resolve, reject) => {
+    const channel = new MessageChannel();
+    const timeout = window.setTimeout(
+      () => reject(new Error("Service Worker benchmark mode timed out")),
+      2000
+    );
+    channel.port1.onmessage = (event: MessageEvent<{ enabled?: boolean }>) => {
+      window.clearTimeout(timeout);
+      resolve(event.data.enabled === enabled);
+    };
+    controller.postMessage({ type: "benchmark-mode", enabled }, [
+      channel.port2,
+    ]);
+  });
+}
+
 interface Stats {
   max: number;
   mean: number;
@@ -119,6 +141,7 @@ async function benchQuery(
   }
 
   const times: number[] = [];
+  const progressInterval = Math.max(1, Math.floor(iterations / 50));
   for (let i = 0; i < iterations; i++) {
     const t0 = performance.now();
     try {
@@ -127,7 +150,10 @@ async function benchQuery(
       return { error: true, message: (e as Error).message || "Request failed" };
     }
     times.push(performance.now() - t0);
-    onProgress(i + 1);
+    const completed = i + 1;
+    if (completed % progressInterval === 0 || completed === iterations) {
+      onProgress(completed);
+    }
   }
 
   return { error: false, ...computeStats(times) };
@@ -209,37 +235,55 @@ runBtn.addEventListener("click", async () => {
   );
 
   runBtn.disabled = true;
+  let benchmarkModeEnabled = false;
 
   try {
-    await ensureSW();
-  } catch {
-    const status = $("#sw-status");
-    status.textContent =
-      "Could not install Service Worker. Results will measure server response.";
-    status.classList.remove("hidden");
+    try {
+      await ensureSW();
+    } catch {
+      const status = $("#sw-status");
+      status.textContent =
+        "Could not install Service Worker. Results will measure server response.";
+      status.classList.remove("hidden");
+    }
+
+    try {
+      benchmarkModeEnabled = await setBenchmarkMode(true);
+    } catch {
+      const status = $("#sw-status");
+      status.textContent =
+        "Could not isolate benchmark requests. Frecency may be updated.";
+      status.classList.remove("hidden");
+    }
+
+    progressEl.classList.remove("hidden");
+
+    const results: BenchResult[] = [];
+    const total = QUERY_TYPES.length;
+
+    for (let qi = 0; qi < total; qi++) {
+      const qt = QUERY_TYPES[qi];
+      progressText.textContent = `Benchmarking: ${qt.label} (${qi + 1}/${total})…`;
+      progressFill.style.width = `${(qi / total) * 100}%`;
+
+      const result = await benchQuery(qt.query, iterations, (done) => {
+        progressFill.style.width = `${((qi + done / iterations) / total) * 100}%`;
+        progressText.textContent = `${qt.label}… ${done}/${iterations}`;
+      });
+
+      results.push(result);
+      renderResults(results);
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    progressText.textContent = "Done";
+    progressFill.style.width = "100%";
+  } finally {
+    if (benchmarkModeEnabled) {
+      await setBenchmarkMode(false).catch(() => {
+        /* The client-scoped mode cannot affect other tabs. */
+      });
+    }
+    runBtn.disabled = false;
   }
-
-  progressEl.classList.remove("hidden");
-
-  const results: BenchResult[] = [];
-  const total = QUERY_TYPES.length;
-
-  for (let qi = 0; qi < total; qi++) {
-    const qt = QUERY_TYPES[qi];
-    progressText.textContent = `Benchmarking: ${qt.label} (${qi + 1}/${total})…`;
-    progressFill.style.width = `${(qi / total) * 100}%`;
-
-    const result = await benchQuery(qt.query, iterations, (done) => {
-      progressFill.style.width = `${((qi + done / iterations) / total) * 100}%`;
-      progressText.textContent = `${qt.label}… ${done}/${iterations}`;
-    });
-
-    results.push(result);
-    renderResults(results);
-    await new Promise((r) => setTimeout(r, 0));
-  }
-
-  progressText.textContent = "Done";
-  progressFill.style.width = "100%";
-  runBtn.disabled = false;
 });
