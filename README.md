@@ -54,11 +54,11 @@ If the query is just a bang with no search term (e.g. `!g`), Flashbang redirects
 
 Snaps use `@` instead of `!` to perform a **site-restricted search** — your query goes to your default search engine with `site:domain` appended. Any bang trigger works as a snap. All snaps are case-insensitive.
 
-| Format       | Example        | Result                                         |
-| ------------ | -------------- | ---------------------------------------------- |
-| Prefix snap  | `@w quantum`   | Default engine search for "quantum site:en.wikipedia.org" |
-| Suffix snap  | `quantum @w`   | Default engine search for "quantum site:en.wikipedia.org" |
-| Bare snap    | `@gh`          | Redirect to github.com homepage                |
+| Format      | Example      | Result                                                    |
+| ----------- | ------------ | --------------------------------------------------------- |
+| Prefix snap | `@w quantum` | Default engine search for "quantum site:en.wikipedia.org" |
+| Suffix snap | `quantum @w` | Default engine search for "quantum site:en.wikipedia.org" |
+| Bare snap   | `@gh`        | Redirect to github.com homepage                           |
 
 If a query contains both a bang (`!`) and a snap (`@`), the bang takes precedence. Unknown snap triggers fall back to a normal default search.
 
@@ -112,7 +112,7 @@ Nothing to build or deploy.
 
 These apply equally to the hosted version and any self-hosted instance — worth a quick read before adding flashbang as your default.
 
-- **Microsoft Edge — bang destinations hijack the default search.** After you use a bang like `!gm`, Edge auto-registers the destination (Google Maps, GitHub, etc.) as a separate search engine with the *same* shortcut as flashbang (the host). When two engines share a shortcut, Edge picks the most-recently-used one for default searches — so your plain queries start going to Google Maps. Not observed in Chrome or Firefox.
+- **Microsoft Edge — bang destinations hijack the default search.** After you use a bang like `!gm`, Edge auto-registers the destination (Google Maps, GitHub, etc.) as a separate search engine with the _same_ shortcut as flashbang (the host). When two engines share a shortcut, Edge picks the most-recently-used one for default searches — so your plain queries start going to Google Maps. Not observed in Chrome or Firefox.
 
   **Fix** — in `edge://settings/searchEngines`:
   1. Delete the auto-discovered flashbang entry.
@@ -122,7 +122,7 @@ These apply equally to the hosted version and any self-hosted instance — worth
      - **URL with %s:** `https://flashbang-dyr.pages.dev?q=%s` (or your self-hosted URL)
   3. Set it as your default.
 
-  **Important:** *editing* the auto-discovered entry's Shortcut doesn't persist — Edge re-derives it from `/opensearch.xml` on restart and reverts to the host. The delete-and-readd step is what makes the fix stick, because a manually-added entry is independent of the discovery XML.
+  **Important:** _editing_ the auto-discovered entry's Shortcut doesn't persist — Edge re-derives it from `/opensearch.xml` on restart and reverts to the host. The delete-and-readd step is what makes the fix stick, because a manually-added entry is independent of the discovery XML.
 
 - **Firefox / Zen / LibreWolf — no frecency, no custom bangs in suggestions.** Firefox-based browsers intentionally [withhold cookies from OpenSearch suggest requests](https://bugzilla.mozilla.org/show_bug.cgi?id=1624457) as a privacy measure. Flashbang's settings (default suggestion provider, custom bangs, frecency data) are stored in the cookie sent with `/suggest` requests, so none of those features are available in these browsers — suggestions fall back to Google with default popularity ranking. To pick a different suggestion provider, register the suggestion URL with the `sp` parameter (e.g. `…/suggest?q=%s&sp=ddg`) — see [Suggestion URL parameters](#suggestion-url-parameters).
 
@@ -241,7 +241,7 @@ That lookup path is also pre-optimized by `scripts/codegen.ts` at build time. In
 
 ### Will I actually notice the difference?
 
-Yes. Try it yourself: open unduck or unduckified, type `!g cats`, and watch the screen. You'll likely see a white flash or brief page load before Google appears. This is evident by the issues opened in unduckified repo [#6](https://github.com/taciturnaxolotl/unduckified/issues/6) and in unduck repo [70](https://github.com/T3-Content/unduck/issues/70). Now do the same with Flashbang. The browser navigates directly to Google — there is no intermediate page to see. The difference is immediately obvious, especially on mobile devices or enivronments where JavaScript parse time is higher.
+Yes. Try it yourself: open unduck or unduckified, type `!g cats`, and watch the screen. You'll likely see a white flash or brief page load before Google appears. This is evident by the issues opened in unduckified repo [#6](https://github.com/taciturnaxolotl/unduckified/issues/6) and in unduck repo [#70](https://github.com/T3-Content/unduck/issues/70). Now do the same with Flashbang. The browser navigates directly to Google — there is no intermediate page to see. The difference is immediately obvious, especially on mobile devices or enivronments where JavaScript parse time is higher.
 
 [Run the benchmark yourself](https://flashbang-dyr.pages.dev/bench) to see measured redirect latency on your device.
 
