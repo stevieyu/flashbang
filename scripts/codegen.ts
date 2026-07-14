@@ -738,8 +738,6 @@ function renderMinOpenAddress(
     suffixBlob,
     prefixIds,
     suffixIdsPlusOne,
-    uniquePrefixes,
-    uniqueSuffixes,
     triggers,
   } = packed;
 
@@ -789,10 +787,10 @@ function renderMinOpenAddress(
   const suffixIdsB64 = toBase64U16(suffixIdsPlusOne);
   const hashTableB64 = Buffer.from(hashTable.buffer).toString("base64");
 
-  // NOTE: Everything (decoders, blobs, offsets, id maps, caches) lives inside
-  // an IIFE so V8 can GC the ~160KB of typed arrays once init is done.
+  // Keep the packed tables private and materialize URL parts only for entries
+  // that are actually looked up.
   return (
-    "const{_TS,_TC,_HT,_HM}=(()=>{" +
+    "const{_TB,_TL,_TO,_tuple,_HT,_HM}=(()=>{" +
     "function _b64bytes(s){if(typeof atob==='function'){const b=atob(s);const n=b.length;const o=new Uint8Array(n);for(let i=0;i<n;i++){o[i]=b.charCodeAt(i)}return o}if(typeof Buffer!=='undefined'){const b=Buffer.from(s,'base64');return new Uint8Array(b.buffer,b.byteOffset,b.byteLength)}throw new Error('No base64 decoder available')}" +
     "function _b64u8(s){return _b64bytes(s)}" +
     "function _b64u16(s){const b=_b64bytes(s);if((b.byteOffset&1)===0){return new Uint16Array(b.buffer,b.byteOffset,b.byteLength>>>1)}const c=new Uint8Array(b.byteLength);c.set(b);return new Uint16Array(c.buffer)}" +
@@ -811,16 +809,14 @@ function renderMinOpenAddress(
     `const _HT=_b64u16('${hashTableB64}');` +
     `const _HM=${hashMask};` +
     "" +
-    `const _PC=new Array(${uniquePrefixes.length}).fill(null);` +
-    `const _SC=new Array(${uniqueSuffixes.length}).fill(null);` +
-    `const _TS=new Array(${entryCount});for(let _i=0;_i<${entryCount};_i++)_TS[_i]=_TB.substring(_TO[_i],_TO[_i+1]);` +
-    "function _prefix(id){if(_PC[id]!==null){return _PC[id]}const s=_PB.substring(_PO[id],_PO[id+1]);_PC[id]=s;return s}" +
-    "function _suffix(id){if(_SC[id]!==null){return _SC[id]}const s=_SB.substring(_SO[id],_SO[id+1]);_SC[id]=s;return s}" +
-    `const _TC=new Array(${entryCount});for(let _i=0;_i<${entryCount};_i++){const _s=_ES[_i];_TC[_i]=_s===0?[_prefix(_EP[_i]),null]:[_prefix(_EP[_i]),_suffix(_s-1)]}` +
-    "return{_TS,_TC,_HT,_HM}" +
+    "const _PC=[],_SC=[],_TC=[];" +
+    "function _prefix(id){let s=_PC[id];if(s!==undefined)return s;s=_PB.substring(_PO[id],_PO[id+1]);_PC[id]=s;return s}" +
+    "function _suffix(id){let s=_SC[id];if(s!==undefined)return s;s=_SB.substring(_SO[id],_SO[id+1]);_SC[id]=s;return s}" +
+    "function _tuple(idx){let c=_TC[idx];if(c!==undefined)return c;const s=_ES[idx];c=s===0?[_prefix(_EP[idx]),null]:[_prefix(_EP[idx]),_suffix(s-1)];_TC[idx]=c;return c}" +
+    "return{_TB,_TL,_TO,_tuple,_HT,_HM}" +
     "})();" +
     `export const BANG_COUNT=${totalCount};` +
-    "export function lookupBang(trigger,h){let slot=(h>>>0)&_HM;for(;;){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_TS[idx]===trigger){return _TC[idx]}slot=(slot+1)&_HM}}" +
+    "export function lookupBang(trigger,h){let slot=(h>>>0)&_HM;for(;;){const ep=_HT[slot];if(ep===0){return null}const idx=ep-1;if(_TL[idx]===trigger.length&&_TB.startsWith(trigger,_TO[idx]))return _tuple(idx);slot=(slot+1)&_HM}}" +
     renderAdvancedLookup(advanced) +
     renderSnapLookup(snapOverrides)
   );
