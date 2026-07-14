@@ -1,4 +1,44 @@
 import { minify } from "@minify-html/node";
+import { $ } from "bun";
+
+export async function bundleUI() {
+  const builds = await Promise.all([
+    Bun.build({
+      entrypoints: ["src/ui/app.ts"],
+      outdir: "dist",
+      naming: "app.js",
+      splitting: true,
+      minify: true,
+      target: "browser",
+      format: "esm",
+    }),
+    Bun.build({
+      entrypoints: ["src/ui/bench/index.ts"],
+      outdir: "dist",
+      naming: "bench.js",
+      minify: true,
+      target: "browser",
+      format: "esm",
+    }),
+  ]);
+  const failed = builds.filter((build) => !build.success);
+  if (failed.length > 0) {
+    throw new AggregateError(
+      failed.flatMap((build) => build.logs),
+      "Failed to bundle UI"
+    );
+  }
+  return builds.flatMap((build) => build.outputs);
+}
+
+export async function generateCSS(quiet = false): Promise<void> {
+  const command = $`bunx unocss "src/ui/home/index.html" "src/ui/bench/index.html" "src/ui/**/*.ts" -o dist/styles.css --minify`;
+  if (quiet) {
+    await command.quiet();
+  } else {
+    await command;
+  }
+}
 
 export async function buildHTMLAssets(css: string): Promise<void> {
   const inlineCSS = (src: string) =>
@@ -15,7 +55,7 @@ export async function buildHTMLAssets(css: string): Promise<void> {
 
   for (const [name, source] of [
     ["home", "src/ui/home/index.html"],
-    ["bench", "src/ui/bench.html"],
+    ["bench", "src/ui/bench/index.html"],
   ] as const) {
     const html = await Bun.file(source).text();
     await Bun.write(
@@ -26,6 +66,12 @@ export async function buildHTMLAssets(css: string): Promise<void> {
       })
     );
   }
+}
+
+export async function assembleUIAssets(): Promise<void> {
+  const css = await Bun.file("dist/styles.css").text();
+  await buildHTMLAssets(css);
+  await copyStaticAssets();
 }
 
 export async function copyStaticAssets(): Promise<void> {

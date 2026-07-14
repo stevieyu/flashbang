@@ -83,10 +83,11 @@ flashbang/
 │   │   └── frecency.ts        # Top-K frecency helpers used by SW
 │   └── ui/
 │       ├── index.html         # HTML template
-│       ├── bench.html         # Benchmark page
-│       ├── bench.ts           # Benchmark script
 │       ├── app.ts             # Initialization & orchestration
 │       ├── bang-catalog.ts    # Shared normalized bang metadata and bounded search
+│       ├── bench/
+│       │   ├── index.html     # Benchmark page
+│       │   └── index.ts       # Benchmark script
 │       ├── home/
 │       │   ├── index.html     # Home page partial
 │       │   ├── index.ts       # Homepage initialization
@@ -101,6 +102,7 @@ flashbang/
 │       │   ├── transfer.ts    # Settings import and export
 │       │   ├── write.ts       # Serialized writes, validation, and save status
 │       │   └── custom-bangs.ts # Custom bang list and add/edit form
+│       ├── clipboard.ts       # Shared Clipboard API and legacy fallback
 │       ├── dom.ts             # $() selector & el() factory
 │       ├── sw-bridge.ts       # notifySW() — postMessage to Service Worker
 │       ├── cookie.ts          # Suggest cookie management (provider, custom bangs)
@@ -212,7 +214,7 @@ On **self-hosted** (Docker/Railway via `start.ts`), the Bun server sets headers 
 
 `bun run build` bundles the app:
 
-1. **Bundle UI + bench** — Bun bundles `src/ui/app.ts` (with code splitting) to `dist/app.js` plus small chunks, and bundles `src/ui/bench.ts` to `dist/bench.js`
+1. **Bundle UI + bench** — Bun bundles `src/ui/app.ts` (with code splitting) to `dist/app.js` plus small chunks, and bundles `src/ui/bench/index.ts` to `dist/bench.js`
 2. **Bundle Service Worker** — Bun bundles `src/sw/sw.ts` (including `bangs-min.js`) into `dist/sw.js`; hashes of the UI outputs determine the injected cache version and extra precache assets
 3. **Generate CSS** — UnoCSS scans `src/ui/**/*.ts` and HTML files, emitting atomic utility classes
 4. **Inline & minify HTML** — CSS is inlined into `<style>`, HTML is minified with `@minify-html/node`

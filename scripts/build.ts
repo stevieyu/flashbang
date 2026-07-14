@@ -1,9 +1,8 @@
 import { createHash } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
 import { brotliCompressSync, constants } from "node:zlib";
-import { $ } from "bun";
 import { ensureGeneratedBangData } from "./codegen";
-import { buildHTMLAssets, copyStaticAssets } from "./shared";
+import { assembleUIAssets, bundleUI, generateCSS } from "./shared";
 
 const SIZE_THRESHOLD = 50 * 1024; // 50 KB
 const PRELIMINARY_SW_PATH = "dist/sw-cache-input.js";
@@ -81,33 +80,7 @@ async function main(): Promise<void> {
   await mkdir("dist", { recursive: true });
 
   console.log("=== Bundle app + bench (to discover chunks) ===");
-  const [appBuild, benchBuild] = await Promise.all([
-    Bun.build({
-      entrypoints: ["src/ui/app.ts"],
-      outdir: "dist",
-      naming: "app.js",
-      splitting: true,
-      minify: true,
-      target: "browser",
-      format: "esm",
-    }),
-    Bun.build({
-      entrypoints: ["src/ui/bench.ts"],
-      outdir: "dist",
-      naming: "bench.js",
-      minify: true,
-      target: "browser",
-      format: "esm",
-    }),
-  ]);
-  if (!(appBuild.success && benchBuild.success)) {
-    throw new AggregateError(
-      [...appBuild.logs, ...benchBuild.logs],
-      "Failed to bundle UI"
-    );
-  }
-
-  const allOutputs = [...appBuild.outputs, ...benchBuild.outputs];
+  const allOutputs = await bundleUI();
   const extraAssets = [
     ...new Set(
       allOutputs
@@ -127,13 +100,11 @@ async function main(): Promise<void> {
   }
 
   console.log("=== Generate CSS ===");
-  await $`bunx unocss "src/ui/home/index.html" "src/ui/bench.html" "src/ui/**/*.ts" -o dist/styles.css --minify`;
+  await generateCSS();
 
   console.log("=== Inline CSS + minify HTML ===");
-  const css = await Bun.file("dist/styles.css").text();
-  await buildHTMLAssets(css);
+  await assembleUIAssets();
   await rm("dist/styles.css");
-  await copyStaticAssets();
 
   console.log("=== Compute service worker cache version ===");
   // This fixed placeholder bundle captures SW implementation and bang-data

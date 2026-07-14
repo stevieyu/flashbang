@@ -259,6 +259,14 @@ test("suggest endpoint respects provider override via sp=none", async ({
   await expect(response.json()).resolves.toEqual(["hello", []]);
 });
 
+test("benchmark page loads its feature bundle", async ({ page }) => {
+  await page.goto("/bench", { waitUntil: "domcontentloaded" });
+
+  await expect(page).toHaveTitle("flashbang — query type benchmark");
+  await expect(page.locator(".wordmark")).toHaveClass(/has-shader/);
+  await expect(page.locator("#run-btn")).toBeEnabled();
+});
+
 test("Firefox locks cookie-backed suggestion settings", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "userAgent", {

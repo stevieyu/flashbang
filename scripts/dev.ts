@@ -8,7 +8,7 @@ import {
 } from "../src/server/handlers";
 import { pageHeaders, SW_HEADERS } from "../src/server/headers";
 import { readPathname } from "../src/shared/raw-url";
-import { buildHTMLAssets, copyStaticAssets } from "./shared";
+import { assembleUIAssets, bundleUI, generateCSS } from "./shared";
 
 const SECURITY_HEADERS = pageHeaders("'unsafe-inline'");
 
@@ -63,30 +63,11 @@ async function build() {
         __IS_DEV__: JSON.stringify(true),
       },
     }),
-    Bun.build({
-      entrypoints: ["src/ui/app.ts"],
-      outdir: "dist",
-      naming: "app.js",
-      splitting: true,
-      minify: true,
-      target: "browser",
-      format: "esm",
-    }),
-    Bun.build({
-      entrypoints: ["src/ui/bench.ts"],
-      outdir: "dist",
-      naming: "bench.js",
-      minify: true,
-      target: "browser",
-      format: "esm",
-    }),
+    bundleUI(),
   ]);
 
-  await $`bunx unocss "src/ui/home/index.html" "src/ui/bench.html" "src/ui/**/*.ts" -o dist/styles.css --minify`.quiet();
-
-  const css = await Bun.file("dist/styles.css").text();
-  await buildHTMLAssets(css);
-  await copyStaticAssets();
+  await generateCSS(true);
+  await assembleUIAssets();
 
   console.log(`Build done in ${(performance.now() - t).toFixed(0)}ms`);
 }

@@ -1,5 +1,5 @@
-import { $ } from "./dom";
-import { initLiquidMetal } from "./liquid-metal";
+import { $ } from "../dom";
+import { initLiquidMetal } from "../liquid-metal";
 
 const metal = initLiquidMetal(
   $<HTMLCanvasElement>("#metal-canvas"),

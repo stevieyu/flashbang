@@ -1,15 +1,6 @@
+import { copyText } from "../clipboard";
 import { $ } from "../dom";
 import { setupDialog } from "../modal";
-
-async function copyInput(input: HTMLInputElement): Promise<void> {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(input.value);
-    return;
-  }
-  input.select();
-  document.execCommand("copy");
-  input.setSelectionRange(0, 0);
-}
 
 export function setupAddressBarSheet(): void {
   const modal = $("#setup-modal");
@@ -30,7 +21,7 @@ export function setupAddressBarSheet(): void {
   ): Promise<void> {
     const label = button.querySelector<HTMLElement>("[data-copy-label]")!;
     try {
-      await copyInput(input);
+      await copyText(input.value, input);
       label.textContent = "Copied";
       button.classList.add("copied");
       status.textContent = `${button.dataset.label} copied`;

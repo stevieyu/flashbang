@@ -67,6 +67,120 @@ function setDefaultDisplay(
   display.classList.toggle("flex", visible);
 }
 
+interface ProviderControlOptions {
+  db: DB;
+  onChange: () => void;
+  onProviderSettled: () => void;
+  select: HTMLSelectElement;
+  setting: "lucky" | "suggest";
+  state: ProviderSettingsState;
+  urlInput: HTMLInputElement;
+  writer: SettingsWriter;
+}
+
+function setupProviderControl({
+  db,
+  onChange,
+  onProviderSettled,
+  select,
+  setting,
+  state,
+  urlInput,
+  writer,
+}: ProviderControlOptions): { refresh: (syncSelect?: boolean) => void } {
+  const providerKey = `${setting}-provider`;
+  const urlKey = `${setting}-url`;
+  const providerStateKey =
+    setting === "suggest" ? "suggestProvider" : "luckyProvider";
+  const urlStateKey = setting === "suggest" ? "suggestUrl" : "luckyUrl";
+  const label = setting === "suggest" ? "suggestion" : "lucky";
+  let pendingCustom = false;
+
+  function refresh(syncSelect = true): void {
+    urlInput.value = state[urlStateKey];
+    urlInput.removeAttribute("aria-invalid");
+    if (syncSelect) {
+      select.value = state[providerStateKey];
+      urlInput.classList.toggle("hidden", state[providerStateKey] !== "custom");
+    }
+    pendingCustom = false;
+  }
+
+  select.addEventListener("change", () => {
+    const value = select.value;
+    if (value === "custom") {
+      urlInput.classList.remove("hidden");
+      const error = validateSimpleBangUrl(state[urlStateKey]);
+      if (error) {
+        pendingCustom = true;
+        select.value = state[providerStateKey];
+        writer.showValidationError(
+          urlKey,
+          `Custom ${label} URL: ${error}`,
+          urlInput
+        );
+        urlInput.focus();
+        return;
+      }
+      pendingCustom = false;
+    } else {
+      pendingCustom = false;
+      urlInput.classList.add("hidden");
+    }
+    writer.clearValidationError(urlKey, urlInput);
+    void writer.run(() => db.setSetting(providerKey, value), {
+      key: providerKey,
+      onCommit: () => {
+        state[providerStateKey] = value;
+        onChange();
+        onProviderSettled();
+      },
+      onFailure: () => {
+        select.value = state[providerStateKey];
+        urlInput.classList.toggle(
+          "hidden",
+          state[providerStateKey] !== "custom"
+        );
+        onProviderSettled();
+      },
+    });
+  });
+
+  urlInput.addEventListener("change", () => {
+    const value = urlInput.value.trim();
+    let error = value ? validateSimpleBangUrl(value) : null;
+    if (!value && state[providerStateKey] === "custom") {
+      error = "URL must contain {} for the query";
+    }
+    if (error) {
+      writer.showValidationError(
+        urlKey,
+        `Invalid ${label} URL: ${error}`,
+        urlInput
+      );
+      return;
+    }
+    writer.clearValidationError(urlKey, urlInput);
+    void writer.run(() => db.setSetting(urlKey, value), {
+      key: urlKey,
+      onCommit: () => {
+        state[urlStateKey] = value;
+        onChange();
+        if (pendingCustom) {
+          pendingCustom = false;
+          select.value = "custom";
+          select.dispatchEvent(new Event("change"));
+        }
+      },
+      onFailure: () => {
+        urlInput.value = state[urlStateKey];
+      },
+    });
+  });
+
+  return { refresh };
+}
+
 export function setupProviderSettings({
   controls,
   db,
@@ -83,8 +197,6 @@ export function setupProviderSettings({
   const suggestDefaultPrefix = $("#suggest-default-prefix");
   const suggestDefaultProvider = $("#suggest-default-provider");
   const isFirefox = /Firefox\//.test(navigator.userAgent);
-  let pendingSuggestCustom = false;
-  let pendingLuckyCustom = false;
 
   function updateDefaultDisplays(): void {
     setDefaultDisplay(
@@ -105,22 +217,30 @@ export function setupProviderSettings({
     );
   }
 
+  const suggestControl = setupProviderControl({
+    db,
+    onChange: onSuggestChange,
+    onProviderSettled: updateDefaultDisplays,
+    select: suggestSelect,
+    setting: "suggest",
+    state,
+    urlInput: suggestUrlInput,
+    writer,
+  });
+  const luckyControl = setupProviderControl({
+    db,
+    onChange: () => notifySW("invalidate"),
+    onProviderSettled: updateDefaultDisplays,
+    select: luckySelect,
+    setting: "lucky",
+    state,
+    urlInput: luckyUrlInput,
+    writer,
+  });
+
   function refresh(): void {
-    suggestUrlInput.value = state.suggestUrl;
-    suggestUrlInput.removeAttribute("aria-invalid");
-    if (!isFirefox) {
-      suggestSelect.value = state.suggestProvider;
-      suggestUrlInput.classList.toggle(
-        "hidden",
-        state.suggestProvider !== "custom"
-      );
-    }
-    luckySelect.value = state.luckyProvider;
-    luckyUrlInput.value = state.luckyUrl;
-    luckyUrlInput.removeAttribute("aria-invalid");
-    luckyUrlInput.classList.toggle("hidden", state.luckyProvider !== "custom");
-    pendingSuggestCustom = false;
-    pendingLuckyCustom = false;
+    suggestControl.refresh(!isFirefox);
+    luckyControl.refresh();
     updateDefaultDisplays();
   }
 
@@ -129,150 +249,6 @@ export function setupProviderSettings({
     setupFirefoxSuggestions(controls, writer);
   }
   refresh();
-
-  suggestSelect.addEventListener("change", () => {
-    const value = suggestSelect.value;
-    if (value === "custom") {
-      suggestUrlInput.classList.remove("hidden");
-      const error = validateSimpleBangUrl(state.suggestUrl);
-      if (error) {
-        pendingSuggestCustom = true;
-        suggestSelect.value = state.suggestProvider;
-        writer.showValidationError(
-          "suggest-url",
-          `Custom suggestion URL: ${error}`,
-          suggestUrlInput
-        );
-        suggestUrlInput.focus();
-        return;
-      }
-      pendingSuggestCustom = false;
-    } else {
-      pendingSuggestCustom = false;
-      suggestUrlInput.classList.add("hidden");
-    }
-    writer.clearValidationError("suggest-url", suggestUrlInput);
-    void writer.run(() => db.setSetting("suggest-provider", value), {
-      key: "suggest-provider",
-      onCommit: () => {
-        state.suggestProvider = value;
-        onSuggestChange();
-        updateDefaultDisplays();
-      },
-      onFailure: () => {
-        suggestSelect.value = state.suggestProvider;
-        suggestUrlInput.classList.toggle(
-          "hidden",
-          state.suggestProvider !== "custom"
-        );
-        updateDefaultDisplays();
-      },
-    });
-  });
-
-  suggestUrlInput.addEventListener("change", () => {
-    const value = suggestUrlInput.value.trim();
-    let error = value ? validateSimpleBangUrl(value) : null;
-    if (!value && state.suggestProvider === "custom") {
-      error = "URL must contain {} for the query";
-    }
-    if (error) {
-      writer.showValidationError(
-        "suggest-url",
-        `Invalid suggestion URL: ${error}`,
-        suggestUrlInput
-      );
-      return;
-    }
-    writer.clearValidationError("suggest-url", suggestUrlInput);
-    void writer.run(() => db.setSetting("suggest-url", value), {
-      key: "suggest-url",
-      onCommit: () => {
-        state.suggestUrl = value;
-        onSuggestChange();
-        if (pendingSuggestCustom) {
-          pendingSuggestCustom = false;
-          suggestSelect.value = "custom";
-          suggestSelect.dispatchEvent(new Event("change"));
-        }
-      },
-      onFailure: () => {
-        suggestUrlInput.value = state.suggestUrl;
-      },
-    });
-  });
-
-  luckySelect.addEventListener("change", () => {
-    const value = luckySelect.value;
-    if (value === "custom") {
-      luckyUrlInput.classList.remove("hidden");
-      const error = validateSimpleBangUrl(state.luckyUrl);
-      if (error) {
-        pendingLuckyCustom = true;
-        luckySelect.value = state.luckyProvider;
-        writer.showValidationError(
-          "lucky-url",
-          `Custom lucky URL: ${error}`,
-          luckyUrlInput
-        );
-        luckyUrlInput.focus();
-        return;
-      }
-      pendingLuckyCustom = false;
-    } else {
-      pendingLuckyCustom = false;
-      luckyUrlInput.classList.add("hidden");
-    }
-    writer.clearValidationError("lucky-url", luckyUrlInput);
-    void writer.run(() => db.setSetting("lucky-provider", value), {
-      key: "lucky-provider",
-      onCommit: () => {
-        state.luckyProvider = value;
-        notifySW("invalidate");
-        updateDefaultDisplays();
-      },
-      onFailure: () => {
-        luckySelect.value = state.luckyProvider;
-        luckyUrlInput.classList.toggle(
-          "hidden",
-          state.luckyProvider !== "custom"
-        );
-        updateDefaultDisplays();
-      },
-    });
-  });
-
-  luckyUrlInput.addEventListener("change", () => {
-    const value = luckyUrlInput.value.trim();
-    let error = value ? validateSimpleBangUrl(value) : null;
-    if (!value && state.luckyProvider === "custom") {
-      error = "URL must contain {} for the query";
-    }
-    if (error) {
-      writer.showValidationError(
-        "lucky-url",
-        `Invalid lucky URL: ${error}`,
-        luckyUrlInput
-      );
-      return;
-    }
-    writer.clearValidationError("lucky-url", luckyUrlInput);
-    void writer.run(() => db.setSetting("lucky-url", value), {
-      key: "lucky-url",
-      onCommit: () => {
-        state.luckyUrl = value;
-        notifySW("invalidate");
-        if (pendingLuckyCustom) {
-          pendingLuckyCustom = false;
-          luckySelect.value = "custom";
-          luckySelect.dispatchEvent(new Event("change"));
-        }
-      },
-      onFailure: () => {
-        luckyUrlInput.value = state.luckyUrl;
-      },
-    });
-  });
 
   return { isFirefox, refresh, updateDefaultDisplays };
 }

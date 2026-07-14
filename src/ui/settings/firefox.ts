@@ -1,4 +1,5 @@
 import { flashAnim } from "../animations";
+import { copyText } from "../clipboard";
 import { $, el } from "../dom";
 import type { SettingsWriter } from "./write";
 
@@ -125,9 +126,13 @@ export function setupFirefoxSuggestions(
   url.addEventListener("click", async () => {
     const value = suggestionUrl();
     hideMenu();
-    await navigator.clipboard.writeText(value);
-    url.textContent = "Copied suggestion URL";
-    flashAnim(url);
+    try {
+      await copyText(value);
+      url.textContent = "Copied suggestion URL";
+      flashAnim(url);
+    } catch {
+      url.textContent = "Could not copy suggestion URL";
+    }
     setTimeout(renderUrl, 1500);
   });
 }
