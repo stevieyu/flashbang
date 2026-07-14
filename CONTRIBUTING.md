@@ -28,8 +28,8 @@ Each repository entry looks like:
 ```
 
 - The key is the trigger (e.g. `!mdn`)
-- `url` must contain `{}` as the query placeholder
-- `domain` is shown in the UI for display
+- `url` uses `{}` as the query placeholder for search bangs; it may omit `{}` for a fixed destination such as the repository's internal `settings` shortcut
+- `domain` is used for metadata display in the bang search UI
 
 After editing, run:
 
@@ -39,7 +39,7 @@ bun run codegen
 
 This fetches the current DuckDuckGo and Kagi sources, merges all sources, updates the committed `data/bangs.json`, and regenerates the ignored `src/generated/` artifacts. Commit both `data/custom-bangs.json` and `data/bangs.json`; do not commit `data/ddg.json`, `data/kagi.json`, or `src/generated/`.
 
-The repository custom-bang file supports the simple `{}` template above. Regex capture templates and alternate snap targets are user-facing advanced settings and upstream Kagi metadata; see [DEVELOPMENT.md](DEVELOPMENT.md#advanced-bangs-and-snap-targets) before changing their parser or generated representation.
+The repository custom-bang file supports simple `{}` templates and fixed-destination URLs. Regex capture templates and alternate snap targets are user-facing advanced settings and upstream Kagi metadata; see [DEVELOPMENT.md](DEVELOPMENT.md#advanced-bangs-and-snap-targets) before changing their parser or generated representation.
 
 ## Pull requests
 
@@ -85,8 +85,11 @@ Add tests for new logic and user-facing behavior. Look at existing tests for pat
 - `tests/suggest.test.ts` — suggestions, providers, and cookie parsing
 - `tests/capture-template.test.ts` and `tests/snap-target.test.ts` — advanced custom-bang validation
 - `tests/codegen-roundtrip.test.ts` — generated regular, capture, and snap lookups
+- `tests/build-cache.test.ts` and `tests/start-cache.test.ts` — build cache versions, production cache headers, and Brotli negotiation
+- `tests/custom-trigger.test.ts` — custom trigger validation and reserved names
+- `tests/development-docs.test.ts` — `DEVELOPMENT.md` project-tree paths, types, and tracked-file completeness
 - `tests/ui-db.test.ts` and `tests/sw-idb.test.ts` — custom-bang persistence and Service Worker compilation
-- `tests/e2e/flashbang.e2e.ts` — settings, suggestion endpoints, warm/cold redirects, and custom bang browser flows
+- `tests/e2e/flashbang.e2e.ts` — settings, Suggest/OpenSearch endpoints, warm/cold/offline redirects, Service Worker updates, and custom bang browser flows
 
 ## Code style
 

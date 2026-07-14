@@ -30,6 +30,13 @@ bun run clean      # remove dist/
 
 ```
 flashbang/
+├── .github/
+│   ├── images/
+│   │   └── landing.png        # README screenshot
+│   └── workflows/
+│       ├── ci.yaml            # Typecheck, checks, tests, build, and E2E matrix
+│       ├── release.yaml       # GitHub Release and multi-architecture image publishing
+│       └── update-bangs.yaml  # Daily bang-source refresh
 ├── functions/
 │   ├── suggest.ts            # Cloudflare Pages Function for /suggest
 │   └── opensearch.xml.ts     # Cloudflare Pages Function for /opensearch.xml
@@ -42,9 +49,7 @@ flashbang/
 │   └── start.ts              # Production server (serves pre-built dist/)
 ├── data/
 │   ├── bangs.json            # Merged bang data (committed, updated by daily automation)
-│   ├── custom-bangs.json     # Custom bang definitions
-│   ├── ddg.json              # DuckDuckGo source (gitignored, fetched by codegen)
-│   └── kagi.json             # Kagi source (gitignored, fetched by codegen)
+│   └── custom-bangs.json     # Custom bang definitions
 ├── src/
 │   ├── suggest.ts            # Bang/snap suggestions, search suggest proxy & cookie parsing
 │   ├── suggest-bang.ts        # Bang/snap suggestion matching and scoring
@@ -56,6 +61,7 @@ flashbang/
 │   │   ├── capture-template.ts # Capture template compilation and regex safety
 │   │   ├── chars.ts           # Character classification helpers
 │   │   ├── constants.ts       # Shared constants
+│   │   ├── custom-trigger.ts  # Custom trigger validation and reserved names
 │   │   ├── frecency-serial.ts # Compact frecency serialization
 │   │   ├── hash.ts            # Shared FNV-1a hash
 │   │   ├── idb.ts             # Shared IndexedDB open helper
@@ -78,6 +84,7 @@ flashbang/
 │   └── ui/
 │       ├── index.html         # HTML template
 │       ├── home.html          # Home page partial
+│       ├── home.ts            # Home page setup and copy interactions
 │       ├── bench.html         # Benchmark page
 │       ├── bench.ts           # Benchmark script
 │       ├── app.ts             # Initialization & orchestration
@@ -91,15 +98,31 @@ flashbang/
 │       ├── db.ts              # IndexedDB wrapper
 │       ├── liquid-metal.ts    # WebGL2 shader effect
 │       ├── icon.svg           # App icon
-│       ├── _headers           # Static host header override (opensearch content-type)
-│       ├── manifest.json      # PWA manifest
-│       └── opensearch.xml     # OpenSearch descriptor
+│       └── manifest.json      # PWA manifest
+├── tests/
+│   ├── e2e/
+│   │   └── flashbang.e2e.ts  # Playwright browser scenarios
+│   ├── helpers/
+│   │   └── fake-indexeddb.ts # IndexedDB test double
+│   └── *.test.ts             # Unit, integration, performance, and docs checks
 ├── .dockerignore             # Files excluded from Docker build context
+├── .gitignore                # Files excluded from version control
+├── CONTRIBUTING.md           # Contribution workflow
+├── DEVELOPMENT.md            # Development and architecture guide
 ├── Dockerfile                # Multi-stage Docker build
-├── package.json
-├── uno.config.ts             # UnoCSS theme
-└── LICENSE
+├── LICENSE                   # AGPL-3.0 license
+├── NOTICE                    # Copyright and attribution notice
+├── README.md                 # User-facing documentation
+├── biome.jsonc               # Formatting and lint configuration
+├── bun.lock                  # Locked development dependencies
+├── bunfig.toml               # Bun test configuration
+├── package.json              # Scripts and package metadata
+├── playwright.config.ts      # End-to-end test configuration
+├── tsconfig.json             # TypeScript configuration
+└── uno.config.ts             # UnoCSS theme
 ```
+
+Every tracked file must appear explicitly or match a glob in this tree. `tests/development-docs.test.ts` enforces completeness as part of `bun test`; the generated bang artifacts are also shown because builds depend on them even though they are gitignored.
 
 ## Tests
 
@@ -117,17 +140,21 @@ Unit and performance tests:
 - `tests/suggest.test.ts` — Cookie parsing, bang/snap suggestions, and provider proxying
 - `tests/codegen-transform.test.ts` — Codegen transformation and domain extraction
 - `tests/codegen-roundtrip.test.ts` — Generated lookup round trips
+- `tests/build-cache.test.ts` — Deterministic Service Worker cache version inputs
+- `tests/custom-trigger.test.ts` — Custom trigger validation and reserved names
+- `tests/development-docs.test.ts` — Project-tree syntax, paths, file types, and tracked-file completeness
 - `tests/raw-url.test.ts` — Raw URL pathname and origin parsing
 - `tests/frecency.test.ts` and `tests/frecency-serial.test.ts` — Top-K ordering and compact serialization
 - `tests/handlers.test.ts` — Server-side suggest handler behavior and cookie cleanup
 - `tests/headers.test.ts` and `tests/opensearch.test.ts` — Security headers and OpenSearch XML
 - `tests/template.test.ts` — Simple URL-template parsing and caching
 - `tests/sw-runtime.test.ts` and `tests/sw-idb.test.ts` — Service Worker lifecycle, settings, and persistence
+- `tests/start-cache.test.ts` — Production cache headers and Brotli negotiation
 - `tests/ui-db.test.ts` — Settings import/export and custom-bang updates
 
 End-to-end tests:
 
-- `tests/e2e/flashbang.e2e.ts` — Suggest endpoint behavior, warm/cold redirect flows, lucky redirects, and custom bang redirect scenarios
+- `tests/e2e/flashbang.e2e.ts` — Suggest/OpenSearch endpoints, settings persistence and import/export, warm/cold/offline redirect flows, Service Worker cache updates, and custom bang/capture/snap scenarios
 
 If this is your first Playwright run on a machine, install browsers once:
 
@@ -153,7 +180,7 @@ The bang data is split into two tiers so the Service Worker loads only what it n
 
 ## Advanced bangs and snap targets
 
-Simple bangs use a URL containing `{}`. Capture bangs instead pair a regular expression with `$1`, `$2`, and later placeholders in the URL template. `src/shared/capture-template.ts` validates pattern and template bounds, rejects unsafe constructs, prevents captures from changing the URL origin, and compiles accepted records once when Service Worker settings load. Capture substitutions support percent, plus-space, and raw encoding.
+User-created simple bangs use a URL containing `{}`. Capture bangs instead pair a regular expression with `$1`, `$2`, and later placeholders in the URL template. `src/shared/capture-template.ts` validates pattern and template bounds, rejects unsafe constructs, prevents captures from changing the URL origin, and compiles accepted records once when Service Worker settings load. Capture substitutions support percent, plus-space, and raw encoding.
 
 Kagi `ad` metadata and the custom-bang **Snap target** field provide an alternate domain or path for `@trigger` searches without changing normal `!trigger` behavior. `src/shared/snap-target.ts` validates and compiles targets into a site filter plus bare-snap origin. Codegen emits only non-redundant built-in overrides; custom targets are attached to their precompiled IndexedDB entries.
 
@@ -178,7 +205,8 @@ On **self-hosted** (Docker/Railway via `start.ts`), the Bun server sets headers 
 2. **Bundle Service Worker** — Bun bundles `src/sw/sw.ts` (including `bangs-min.js`) into `dist/sw.js`; hashes of the UI outputs determine the injected cache version and extra precache assets
 3. **Generate CSS** — UnoCSS scans `src/ui/**/*.ts` and HTML files, emitting atomic utility classes
 4. **Inline & minify HTML** — CSS is inlined into `<style>`, HTML is minified with `@minify-html/node`
-5. **Pre-compress** — Eligible text assets are compressed with Brotli (max quality) and written as `.br` files alongside the originals. The production server serves these automatically when the client supports it, falling back to uncompressed
+5. **Generate static-host headers** — Writes `dist/_headers` with shared security headers, per-page inline-script hashes, the stricter Service Worker CSP, and the OpenSearch content type
+6. **Pre-compress** — Eligible text assets are compressed with Brotli (max quality) and written as `.br` files alongside the originals. The production server serves these automatically when the client supports it, falling back to uncompressed
 
 If generated bang artifacts are missing, both `bun run build` and `bun run profile` automatically run `bun run codegen --from-merged` first.
 
@@ -247,7 +275,7 @@ Static assets are served with Brotli pre-compression when the client supports it
 
 ## CI
 
-A CI workflow (`.github/workflows/ci.yaml`) runs on every push and pull request to `master`. It runs codegen (`--from-merged`), typecheck, lint/format checks, tests, and a full build to catch issues before merge — no external fetching during CI builds.
+A CI workflow (`.github/workflows/ci.yaml`) runs on every push and pull request to `master`. Its main job runs codegen (`--from-merged`), typecheck, lint/format checks, tests, and a full build with no external bang-source fetching. A separate matrix builds the app and runs the Playwright suite in Chromium, Firefox, and WebKit.
 
 A daily cron workflow (`.github/workflows/update-bangs.yaml`) fetches fresh bang sources from DDG and Kagi, merges them, and commits the updated `data/bangs.json` when there are changes.
 

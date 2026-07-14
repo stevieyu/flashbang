@@ -31,10 +31,10 @@ All three support bangs natively — but every query still round-trips through t
 - **Private** — No analytics, no tracking. All data stays on your device for the core feature - redirects
 - **14,000+ bangs** — Merged from DuckDuckGo, Kagi, and custom sources. Updated daily via automated CI
 - **Custom bangs** — Add your own bangs through the settings UI. They take priority over built-ins
-- **Search suggestions** — The only bang tool with bang-aware autocomplete in your browser's native address bar. Type `!y` and the browser itself suggests `!yt` (YouTube), `!ya` (Yandex), `!yf` (Yahoo Finance) — ranked by a combination of global popularity and your personal usage frequency. Regular queries return web search suggestions from Google, DuckDuckGo, Bing, Brave, or a custom provider. Both are unified through a single `/suggest` endpoint that plugs into your browser's built-in suggestion UI. Firefox-based browsers also render bang descriptions, site names, and favicons inline in the dropdown via `google:suggestdetail`. See [Browser quirks](#browser-quirks) for rendering and cookie differences across browsers
-- **Frecency** — The Service Worker tracks which bangs you use and how often, entirely in-memory for zero redirect overhead. Your most-used bangs are promoted in autocomplete suggestions so they surface first. Frecency data is persisted to IndexedDB across Service Worker restarts. Available in Chromium-based browsers; not available in Firefox-based browsers — see [Browser quirks](#browser-quirks)
-- **Snaps** — Type `@trigger query` to search your default engine with results restricted to that trigger's domain via `site:`. For example, `@w quantum` searches Google for `quantum site:en.wikipedia.org`. Works in prefix (`@w quantum`) and suffix (`quantum @w`) positions. A bare snap (`@w`) redirects to the trigger's homepage. Snaps reuse the same 14,000+ bang triggers — any bang can be used as a snap
-- **Feeling Lucky** — Prefix a query with `\`, or add a bare `!` before or after it, to skip the results page and jump straight to the first result. Works with Google's "I'm Feeling Lucky" when that's your default engine, falls back to DuckDuckGo's `\` redirect for others. Configurable per-engine or with a custom URL, or disable it entirely
+- **Search suggestions** — The only bang tool with bang-aware autocomplete in your browser's native address bar. Type `!y` and the browser itself suggests `!yt` (YouTube), `!ya` (Yandex), `!yf` (Yahoo Finance) — ranked by a combination of global popularity and your personal usage frequency. Regular queries can use Google, DuckDuckGo, Bing, Brave, Yahoo, Ecosia, Kagi, Startpage, Yandex, Baidu, or a custom provider. Both are unified through a single `/suggest` endpoint that plugs into your browser's built-in suggestion UI. Firefox-based browsers also render bang descriptions, site names, and favicons inline in the dropdown via `google:suggestdetail`. See [Browser quirks](#browser-quirks) for rendering and cookie differences across browsers
+- **Frecency** — The Service Worker tracks which bangs and snaps you use and how often, entirely in-memory on the redirect path. Your most-used triggers are promoted in autocomplete suggestions so they surface first. Compact snapshots are persisted to IndexedDB across Service Worker restarts. Suggestion personalization is available in Chromium-based browsers; it is not available in Firefox-based browsers — see [Browser quirks](#browser-quirks)
+- **Snaps** — Type `@trigger query` to search your default engine with results restricted to that trigger's domain via `site:`. For example, `@w quantum` searches Google for `quantum site:en.wikipedia.org`. Works in prefix (`@w quantum`) and suffix (`quantum @w`) positions. A bare snap (`@w`) redirects to the trigger's homepage. Snaps reuse bang triggers; entries without a resolvable web domain, such as the internal `settings` shortcut, fall back to a normal search
+- **Feeling Lucky** — Prefix a query with `\`, or add a bare `!` before or after it, to skip the results page and jump straight to the first result. The default mode matches Google, DuckDuckGo, or Kagi when one of those is your default engine, and falls back to DuckDuckGo for other engines. You can also select a provider, use a custom URL, or disable it entirely
 - **OpenSearch** — Browsers auto-discover Flashbang as a search engine via `/opensearch.xml`, including the suggestions endpoint. The XML is dynamically generated at request time using the current origin, so it works out of the box on any self-hosted domain or `localhost` — no hardcoded URLs to change
 
 ## Bang syntax
@@ -52,7 +52,7 @@ If the query is just a bang with no search term (e.g. `!g`), Flashbang redirects
 
 ## Snap syntax
 
-Snaps use `@` instead of `!` to perform a **site-restricted search** — your query goes to your default search engine with `site:domain` appended. Any bang trigger works as a snap. All snaps are case-insensitive.
+Snaps use `@` instead of `!` to perform a **site-restricted search** — your query goes to your default search engine with `site:domain` appended. Any bang trigger with a resolvable web domain works as a snap. All snaps are case-insensitive.
 
 | Format      | Example      | Result                                                    |
 | ----------- | ------------ | --------------------------------------------------------- |
@@ -60,7 +60,7 @@ Snaps use `@` instead of `!` to perform a **site-restricted search** — your qu
 | Suffix snap | `quantum @w` | Default engine search for "quantum site:en.wikipedia.org" |
 | Bare snap   | `@gh`        | Redirect to github.com homepage                           |
 
-If a query contains both a bang (`!`) and a snap (`@`), the bang takes precedence. Unknown snap triggers fall back to a normal default search.
+If a query contains both a bang (`!`) and a snap (`@`), the bang takes precedence. Unknown snap triggers, and triggers without a resolvable web domain, fall back to a normal default search.
 
 ### Feeling Lucky
 
@@ -189,9 +189,9 @@ The settings page has a copy button that gives you the exact search URL template
 
 Open the settings modal from the gear icon on the home page, or type **`!settings`** in the address bar to jump there directly. Type **`!`** on its own to quickly access the home page.
 
-- **Default bang** — The bang used when no `!` is in the query. Defaults to `g` (Google). Change it to `ddg`, `b`, or any valid bang trigger
-- **Feeling Lucky** — Choose how lucky redirects resolve: Default (match your default bang), Google, DuckDuckGo, Custom (your own URL template with `{}` as query placeholder), or Disabled
-- **Search suggestions** — Choose the source for address bar autocomplete: Default (matches your default bang), Google, DuckDuckGo, Bing, Brave, Custom (provide your own URL template with `{}` as query placeholder), or None
+- **Default bang** — The built-in bang used when no `!` is in the query. Defaults to `g` (Google). Change it to `ddg`, `b`, or any other built-in trigger
+- **Feeling Lucky** — Choose how lucky redirects resolve: Default (match Google, DuckDuckGo, or Kagi when selected as the default bang, otherwise fall back to DuckDuckGo), Google, DuckDuckGo, Kagi, Custom (your own URL template with `{}` as query placeholder), or Disabled
+- **Search suggestions** — Choose the source for address bar autocomplete: Default (match a supported default bang, otherwise return no regular-query suggestions), Google, DuckDuckGo, Bing, Brave, Yahoo, Ecosia, Kagi, Startpage, Yandex, Baidu, Custom (provide your own URL template with `{}` as query placeholder), or None
 - **Custom bangs** — Add bangs with a trigger, name, and URL template (use `{}` as the query placeholder). Advanced bangs can match the query with a regular expression, substitute `$1`, `$2`, etc., and set a separate domain or path for `@snap` searches. Custom bangs override built-in ones
 - **Search bangs** — Real-time search across all 14,000+ bangs by trigger, name, or domain
 - **Import/Export** — Export your settings and custom bangs as JSON. Import to restore or sync across devices
@@ -223,8 +223,8 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for build pipeline and project structure de
 | **OpenSearch**              | Yes (dynamic, self-host friendly)             | No                               | Yes                              | Yes                                                    |
 | **Custom bangs**            | Yes (IndexedDB faster)                        | No                               | Yes (localStorage)               | Yes (localStorage)                                     |
 | **Build tool**              | Bun                                           | Vite                             | Vite                             | Vite                                                   |
-| **Bang data for redirects** | ~867 KB (trigger→URL only)                    | 2.7 MB (full metadata)           | 1.5 MB (full metadata)           | ~200 KB inline + 1.5 MB lazy-loaded                    |
-| **Parsed on**               | SW thread (once, persists in memory)          | Main thread (every page load)    | Main thread (every page load)    | Main thread (every page load) or edge worker           |
+| **Bang data for redirects** | ~843 KB (packed trigger→URL lookup)           | 2.7 MB (full metadata)           | 1.5 MB (full metadata)           | ~200 KB inline + 1.5 MB lazy-loaded                    |
+| **Parsed on**               | SW thread (once per worker lifetime)          | Main thread (every page load)    | Main thread (every page load)    | Main thread (every page load) or edge worker           |
 | **License**                 | AGPL-3.0                                      | MIT                              | MIT                              | MIT                                                    |
 
 † Flashbang doesn't include any analytics scripts or tracking. Cloudflare Pages exposes basic request counts in its dashboard for all hosted sites — this is a platform-level
@@ -241,13 +241,13 @@ Every other bang tool (unduck, unduckified) — works the same way: your browser
 
 Flashbang works differently. A [Service Worker](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API) intercepts your navigation **before the browser starts rendering any page**. It parses the bang from the raw URL, looks it up in an in-memory map, and responds with a `302 redirect` — all in under 1ms. No page loads. No JavaScript bundle to parse. No white flash. Your browser goes straight from the address bar to your destination nearly as if you'd typed the URL directly.
 
-The bang database (trigger→URL pairs, ~867 KB) is parsed once when the Service Worker installs and stays in memory across navigations — it is not re-parsed on every redirect. The settings UI is a separate bundle that only loads when you visit the homepage. During a redirect, the only code that runs is a lightweight parser and a hash-map lookup.
+The packed bang database (trigger→URL lookup, currently ~843 KB before bundling) is evaluated when the Service Worker starts and stays in memory across navigations for that worker lifetime — it is not re-parsed on every redirect. The settings UI is a separate bundle that only loads when you visit the homepage. During a redirect, the hot path is a lightweight parser and a hash-table lookup; settings persistence and frecency updates are handled outside the response path.
 
 That lookup path is also pre-optimized by `scripts/codegen.ts` at build time. Instead of shipping a large plain JSON/object map, codegen splits bang URLs into deduplicated prefix/suffix tables, packs trigger/prefix/suffix lengths into typed arrays, and emits a precomputed open-address hash table (`lookupBang`) using FNV-1a + linear probing. At runtime, the Service Worker does direct table probing and string compare, then lazily materializes/caches URL parts only for matched entries. Codegen even tries multiple string-order layouts and picks the one with the best Brotli result (and eval-time tie-break), so the shipped module is tuned for both transfer size and cold parse/execute cost.
 
 ### Will I actually notice the difference?
 
-Yes. Try it yourself: open unduck or unduckified, type `!g cats`, and watch the screen. You'll likely see a white flash or brief page load before Google appears. This is evident by the issues opened in unduckified repo [#6](https://github.com/taciturnaxolotl/unduckified/issues/6) and in unduck repo [#70](https://github.com/T3-Content/unduck/issues/70), [#141](https://github.com/T3-Content/unduck/issues/141). Now do the same with Flashbang. The browser navigates directly to Google — there is no intermediate page to see. The difference is immediately obvious, especially on mobile devices or enivronments where JavaScript parse time is higher.
+Yes. Try it yourself: open unduck or unduckified, type `!g cats`, and watch the screen. You'll likely see a white flash or brief page load before Google appears. This is evident by the issues opened in unduckified repo [#6](https://github.com/taciturnaxolotl/unduckified/issues/6) and in unduck repo [#70](https://github.com/T3-Content/unduck/issues/70), [#141](https://github.com/T3-Content/unduck/issues/141). Now do the same with Flashbang. The browser navigates directly to Google — there is no intermediate page to see. The difference is immediately obvious, especially on mobile devices or environments where JavaScript parse time is higher.
 
 [Run the benchmark yourself](https://flashbang-dyr.pages.dev/bench) to see measured redirect latency on your device.
 
