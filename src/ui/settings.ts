@@ -34,6 +34,9 @@ export async function initSettings(db: DB) {
   const luckyDefaultProvider = $("#lucky-default-provider");
   const luckyUrlInput = $<HTMLInputElement>("#lucky-url");
   const saveStatus = $("#settings-save-status");
+  const savedIcon = $("#settings-saved-icon");
+  const savingIcon = $("#settings-saving-icon");
+  const errorIcon = $("#settings-error-icon");
   const importFile = $<HTMLInputElement>("#import-file");
   const exportButton = $<HTMLButtonElement>("#export-btn");
 
@@ -285,19 +288,29 @@ export async function initSettings(db: DB) {
     saveStatus.dataset.writeCount = String(completedWrites);
     if (pendingWrites > 0) {
       saveStatus.dataset.state = "saving";
-      saveStatus.textContent = "Saving\u2026";
-      saveStatus.className = "text-sm text-text-secondary";
+      saveStatus.setAttribute("aria-label", "Saving settings");
+      saveStatus.removeAttribute("title");
+      savedIcon.classList.add("hidden");
+      savingIcon.classList.remove("hidden");
+      errorIcon.classList.add("hidden");
     } else if (validationErrors.size > 0 || failedWrites.size > 0) {
+      const message =
+        validationErrors.values().next().value || "Could not save settings";
       saveStatus.dataset.state = "error";
       saveStatus.dataset.failed = [...failedWrites].join(",");
-      saveStatus.textContent =
-        validationErrors.values().next().value || "Could not save settings";
-      saveStatus.className = "text-sm text-danger";
+      saveStatus.setAttribute("aria-label", message);
+      saveStatus.setAttribute("title", message);
+      savedIcon.classList.add("hidden");
+      savingIcon.classList.add("hidden");
+      errorIcon.classList.remove("hidden");
     } else {
       saveStatus.dataset.state = "saved";
       delete saveStatus.dataset.failed;
-      saveStatus.textContent = "Saved";
-      saveStatus.className = "text-sm text-success";
+      saveStatus.setAttribute("aria-label", "Settings saved");
+      saveStatus.removeAttribute("title");
+      savedIcon.classList.remove("hidden");
+      savingIcon.classList.add("hidden");
+      errorIcon.classList.add("hidden");
     }
     for (const control of settingControls) {
       control.disabled = pendingWrites > 0 || permanentlyDisabled.has(control);

@@ -218,7 +218,9 @@ async function waitForSettingsWrite(
   await expect(status).toHaveAttribute("data-pending", "0");
   await expect(status).toHaveAttribute("data-state", state);
   if (state === "saved") {
-    await expect(status).toHaveText("Saved");
+    await expect(status).toHaveAttribute("aria-label", "Settings saved");
+    await expect(page.locator("#settings-saved-icon")).toBeVisible();
+    await expect(page.locator("#settings-saving-icon")).toBeHidden();
   }
 }
 
@@ -486,15 +488,30 @@ test("rapid settings changes commit in order before immediate reload", async ({
   await openSettingsModal(page);
   const writeCount = await settingsWriteCount(page);
 
-  await page.evaluate(() => {
+  const pendingState = await page.evaluate(() => {
     const select = document.querySelector("#lucky-provider");
+    const status = document.querySelector("#settings-save-status");
+    const spinner = document.querySelector("#settings-saving-icon");
     if (!(select instanceof HTMLSelectElement)) {
       throw new Error("lucky provider not found");
+    }
+    if (!(status instanceof HTMLElement && spinner instanceof SVGElement)) {
+      throw new Error("settings save indicator not found");
     }
     for (const value of ["google", "ddg", "kagi"]) {
       select.value = value;
       select.dispatchEvent(new Event("change", { bubbles: true }));
     }
+    return {
+      label: status.getAttribute("aria-label"),
+      spinnerHidden: spinner.classList.contains("hidden"),
+      state: status.dataset.state,
+    };
+  });
+  expect(pendingState).toEqual({
+    label: "Saving settings",
+    spinnerHidden: false,
+    state: "saving",
   });
   await waitForSettingsWrite(page, writeCount, 3);
 
@@ -577,9 +594,11 @@ test("custom providers require valid committed URL templates", async ({
 
   await page.fill("#suggest-url", "https://suggest.example/no-placeholder");
   await page.dispatchEvent("#suggest-url", "change");
-  await expect(page.locator("#settings-save-status")).toContainText(
-    "URL must contain {}"
+  await expect(page.locator("#settings-save-status")).toHaveAttribute(
+    "aria-label",
+    /URL must contain \{\}/
   );
+  await expect(page.locator("#settings-error-icon")).toBeVisible();
   expect(await settingsWriteCount(page)).toBe(writeCount);
 
   await page.selectOption("#lucky-provider", "google");
