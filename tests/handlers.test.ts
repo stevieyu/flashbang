@@ -1,5 +1,8 @@
 import { afterAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { handleSuggestRequest } from "../src/server/handlers";
+import {
+  handleOpenSearchRequest,
+  handleSuggestRequest,
+} from "../src/server/handlers";
 import { TOP_K } from "../src/shared/constants";
 import { encodeSuggestCookieValue } from "../src/shared/suggest-cookie";
 
@@ -99,5 +102,45 @@ describe("handleSuggestRequest", () => {
     expect(response.status).toBe(200);
     const setCookie = response.headers.get("Set-Cookie") ?? "";
     expect(setCookie).toContain("suggest=custom,g,");
+  });
+});
+
+describe("handleOpenSearchRequest", () => {
+  test("uses the request origin when PUBLIC_ORIGIN is absent", async () => {
+    const response = handleOpenSearchRequest(
+      req("https://flashbang.pages.dev/opensearch.xml"),
+      {}
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain(
+      "https://flashbang.pages.dev/suggest?q={searchTerms}"
+    );
+  });
+
+  test("uses a canonical configured public origin", async () => {
+    const response = handleOpenSearchRequest(
+      req("http://internal:3000/opensearch.xml"),
+      {
+        PUBLIC_ORIGIN:
+          "https://Public.Example:443/proxy/path/?ignored=true#fragment",
+      }
+    );
+    const xml = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(xml).toContain("https://public.example/icon.svg");
+    expect(xml).not.toContain("internal:3000");
+    expect(xml).not.toContain("proxy/path");
+  });
+
+  test("fails closed for an invalid configured scheme", async () => {
+    const response = handleOpenSearchRequest(
+      req("https://safe.example/opensearch.xml"),
+      { PUBLIC_ORIGIN: "javascript:alert(1)" }
+    );
+
+    expect(response.status).toBe(500);
+    expect(await response.text()).toBe("Invalid PUBLIC_ORIGIN");
   });
 });

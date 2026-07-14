@@ -1,5 +1,10 @@
 import { handleOpenSearchRequest } from "../src/server/handlers";
 
-export const onRequestGet = ({ request }: { request: Request }) => {
-  return handleOpenSearchRequest(request);
+interface RequestContext {
+  env: { PUBLIC_ORIGIN?: string };
+  request: Request;
+}
+
+export const onRequestGet = ({ env, request }: RequestContext) => {
+  return handleOpenSearchRequest(request, env);
 };

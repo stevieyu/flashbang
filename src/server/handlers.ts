@@ -1,4 +1,4 @@
-import { opensearch } from "../opensearch";
+import { canonicalizePublicOrigin, opensearch } from "../opensearch";
 import { COOKIE_MAX_AGE_S } from "../shared/constants";
 import { readTwoQueryParams } from "../shared/raw-query";
 import { readOrigin } from "../shared/raw-url";
@@ -9,6 +9,16 @@ import {
 } from "../suggest";
 
 const MISSING_Q = "Missing q parameter";
+
+export interface PublicOriginEnvironment {
+  PUBLIC_ORIGIN?: string;
+}
+
+function runtimeEnvironment(): PublicOriginEnvironment {
+  return typeof process === "undefined"
+    ? {}
+    : { PUBLIC_ORIGIN: process.env.PUBLIC_ORIGIN };
+}
 
 export function handleSuggestRequest(request: Request): Promise<Response> {
   const rawUrl = request.url;
@@ -37,6 +47,21 @@ export function handleSuggestRequest(request: Request): Promise<Response> {
   });
 }
 
-export function handleOpenSearchRequest(request: Request): Response {
-  return opensearch(readOrigin(request.url));
+export function handleOpenSearchRequest(
+  request: Request,
+  environment: PublicOriginEnvironment = runtimeEnvironment()
+): Response {
+  const configuredOrigin = environment.PUBLIC_ORIGIN;
+  const origin = canonicalizePublicOrigin(
+    configuredOrigin ?? readOrigin(request.url)
+  );
+  if (!origin) {
+    return new Response(
+      configuredOrigin === undefined
+        ? "Invalid request origin"
+        : "Invalid PUBLIC_ORIGIN",
+      { status: 500 }
+    );
+  }
+  return opensearch(origin);
 }
