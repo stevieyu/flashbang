@@ -2,13 +2,14 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { installFakeIndexedDb, reqToPromise } from "./helpers/fake-indexeddb";
 
 let restoreIndexedDb: (() => void) | null = null;
+let swIdbModule: typeof import("../src/sw/idb");
 
 function loadSharedIdb() {
   return import("../src/shared/idb");
 }
 
 function loadSwIdb() {
-  return import("../src/sw/idb");
+  return Promise.resolve(swIdbModule);
 }
 
 async function seedDb(data: {
@@ -45,8 +46,9 @@ beforeEach(async () => {
   restoreIndexedDb = installFakeIndexedDb();
   const shared = await loadSharedIdb();
   shared.resetDB();
-  const swIdb = await loadSwIdb();
-  swIdb.invalidateCache();
+  swIdbModule = await import(
+    `../src/sw/idb.ts?test=${Date.now()}-${Math.random()}`
+  );
 });
 
 afterEach(() => {
@@ -211,7 +213,7 @@ describe("sw/idb frecency", () => {
     expect(mod.getTopFrecencyRecord()).toEqual({ g: 2, yt: 1 });
   });
 
-  test("tracks usage and clears caches on invalidate", async () => {
+  test("settings invalidation preserves frecency and increments prior counts", async () => {
     await seedDb({
       settings: [{ key: "frecency", value: `${Date.now()}|` }],
     });
@@ -225,6 +227,9 @@ describe("sw/idb frecency", () => {
     expect(mod.getTopFrecencyRecord()).toEqual({ yt: 2, g: 1 });
 
     mod.invalidateCache();
-    expect(mod.hasTopFrecency()).toBe(false);
+    expect(mod.getTopFrecencyRecord()).toEqual({ yt: 2, g: 1 });
+
+    mod.trackBangUsage("yt");
+    expect(mod.getTopFrecencyRecord()).toEqual({ yt: 3, g: 1 });
   });
 });

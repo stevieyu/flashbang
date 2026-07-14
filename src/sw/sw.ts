@@ -20,7 +20,11 @@ declare const __CACHE_VERSION__: string;
 declare const __EXTRA_ASSETS__: string[];
 declare const __IS_DEV__: boolean;
 
-const CACHE_NAME = __CACHE_VERSION__;
+const CACHE_PREFIX = "fb-";
+const LEGACY_CACHE_NAMES = new Set(["flashbang-dev"]);
+const CACHE_NAME = __CACHE_VERSION__.startsWith(CACHE_PREFIX)
+  ? __CACHE_VERSION__
+  : `${CACHE_PREFIX}${__CACHE_VERSION__}`;
 const ASSETS = [
   "/home",
   "/bench",
@@ -75,7 +79,13 @@ async function precacheAssets(
 async function deleteOldCaches(cacheName: string): Promise<void> {
   const keys = await caches.keys();
   await Promise.all(
-    keys.filter((k) => k !== cacheName).map((k) => caches.delete(k))
+    keys
+      .filter(
+        (k) =>
+          (k.startsWith(CACHE_PREFIX) || LEGACY_CACHE_NAMES.has(k)) &&
+          k !== cacheName
+      )
+      .map((k) => caches.delete(k))
   );
 }
 

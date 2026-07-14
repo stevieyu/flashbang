@@ -80,7 +80,12 @@ function setupSwGlobals() {
       return Promise.resolve(true);
     },
     keys() {
-      return Promise.resolve(["old-cache", "test-cache"]);
+      return Promise.resolve([
+        "fb-old-cache",
+        "fb-test-cache",
+        "flashbang-dev",
+        "other-cache",
+      ]);
     },
     match() {
       return Promise.resolve(null);
@@ -193,7 +198,7 @@ afterEach(async () => {
 });
 
 describe("sw runtime with real modules", () => {
-  test("install + activate lifecycle keeps skipWaiting/claim and cache cleanup", async () => {
+  test("lifecycle deletes stale Flashbang caches and preserves unrelated caches", async () => {
     await loadSwRuntime();
     expect(typeof handlers.install).toBe("function");
     expect(typeof handlers.activate).toBe("function");
@@ -207,7 +212,8 @@ describe("sw runtime with real modules", () => {
     await handlers.activate?.(activateEvt.event);
     await Promise.all(activateEvt.waits);
     expect(claimCalls).toBe(1);
-    expect(cacheDeleteCalls).toEqual(["old-cache"]);
+    expect(cacheDeleteCalls).toEqual(["fb-old-cache", "flashbang-dev"]);
+    expect(cacheDeleteCalls).not.toContain("other-cache");
   });
 
   test("message redirect and invalidate paths work end-to-end", async () => {

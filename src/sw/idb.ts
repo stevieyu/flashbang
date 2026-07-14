@@ -169,18 +169,9 @@ function persistFrecencySnapshot(
 }
 
 export function invalidateCache() {
-  if (frecencyCounts) {
-    persistFrecencySnapshot(frecencyCounts, lastDecayTs);
-  }
-  persistInFlight = false;
-  persistPending = null;
   cachedRedirect = null;
   redirectSettingsPromise = null;
-  loadFrecencyPromise = null;
   resetDB();
-  frecencyCounts = null;
-  topFrecency = [];
-  lastDecayTs = 0;
 }
 
 function applyDecay(): void {
