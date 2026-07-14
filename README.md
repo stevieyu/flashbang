@@ -148,6 +148,8 @@ These apply equally to the hosted version and any self-hosted instance — worth
    - **Search URL:** `https://your-app.up.railway.app?q=%s`
    - **Suggestion URL:** `https://your-app.up.railway.app/suggest?q=%s`
 
+For deployments behind a reverse proxy or TLS terminator, set `PUBLIC_ORIGIN` to the browser-visible URL (for example, `https://search.example.com`). OpenSearch uses this value instead of the request URL. It must be an absolute `http://` or `https://` URL without credentials; any trailing slash, path, query, or fragment is discarded. If it is unset, Flashbang uses the request origin, preserving the default Cloudflare Pages behavior. If it is set but invalid, `/opensearch.xml` returns `500` rather than publishing incorrect or unsafe URLs.
+
 **Other static hosts** (Netlify, Vercel, etc.) — redirects work, but suggestions and dynamic OpenSearch require adding serverless functions for `/suggest` and `/opensearch.xml`. See `functions/` for the implementations — they reuse shared modules from `src/` and can be adapted to any serverless platform.
 
 ### Self-host with Docker (recommended)
@@ -159,7 +161,7 @@ docker build -t flashbang .
 docker run -p 3000:3000 flashbang
 ```
 
-The image uses a multi-stage build — fetches bang sources, builds assets, and produces a minimal runtime image. Static assets are pre-compressed with Brotli at build time and served automatically, falling back to uncompressed for clients that don't support it. The port is configurable via the `PORT` environment variable (`-e PORT=8080`). Set it as your browser's custom search engine:
+The image uses a multi-stage build — fetches bang sources, builds assets, and produces a minimal runtime image. Static assets are pre-compressed with Brotli at build time and served automatically, falling back to uncompressed for clients that don't support it. The port is configurable via the `PORT` environment variable (`-e PORT=8080`); `PUBLIC_ORIGIN` configures the browser-visible origin when running behind a reverse proxy (for example, `-e PUBLIC_ORIGIN=https://search.example.com`). Set it as your browser's custom search engine:
 
 - **Search URL:** `http://your-host:3000?q=%s`
 - **Suggestion URL:** `http://your-host:3000/suggest?q=%s`

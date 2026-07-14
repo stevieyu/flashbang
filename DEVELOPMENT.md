@@ -203,7 +203,7 @@ The Service Worker tracks bang usage to personalize suggestion ordering. The flo
 2. **Cookie sync** — When Cookie Store is available, `sw.ts` preserves the existing provider/custom context and writes top frecency entries into the `f:` section of the unified `suggest` cookie
 3. **Suggest reads frecency** — `suggest.ts` parses the unified cookie and passes its frecency map to `bangSuggestions()`, which boosts candidates by usage count
 
-The in-memory state (`frecencyCounts` plus `topFrecency` in `idb.ts`) is loaded from IndexedDB once, kept for the Service Worker lifetime, and reset by `invalidateCache()`. Browser benchmark mode suppresses these side effects only for the requesting benchmark client.
+The in-memory state (`frecencyCounts` plus `topFrecency` in `idb.ts`) is loaded from IndexedDB once and kept for the Service Worker lifetime. `invalidateCache()` clears only redirect settings and the shared database connection; loaded frecency and pending persistence remain intact. Browser benchmark mode suppresses these side effects only for the requesting benchmark client.
 
 **Browser cookie behavior**: Chromium-based browsers (Chrome, Edge, Arc) send cookies with suggest requests when the site is the default search engine. Firefox-based browsers (Firefox, Zen, LibreWolf) intentionally withhold cookies from OpenSearch suggest requests as a privacy decision ([bug 1624457](https://bugzilla.mozilla.org/show_bug.cgi?id=1624457)). The settings UI therefore provides a copyable Firefox suggestion URL with an explicit provider. Cookie-backed custom trigger suggestions and frecency are unavailable on those requests; redirect behavior is unaffected.
 
@@ -220,6 +220,8 @@ The in-memory state (`frecencyCounts` plus `topFrecency` in `idb.ts`) is loaded 
 ## Production server
 
 `bun run start` serves the pre-built `dist/` directory with no build step, file watching, or live reload injection. Useful for testing the production build locally. Requires `bun run build` to have been run first.
+
+`PUBLIC_ORIGIN` optionally overrides the request origin used in `/opensearch.xml`, which is useful behind reverse proxies and TLS termination. It must be an absolute HTTP(S) URL without credentials. The URL is canonicalized to its origin, so trailing slashes, paths, queries, and fragments are discarded. When unset, the handler uses the request origin (including on Cloudflare Pages, where the optional binding is read from the Function context). An invalid configured value fails closed with a `500` response.
 
 ## Docker
 
