@@ -32,6 +32,7 @@ describe("handleSuggestRequest", () => {
       req("http://localhost/suggest")
     );
     expect(response.status).toBe(400);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.text()).toBe("Missing q parameter");
   });
 

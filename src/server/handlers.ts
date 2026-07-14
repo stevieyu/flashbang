@@ -24,7 +24,12 @@ export function handleSuggestRequest(request: Request): Promise<Response> {
   const rawUrl = request.url;
   const [q, sp] = readTwoQueryParams(rawUrl, "q", "sp");
   if (!q) {
-    return Promise.resolve(new Response(MISSING_Q, { status: 400 }));
+    return Promise.resolve(
+      new Response(MISSING_Q, {
+        headers: { "Cache-Control": "no-store" },
+        status: 400,
+      })
+    );
   }
   const bang = parsePartialBang(q);
   const { settings, rewrittenSuggestCookie } =

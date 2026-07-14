@@ -58,6 +58,9 @@ export const FRECENCY_HALF_LIFE_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
 export const COOKIE_MAX_AGE_S = 31_536_000; // 365 days in seconds
 
-export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+export const JSON_HEADERS = {
+  "Cache-Control": "no-store",
+  "Content-Type": "application/json",
+} as const;
 
 export const DB_VERSION = 1;

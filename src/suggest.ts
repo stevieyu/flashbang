@@ -66,6 +66,37 @@ function empty(query: string): Response {
   return new Response(JSON.stringify([query, []]), { headers: JSON_HEADERS });
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+
+function isSuggestionPayload(value: unknown): value is unknown[] {
+  if (
+    !Array.isArray(value) ||
+    value.length < 2 ||
+    value.length > 5 ||
+    typeof value[0] !== "string" ||
+    !isStringArray(value[1])
+  ) {
+    return false;
+  }
+
+  if (value.length > 2 && !isStringArray(value[2])) {
+    return false;
+  }
+  if (value.length > 3 && !isStringArray(value[3])) {
+    return false;
+  }
+  return (
+    value.length < 5 ||
+    (value[4] !== null &&
+      typeof value[4] === "object" &&
+      !Array.isArray(value[4]))
+  );
+}
+
 export function parsePartialBang(q: string): PartialBang | null {
   let start = 0;
   let end = q.length;
@@ -288,7 +319,15 @@ export async function suggest(
 
   try {
     const res = await fetch(fillTemplate(endpoint, encodeURIComponent(query)));
-    return new Response(res.body, { headers: JSON_HEADERS });
+    if (!res.ok) {
+      return empty(query);
+    }
+    const body = await res.text();
+    const payload: unknown = JSON.parse(body);
+    if (!isSuggestionPayload(payload)) {
+      return empty(query);
+    }
+    return new Response(body, { headers: JSON_HEADERS });
   } catch {
     return empty(query);
   }

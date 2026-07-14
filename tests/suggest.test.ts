@@ -777,6 +777,8 @@ describe("provider proxying — via suggest()", () => {
     expect(fetchSpy).toHaveBeenCalledWith(
       "https://www.google.com/complete/search?client=firefox&channel=fen&q=cats"
     );
+    expect(await r.json()).toEqual(["cats", ["cats and dogs"]]);
+    expect(r.headers.get("Cache-Control")).toBe("no-store");
     expect(r.headers.get("Content-Type")).toBe("application/json");
   });
 
@@ -858,6 +860,7 @@ describe("provider proxying — via suggest()", () => {
     const [query, completions] = await r.json();
     expect(query).toBe("cats");
     expect(completions).toEqual([]);
+    expect(r.headers.get("Cache-Control")).toBe("no-store");
   });
 
   test("provider=default + trigger=g → resolves to google", async () => {
@@ -985,6 +988,75 @@ describe("provider proxying — via suggest()", () => {
     const [query, completions] = await r.json();
     expect(query).toBe("cats");
     expect(completions).toEqual([]);
+  });
+
+  test("non-success upstream response → empty response", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      Response.json(["cats", ["result"]], { status: 503 })
+    );
+    const r = await suggest("cats", {
+      ...defaultSettings,
+      provider: "google",
+    });
+    expect(await r.json()).toEqual(["cats", []]);
+  });
+
+  test("malformed upstream JSON → empty response", async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response("<html>unavailable</html>", {
+        headers: { "Content-Type": "text/html" },
+      })
+    );
+    const r = await suggest("cats", {
+      ...defaultSettings,
+      provider: "google",
+    });
+    expect(await r.json()).toEqual(["cats", []]);
+  });
+
+  test("invalid upstream suggestion shape → empty response", async () => {
+    for (const payload of [
+      { query: "cats", suggestions: ["result"] },
+      ["cats", "result"],
+      ["cats", ["result", 42]],
+      ["cats", ["result"], "description"],
+      ["cats", ["result"], [], [], []],
+    ]) {
+      fetchSpy.mockResolvedValueOnce(Response.json(payload));
+      const r = await suggest("cats", {
+        ...defaultSettings,
+        provider: "google",
+      });
+      expect(await r.json()).toEqual(["cats", []]);
+    }
+  });
+
+  test("valid optional OpenSearch metadata is preserved", async () => {
+    const payload = [
+      "cats",
+      ["cats and dogs"],
+      ["description"],
+      ["https://example.com"],
+      { "google:suggestdetail": [{}] },
+    ];
+    fetchSpy.mockResolvedValueOnce(Response.json(payload));
+    const r = await suggest("cats", {
+      ...defaultSettings,
+      provider: "google",
+    });
+    expect(await r.json()).toEqual(payload);
+  });
+
+  test("valid upstream JSON text is returned without re-serialization", async () => {
+    const body = '[ "cats", [ "cats and dogs" ] ]';
+    fetchSpy.mockResolvedValueOnce(
+      new Response(body, { headers: { "Content-Type": "application/json" } })
+    );
+    const r = await suggest("cats", {
+      ...defaultSettings,
+      provider: "google",
+    });
+    expect(await r.text()).toBe(body);
   });
 });
 
