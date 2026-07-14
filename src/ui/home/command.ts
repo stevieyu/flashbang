@@ -46,6 +46,9 @@ export function setupBangCommand(db: DB): HTMLInputElement {
     terms: string;
   } | null {
     const value = input.value.trimStart();
+    if (!value) {
+      return null;
+    }
     const leadingMarker = value.charAt(0);
     if (leadingMarker === "!" || leadingMarker === "@") {
       const search = value.substring(1);

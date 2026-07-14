@@ -1,5 +1,9 @@
 import { flashAnim, shakeAnim } from "../animations";
-import { loadBuiltinBangCatalog, searchBangs } from "../bang-catalog";
+import {
+  type BangMeta,
+  loadBuiltinBangCatalog,
+  searchBangs,
+} from "../bang-catalog";
 import type { DB } from "../db";
 import { $, el } from "../dom";
 import { notifySW } from "../sw-bridge";
@@ -28,6 +32,9 @@ export async function setupDefaultBangSetting({
   const catalog = await loadBuiltinBangCatalog();
   let committedBang = initialBang;
   let previewTimer: ReturnType<typeof setTimeout>;
+  let hits: BangMeta[] = [];
+  let optionElements: HTMLButtonElement[] = [];
+  let selected = -1;
 
   input.value = initialBang;
   status.textContent = catalog.byTrigger.get(initialBang)?.name || "Unknown";
@@ -35,6 +42,45 @@ export async function setupDefaultBangSetting({
   function closePreview(): void {
     results.classList.add("hidden");
     results.replaceChildren();
+    input.setAttribute("aria-expanded", "false");
+    input.removeAttribute("aria-activedescendant");
+    hits = [];
+    optionElements = [];
+    selected = -1;
+  }
+
+  function renderSelection(previous = -1, scroll = true): void {
+    const previousOption = optionElements[previous];
+    if (previousOption) {
+      previousOption.classList.remove("command-result-active");
+      previousOption.setAttribute("aria-selected", "false");
+    }
+    const option = optionElements[selected];
+    if (option) {
+      option.classList.add("command-result-active");
+      option.setAttribute("aria-selected", "true");
+      input.setAttribute("aria-activedescendant", option.id);
+      if (scroll) {
+        option.scrollIntoView({ block: "nearest" });
+      }
+    } else {
+      input.removeAttribute("aria-activedescendant");
+    }
+  }
+
+  function setSelection(next: number): void {
+    if (next === selected) {
+      return;
+    }
+    const previous = selected;
+    selected = next;
+    renderSelection(previous);
+  }
+
+  function selectBang(bang: BangMeta): void {
+    input.value = bang.trigger;
+    closePreview();
+    input.dispatchEvent(new Event("change"));
   }
 
   function setCommitted(trigger: string): void {
@@ -53,7 +99,9 @@ export async function setupDefaultBangSetting({
       return;
     }
     previewTimer = setTimeout(() => {
-      const hits = searchBangs(catalog.entries, query, 6);
+      hits = searchBangs(catalog.entries, query, 6);
+      selected = hits.length > 0 ? 0 : -1;
+      optionElements = [];
       if (hits.length === 0) {
         results.replaceChildren(
           el(
@@ -63,42 +111,68 @@ export async function setupDefaultBangSetting({
           )
         );
       } else {
-        results.replaceChildren(
-          ...hits.map(({ trigger, name, domain }) => {
-            const row = el(
-              "button",
-              "flex w-full items-center gap-2 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-text cursor-pointer hover:bg-bg-hover"
-            );
-            row.type = "button";
-            row.dataset.trigger = trigger;
-            row.setAttribute("role", "option");
-            row.append(
-              el(
-                "code",
-                "min-w-14 rounded bg-bg-active px-1.5 py-0.5 text-center font-mono text-xs",
-                `!${trigger}`
-              ),
-              el("span", "min-w-0 flex-1 truncate text-xs font-medium", name),
-              el(
-                "span",
-                "hidden max-w-28 truncate text-[10px] text-text-secondary sm:block",
-                domain
-              )
-            );
-            row.addEventListener("pointerdown", (event) => {
-              event.preventDefault();
-            });
-            row.addEventListener("click", () => {
-              input.value = trigger;
-              closePreview();
-              input.dispatchEvent(new Event("change"));
-            });
-            return row;
-          })
-        );
+        optionElements = hits.map((bang, index) => {
+          const { trigger, name, domain } = bang;
+          const row = el(
+            "button",
+            "command-result flex w-full items-center gap-2 rounded-md border-none px-2 py-1.5 text-left text-text cursor-pointer"
+          );
+          row.id = `default-bang-option-${index}`;
+          row.type = "button";
+          row.dataset.trigger = trigger;
+          row.setAttribute("role", "option");
+          row.setAttribute("aria-selected", String(index === selected));
+          row.append(
+            el(
+              "code",
+              "command-badge min-w-14 rounded-md px-2 py-0.5 text-center font-mono text-xs font-semibold",
+              `!${trigger}`
+            ),
+            el("span", "min-w-0 flex-1 truncate text-xs font-medium", name),
+            el(
+              "span",
+              "hidden max-w-28 truncate text-[10px] text-text-secondary sm:block",
+              domain
+            )
+          );
+          row.addEventListener("pointerdown", (event) => {
+            event.preventDefault();
+          });
+          row.addEventListener("pointerenter", () => setSelection(index));
+          row.addEventListener("click", () => selectBang(bang));
+          return row;
+        });
+        results.replaceChildren(...optionElements);
       }
       results.classList.remove("hidden");
+      input.setAttribute("aria-expanded", "true");
+      renderSelection(-1, false);
     }, 120);
+  });
+
+  input.addEventListener("keydown", (event) => {
+    const vimKey = event.ctrlKey ? event.key.toLowerCase() : "";
+    const next = event.key === "ArrowDown" || vimKey === "j";
+    const previous = event.key === "ArrowUp" || vimKey === "k";
+    if (next && hits.length > 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSelection((selected + 1) % hits.length);
+    } else if (previous && hits.length > 0) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSelection((selected - 1 + hits.length) % hits.length);
+    } else if (event.key === "Escape") {
+      closePreview();
+    } else if (
+      (event.key === "Enter" || vimKey === "y") &&
+      selected >= 0 &&
+      hits[selected]
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      selectBang(hits[selected]);
+    }
   });
 
   input.addEventListener("change", () => {

@@ -387,6 +387,7 @@ test("suggestions include custom bang entries from the suggest cookie", async ({
 test("homepage bang finder supports keyboard selection", async ({ page }) => {
   await openHome(page);
   const input = page.locator("#bang-command-input");
+  await expect(page.locator("#bang-command-results")).toBeHidden();
   await expect(input).toHaveCSS("border-top-width", "1px");
   await expect(input).toHaveCSS("border-top-style", "solid");
 
@@ -550,13 +551,44 @@ test("default search engine field previews and selects bangs", async ({
   const writeCount = await settingsWriteCount(page);
 
   await page.fill("#default-bang", "youtube");
+  const input = page.locator("#default-bang");
   const results = page.locator("#default-bang-results");
   await expect(results).toBeVisible();
   await expect(page.locator("#bang-search")).toHaveCount(0);
-  await page.click('[data-trigger="yt"]');
+  await expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    "default-bang-option-0"
+  );
+  await input.press("Control+j");
+  await expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    "default-bang-option-1"
+  );
+  await input.press("Control+k");
+  await expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    "default-bang-option-0"
+  );
+  await input.press("ArrowDown");
+  await expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    "default-bang-option-1"
+  );
+  await input.press("ArrowUp");
+  await expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    "default-bang-option-0"
+  );
+  await input.press("ArrowDown");
+  const activeOption = results.locator('[role="option"]').nth(1);
+  const activeTrigger = await activeOption.getAttribute("data-trigger");
+  const activeName = await activeOption.locator("span").first().textContent();
+  expect(activeTrigger).toBeTruthy();
+  expect(activeName).toBeTruthy();
+  await input.press("Control+y");
 
-  await expect(page.locator("#default-bang")).toHaveValue("yt");
-  await expect(page.locator("#bang-status")).toContainText("YouTube");
+  await expect(input).toHaveValue(activeTrigger!);
+  await expect(page.locator("#bang-status")).toContainText(activeName!);
   await waitForSettingsWrite(page, writeCount);
 });
 
