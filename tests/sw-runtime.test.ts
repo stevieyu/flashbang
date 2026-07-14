@@ -247,15 +247,23 @@ describe("sw runtime with real modules", () => {
     );
   });
 
-  test("fetch q= path responds with redirect", async () => {
+  test("fetch q= path responds with redirect without optional precaching", async () => {
     await loadSwRuntime();
     expect(typeof handlers.fetch).toBe("function");
 
-    const fetchEvt = createFetchEvent("https://flashbang.local/?q=hello");
-    await handlers.fetch?.(fetchEvt.event);
-    const response = await fetchEvt.response();
-    expect(response.status).toBe(302);
-    expect(response.headers.get("Location")).toContain("google.com");
+    for (const url of [
+      "https://flashbang.local/?q=hello",
+      "https://flashbang.local/?foo=bar&q=hello",
+    ]) {
+      const fetchEvt = createFetchEvent(url);
+      await handlers.fetch?.(fetchEvt.event);
+      const response = await fetchEvt.response();
+      expect(response.status).toBe(302);
+      const location = response.headers.get("Location");
+      expect(location).toContain("google.com");
+      expect(new URL(location!).searchParams.get("q")).toBe("hello");
+      expect(fetchEvt.waits).toHaveLength(0);
+    }
   });
 
   test("bench route returns offline fallback with security headers", async () => {

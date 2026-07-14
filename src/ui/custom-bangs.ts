@@ -4,6 +4,7 @@ import {
   validateCaptureBang,
   validateSimpleBangUrl,
 } from "../shared/capture-template";
+import { validateCustomTrigger } from "../shared/custom-trigger";
 import { validateSnapTarget } from "../shared/snap-target";
 import type { DB } from "./db";
 import { $, el } from "./dom";
@@ -143,7 +144,13 @@ export function setupCustomBangs(
     const encoding = fd.get("encoding") as CaptureEncoding;
     error.textContent = "";
     error.classList.add("hidden");
-    if (!(trigger && name && url)) {
+    const triggerError = validateCustomTrigger(trigger);
+    if (triggerError) {
+      error.textContent = triggerError;
+      error.classList.remove("hidden");
+      return;
+    }
+    if (!(name && url)) {
       return;
     }
     const urlError = regex

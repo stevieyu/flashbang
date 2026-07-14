@@ -4,6 +4,7 @@ import {
   validateCaptureBang,
   validateSimpleBangUrl,
 } from "../shared/capture-template";
+import { validateCustomTrigger } from "../shared/custom-trigger";
 import { idbWrap, openDB } from "../shared/idb";
 import { validateSnapTarget } from "../shared/snap-target";
 
@@ -54,11 +55,19 @@ export class DB {
   }
 
   async addCustomBang(bang: CustomBangRecord) {
+    const triggerError = validateCustomTrigger(bang.trigger);
+    if (triggerError) {
+      throw new Error(triggerError);
+    }
     const s = await this.store("custom-bangs", "readwrite");
     await idbWrap(s.put(bang));
   }
 
   async updateCustomBang(previousTrigger: string, bang: CustomBangRecord) {
+    const triggerError = validateCustomTrigger(bang.trigger);
+    if (triggerError) {
+      throw new Error(triggerError);
+    }
     const s = await this.store("custom-bangs", "readwrite");
     const ops: Promise<unknown>[] = [];
     if (previousTrigger !== bang.trigger) {
@@ -156,11 +165,12 @@ export class DB {
         const regex = typeof b.regex === "string" ? b.regex : undefined;
         const snap = typeof b.snap === "string" ? b.snap : undefined;
         const encoding = isCaptureEncoding(b.encoding) ? b.encoding : undefined;
+        const triggerError = validateCustomTrigger(b.trigger);
         const urlError = regex
           ? validateCaptureBang(b.url, regex)
           : validateSimpleBangUrl(b.url);
         const validationError =
-          urlError ?? (snap ? validateSnapTarget(snap) : null);
+          triggerError ?? urlError ?? (snap ? validateSnapTarget(snap) : null);
         if (validationError) {
           continue;
         }

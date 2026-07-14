@@ -100,4 +100,42 @@ describe("custom bang import and export", () => {
     });
     expect(await db.getAllCustomBangs()).toEqual([]);
   });
+
+  test("drops imported bangs with invalid triggers", async () => {
+    const db = new DB();
+    const invalidTriggers = [
+      "",
+      "two words",
+      "foo!bar",
+      "foo@bar",
+      "foo+bar",
+      "foo%20bar",
+      "foo%21bar",
+      "foo%40bar",
+      "a".repeat(65),
+      "settings",
+    ];
+    await db.importAll({
+      customBangs: [
+        ...invalidTriggers.map((trigger) => ({
+          trigger,
+          name: "Invalid",
+          url: "https://example.com?q={}",
+        })),
+        {
+          trigger: "valid",
+          name: "Valid",
+          url: "https://example.com?q={}",
+        },
+      ],
+    });
+
+    expect(await db.getAllCustomBangs()).toEqual([
+      {
+        trigger: "valid",
+        name: "Valid",
+        url: "https://example.com?q={}",
+      },
+    ]);
+  });
 });

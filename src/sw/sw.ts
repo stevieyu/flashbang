@@ -89,6 +89,24 @@ function ensureOptionalPrecache(): Promise<void> {
   return optionalPrecachePromise;
 }
 
+function findQueryValueStart(raw: string): number {
+  let paramStart = raw.indexOf("?") + 1;
+  while (paramStart > 0) {
+    if (
+      raw.charCodeAt(paramStart) === 113 &&
+      raw.charCodeAt(paramStart + 1) === 61
+    ) {
+      return paramStart + 2;
+    }
+    const separator = raw.indexOf("&", paramStart);
+    if (separator === -1) {
+      return -1;
+    }
+    paramStart = separator + 1;
+  }
+  return -1;
+}
+
 function queueBangSideEffects(e: FetchEvent, trigger: string): void {
   e.waitUntil(
     RESOLVED_PROMISE.then(() => {
@@ -184,15 +202,8 @@ self.addEventListener("fetch", (e: FetchEvent) => {
     return;
   }
 
-  // Start optional asset warmup once per SW lifecycle, without touching
-  // waitUntil on every fetch.
-  if (!optionalPrecachePromise) {
-    e.waitUntil(ensureOptionalPrecache());
-  }
-
-  const qIdx = raw.indexOf("?q=");
-  if (qIdx !== -1) {
-    const vStart = qIdx + 3;
+  const vStart = findQueryValueStart(raw);
+  if (vStart !== -1) {
     const vEnd = raw.indexOf("&", vStart);
     const rawQ =
       vEnd === -1 ? raw.substring(vStart) : raw.substring(vStart, vEnd);
@@ -223,6 +234,11 @@ self.addEventListener("fetch", (e: FetchEvent) => {
       }
       return;
     }
+  }
+
+  // Redirect requests should not compete with optional UI asset warmup.
+  if (!optionalPrecachePromise) {
+    e.waitUntil(ensureOptionalPrecache());
   }
 
   if (raw.endsWith("/bench")) {

@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 function hashString(input: string): number {
   let hash = 0;
@@ -30,6 +30,21 @@ export default defineConfig({
   use: {
     baseURL: BASE_URL,
   },
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
+      grep: /suggest endpoint|Firefox locks|opensearch endpoint|suggestions include custom|default provider labels|settings persist suggest provider none|settings persist custom bang creation|settings reject invalid/,
+    },
+  ],
   webServer: {
     command: "bun run start",
     env: {

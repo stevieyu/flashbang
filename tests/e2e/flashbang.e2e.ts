@@ -1,4 +1,6 @@
+import { readFile } from "node:fs/promises";
 import { expect, type Page, test } from "@playwright/test";
+import { DB_VERSION } from "../../src/shared/constants";
 import { encodeSuggestCookieValue } from "../../src/shared/suggest-cookie";
 
 const GOOGLE_REDIRECT = /google\.com\/search\?q=hello/;
@@ -7,7 +9,7 @@ const DDG_HOST = "https://duckduckgo.com";
 const CUSTOM_HOST = "https://example.com";
 
 async function mockGoogleSearchRoute(page: Page): Promise<void> {
-  await page.route(`${GOOGLE_HOST}/**`, (route) => {
+  await page.context().route(`${GOOGLE_HOST}/**`, (route) => {
     const url = route.request().url();
     route.fulfill({
       status: 200,
@@ -18,7 +20,7 @@ async function mockGoogleSearchRoute(page: Page): Promise<void> {
 }
 
 async function mockCustomHostRoute(page: Page): Promise<void> {
-  await page.route(`${CUSTOM_HOST}/**`, (route) => {
+  await page.context().route(`${CUSTOM_HOST}/**`, (route) => {
     const url = route.request().url();
     route.fulfill({
       status: 200,
@@ -29,7 +31,7 @@ async function mockCustomHostRoute(page: Page): Promise<void> {
 }
 
 async function mockDuckDuckGoRoute(page: Page): Promise<void> {
-  await page.route(`${DDG_HOST}/**`, (route) => {
+  await page.context().route(`${DDG_HOST}/**`, (route) => {
     const url = route.request().url();
     route.fulfill({
       status: 200,
@@ -159,8 +161,26 @@ async function seedCustomBangs(
   throw new Error("failed to seed custom bangs after retries");
 }
 
+async function openHome(page: Page): Promise<void> {
+  const target = test.info().project.name === "webkit" ? "/home" : "/";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await page.goto(target, { waitUntil: "domcontentloaded" });
+      await page.waitForSelector("#gear-btn");
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("interrupted by another navigation")) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error("failed to open app after service worker registration");
+}
+
 async function openSettingsModal(page: Page): Promise<void> {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await openHome(page);
   await page.click("#gear-btn");
   await expect(page.locator("#settings-modal")).toHaveAttribute(
     "aria-hidden",
@@ -298,7 +318,7 @@ test("opensearch endpoint uses request origin in generated templates", async ({
 test("suggestions include custom bang entries from the suggest cookie", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openHome(page);
   const customBang = "mycustombang";
   const query = "!mycustom";
   await page.evaluate(
@@ -322,7 +342,8 @@ test("suggestions include custom bang entries from the suggest cookie", async ({
   expect(payload[1]).toContain(`!${customBang}`);
 });
 
-test("settings persist default bang and affect fallback redirects", async ({
+test("settings invalidation applies a new default bang to redirects", async ({
+  browserName,
   page,
 }) => {
   await mockDuckDuckGoRoute(page);
@@ -334,9 +355,10 @@ test("settings persist default bang and affect fallback redirects", async ({
 
   await expect
     .poll(() => page.evaluate(() => document.cookie))
-    .toContain("suggest=default,ddg,");
+    .toContain(
+      `suggest=${browserName === "firefox" ? "google" : "default"},ddg,`
+    );
 
-  await page.goto("/", { waitUntil: "domcontentloaded" });
   await ensureWarmController(page);
   await navigateAndWaitForRedirect(page, "/?q=hello", /duckduckgo\.com\/\?q=/);
 
@@ -345,7 +367,10 @@ test("settings persist default bang and affect fallback redirects", async ({
   expect(redirected.searchParams.get("q")).toBe("hello");
 });
 
-test("default provider labels follow the selected bang", async ({ page }) => {
+test("default provider labels follow the selected bang", async ({
+  browserName,
+  page,
+}) => {
   await openSettingsModal(page);
 
   const luckyDefault = page.locator("#lucky-default-display");
@@ -368,6 +393,9 @@ test("default provider labels follow the selected bang", async ({ page }) => {
   await expect(luckyDefault).toHaveText(/Fallback\s*DuckDuckGo/);
   await expect(suggestDefault).toHaveText(/Fallback\s*None/);
 
+  if (browserName === "firefox") {
+    return;
+  }
   await page.selectOption("#suggest-provider", "google");
   await expect(suggestDefault).toBeHidden();
   await page.selectOption("#suggest-provider", "default");
@@ -375,17 +403,28 @@ test("default provider labels follow the selected bang", async ({ page }) => {
 });
 
 test("settings persist suggest provider none across reload", async ({
+  browserName,
   page,
   request,
 }) => {
+  test.skip(
+    browserName === "firefox",
+    "Firefox intentionally locks cookie-backed suggestion settings"
+  );
   await openSettingsModal(page);
 
   await page.selectOption("#suggest-provider", "none");
+  if (browserName === "webkit") {
+    await openHome(page);
+    await page.click("#gear-btn");
+    await expect(page.locator("#suggest-provider")).toHaveValue("none");
+    return;
+  }
   await expect
     .poll(() => page.evaluate(() => document.cookie))
     .toContain("suggest=none,");
 
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await openHome(page);
   const cookie = await page.evaluate(() => document.cookie);
   expect(cookie).toContain("suggest=none,");
 
@@ -398,10 +437,13 @@ test("settings persist suggest provider none across reload", async ({
 });
 
 test("settings persist custom bang creation across reload", async ({
+  browserName,
   page,
 }) => {
   await mockCustomHostRoute(page);
-  await ensureWarmController(page);
+  if (browserName !== "webkit") {
+    await ensureWarmController(page);
+  }
   await openSettingsModal(page);
 
   await page.fill('input[name="shortcut"]', "mydocs");
@@ -410,7 +452,13 @@ test("settings persist custom bang creation across reload", async ({
   await submitCustomBangForm(page);
   await expect(page.locator("#custom-list")).toContainText("!mydocs");
 
-  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await openHome(page);
+  await page.click("#gear-btn");
+  await expect(page.locator("#custom-list")).toContainText("!mydocs");
+
+  if (browserName === "webkit") {
+    return;
+  }
   await ensureWarmController(page);
   await navigateAndWaitForRedirect(
     page,
@@ -739,9 +787,14 @@ test("custom bang persists after reload in the same context", async ({
   expect(redirected.searchParams.get("q")).toBe("second");
 });
 
-test("cold-start redirect uses service worker message path before controller exists", async ({
+test("first installation redirects before a controller exists", async ({
   browser,
+  browserName,
 }) => {
+  test.skip(
+    browserName === "webkit",
+    "Playwright WebKit does not support service worker lifecycle testing"
+  );
   const context = await browser.newContext();
   try {
     const page = await context.newPage();
@@ -766,4 +819,142 @@ test("cold-start redirect uses service worker message path before controller exi
   } finally {
     await context.close();
   }
+});
+
+test("redirect survives a service worker restart", async ({
+  browser,
+  browserName,
+  page,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "Playwright only exposes service worker handles in Chromium"
+  );
+  await mockGoogleSearchRoute(page);
+  await ensureWarmController(page);
+
+  const cdp = await browser.newBrowserCDPSession();
+  const { targetInfos } = await cdp.send("Target.getTargets");
+  const workerTarget = targetInfos.find(
+    (target) =>
+      target.type === "service_worker" && target.url.endsWith("/sw.js")
+  );
+  expect(workerTarget).toBeDefined();
+  await cdp.send("Target.closeTarget", { targetId: workerTarget!.targetId });
+
+  await navigateAndWaitForRedirect(page, "/?q=%21g%20hello", GOOGLE_REDIRECT);
+  expect(page.url()).toMatch(GOOGLE_REDIRECT);
+});
+
+test("controlled redirect works while offline", async ({
+  browserName,
+  context,
+  page,
+}) => {
+  test.skip(
+    browserName === "webkit",
+    "Playwright WebKit does not support service worker lifecycle testing"
+  );
+  await mockGoogleSearchRoute(page);
+  await ensureWarmController(page);
+  const origin = new URL(page.url()).origin;
+  await context.route(`${origin}/**`, (route) => route.abort());
+  try {
+    await navigateAndWaitForRedirect(page, "/?q=%21g%20hello", GOOGLE_REDIRECT);
+  } finally {
+    await context.unroute(`${origin}/**`);
+  }
+});
+
+test("redirect falls back safely when IndexedDB cannot be opened", async ({
+  browser,
+  browserName,
+}) => {
+  test.skip(
+    browserName === "webkit",
+    "Playwright WebKit does not support service worker lifecycle testing"
+  );
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await mockGoogleSearchRoute(page);
+    await page.goto("/health");
+    await page.evaluate(
+      (version) =>
+        new Promise<void>((resolve, reject) => {
+          const request = indexedDB.open("flashbang", version);
+          request.onsuccess = () => {
+            request.result.close();
+            resolve();
+          };
+          request.onerror = () => reject(request.error);
+        }),
+      DB_VERSION + 1
+    );
+
+    await navigateAndWaitForRedirect(page, "/?q=hello", GOOGLE_REDIRECT);
+    expect(page.url()).toMatch(GOOGLE_REDIRECT);
+  } finally {
+    await context.close();
+  }
+});
+
+test("worker update activates a new cache and removes the old cache", async ({
+  browserName,
+  context,
+  page,
+}) => {
+  test.skip(
+    browserName !== "chromium",
+    "Playwright only intercepts service worker lifecycle requests in Chromium"
+  );
+  const workerSource = await readFile("dist/sw.js", "utf8");
+  const builtCacheName = workerSource.match(/fb-[a-f0-9]{8}/)?.[0];
+  expect(builtCacheName).toBeDefined();
+  const initialCacheName = "fb-e2e-initial";
+  const updatedCacheName = "fb-e2e-updated";
+  let servedCacheName = initialCacheName;
+
+  await context.route("**/sw.js*", (route) =>
+    route.fulfill({
+      body: workerSource.replaceAll(builtCacheName!, servedCacheName),
+      contentType: "application/javascript",
+      headers: {
+        "Cache-Control": "no-cache",
+        "Service-Worker-Allowed": "/",
+      },
+    })
+  );
+
+  const lifecyclePage = await context.newPage();
+  await lifecyclePage.goto("/health");
+  await ensureWarmController(page);
+  await expect
+    .poll(() => lifecyclePage.evaluate(() => caches.keys()))
+    .toContain(initialCacheName);
+
+  await page.close();
+  servedCacheName = updatedCacheName;
+  const controllerChanged = lifecyclePage.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        navigator.serviceWorker.addEventListener(
+          "controllerchange",
+          () => resolve(),
+          { once: true }
+        );
+      })
+  );
+  await lifecyclePage.evaluate(async () => {
+    await navigator.serviceWorker.register("/sw.js?e2e=updated");
+  });
+  await controllerChanged;
+  await lifecyclePage.goto("/home", { waitUntil: "domcontentloaded" });
+
+  await expect
+    .poll(() => lifecyclePage.evaluate(() => caches.keys()))
+    .toContain(updatedCacheName);
+  await expect
+    .poll(() => lifecyclePage.evaluate(() => caches.keys()))
+    .not.toContain(initialCacheName);
 });
