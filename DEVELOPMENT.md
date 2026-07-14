@@ -84,7 +84,6 @@ flashbang/
 │   └── ui/
 │       ├── index.html         # HTML template
 │       ├── home.html          # Home page partial
-│       ├── home.ts            # Home page setup and copy interactions
 │       ├── bench.html         # Benchmark page
 │       ├── bench.ts           # Benchmark script
 │       ├── app.ts             # Initialization & orchestration
