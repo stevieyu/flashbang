@@ -87,6 +87,7 @@ flashbang/
 │       ├── bench.html         # Benchmark page
 │       ├── bench.ts           # Benchmark script
 │       ├── app.ts             # Initialization & orchestration
+│       ├── home.ts            # Homepage bang finder and address-bar setup
 │       ├── dom.ts             # $() selector & el() factory
 │       ├── sw-bridge.ts       # notifySW() — postMessage to Service Worker
 │       ├── cookie.ts          # Suggest cookie management (provider, custom bangs)

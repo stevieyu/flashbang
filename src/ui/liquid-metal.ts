@@ -16,27 +16,38 @@ function createTextMaskTexture(
   text: string,
   font: string,
   width: number,
-  height: number
+  height: number,
+  dpr: number
 ): WebGLTexture | null {
   const c = document.createElement("canvas");
   c.width = width;
   c.height = height;
   const ctx = c.getContext("2d", { willReadFrequently: true })!;
+  const cssWidth = width / dpr;
+  const cssHeight = height / dpr;
+  ctx.scale(dpr, dpr);
 
   ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, cssWidth, cssHeight);
   ctx.font = font;
   ctx.fillStyle = "#fff";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, width / 2, height / 2);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  const metrics = ctx.measureText(text);
+  const inkWidth =
+    metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight;
+  const inkHeight =
+    metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+  const textX = (cssWidth - inkWidth) / 2 + metrics.actualBoundingBoxLeft;
+  const textY = (cssHeight - inkHeight) / 2 + metrics.actualBoundingBoxAscent;
+  ctx.fillText(text, textX, textY);
   const sharp = ctx.getImageData(0, 0, width, height);
 
-  ctx.filter = "blur(6px)";
+  ctx.filter = `blur(${6 * dpr}px)`;
   ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, 0, cssWidth, cssHeight);
   ctx.fillStyle = "#fff";
-  ctx.fillText(text, width / 2, height / 2);
+  ctx.fillText(text, textX, textY);
   ctx.filter = "none";
   const blurred = ctx.getImageData(0, 0, width, height);
 
@@ -167,7 +178,14 @@ export function initLiquidMetal(
       gl.viewport(0, 0, w, h);
 
       gl.deleteTexture(maskTex);
-      maskTex = createTextMaskTexture(gl, text, getWordmarkFont(canvas), w, h);
+      maskTex = createTextMaskTexture(
+        gl,
+        text,
+        getWordmarkFont(canvas),
+        w,
+        h,
+        dpr
+      );
       if (maskTex) {
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, maskTex);

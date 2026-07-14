@@ -55,21 +55,44 @@
         ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
       color: #4ade80;
     }
+    .bench-title {
+      font-size: 2rem;
+      line-height: 0.75;
+    }
+    .bench-wordmark .wordmark-text {
+      display: inline-block;
+      width: max-content;
+      font-size: inherit;
+    }
+    .bench-wordmark {
+      display: inline-block;
+      width: max-content;
+      overflow: hidden;
+      transform: translateY(7px);
+    }
+    .bench-chevron {
+      transform: translateY(2px);
+    }
     </style>
   </head>
   <body>
     <div class="max-w-[720px] mx-auto px-6 pt-10 pb-16">
-      <h1 class="text-[2rem] font-800 tracking-tight mb-1">
+      <h1 class="bench-title mb-3 flex items-end gap-3">
         <a
           href="/"
           aria-label="Back to flashbang"
-          class="inline-block mr-0.5 text-white no-underline"
-          >&lsaquo;</a
+          class="inline-flex items-center gap-2 no-underline"
         >
-        <a href="/" class="text-inherit no-underline hover:text-white"
-          >flashbang</a
-        >
-        bench
+          <span
+            class="bench-chevron inline-flex h-[1em] w-[1em] items-center justify-center leading-none text-white"
+            >&lsaquo;</span
+          >
+          <span class="wordmark bench-wordmark">
+            <canvas id="metal-canvas"></canvas>
+            <span class="wordmark-text">flashbang</span>
+          </span>
+        </a>
+        <span class="font-700 tracking-tight">bench</span>
       </h1>
       <p class="text-text-secondary text-[0.95rem] mb-8">
         Service Worker redirect latency across all query types

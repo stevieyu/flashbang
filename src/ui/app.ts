@@ -1,7 +1,7 @@
-import { flashAnim } from "./animations";
 import { setSuggestCookie } from "./cookie";
 import { DB, readCustomBangs } from "./db";
 import { $ } from "./dom";
+import { initHome } from "./home";
 import { initLiquidMetal } from "./liquid-metal";
 import { setupModal } from "./modal";
 import { initSettings } from "./settings";
@@ -25,23 +25,9 @@ async function syncSuggestCookie() {
 function init() {
   syncSuggestCookie();
 
-  $<HTMLInputElement>("#setup-url").value = `${location.origin}?q=%s`;
-
-  const metal = initLiquidMetal(
-    $<HTMLCanvasElement>("#metal-canvas"),
-    "flashbang"
-  );
+  initLiquidMetal($<HTMLCanvasElement>("#metal-canvas"), "flashbang");
   $(".wordmark").classList.add("has-shader");
-
-  $("#copy-btn").addEventListener("click", async () => {
-    await navigator.clipboard.writeText(
-      $<HTMLInputElement>("#setup-url").value
-    );
-    flashAnim($<HTMLInputElement>("#setup-url"));
-    metal.flash();
-    $("#copy-btn").textContent = "Copied!";
-    setTimeout(() => ($("#copy-btn").textContent = "Copy"), 1500);
-  });
+  initHome(db);
 
   const { openModal } = setupModal(() => initSettings(db));
 

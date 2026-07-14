@@ -56,40 +56,80 @@
       </header>
 
       <main
-        class="flex flex-col items-center gap-1 text-center px-6 max-w-[480px] w-full"
+        class="flex flex-col items-center gap-1 text-center px-5 max-w-[560px] w-full"
       >
-        <h1 class="wordmark" aria-label="flashbang">
+        <h1 class="wordmark home-wordmark" aria-label="flashbang">
           <canvas id="metal-canvas"></canvas>
           <span class="wordmark-text">flashbang</span>
         </h1>
-        <div class="flex gap-2 items-center w-full mt-2">
-          <input
-            type="text"
-            id="setup-url"
-            readonly
-            aria-label="Search engine URL"
-            class="input-field font-mono text-xs flex-1"
-          >
+        <search class="relative mt-4 w-full text-left">
+          <form id="bang-command-form" class="relative">
+            <div class="command-shell relative">
+              <span
+                class="command-key pointer-events-none absolute inset-y-0 left-0 z-1 flex w-8 items-center justify-center font-mono text-sm font-semibold"
+                aria-hidden="true"
+                >!</span
+              >
+              <label for="bang-command-input" class="sr-only"
+                >Search bangs or enter a command</label
+              >
+              <input
+                id="bang-command-input"
+                class="input-field command-input w-full py-3 pl-8 pr-3 text-sm sm:text-base"
+                type="text"
+                placeholder="Search bangs or enter !gh react"
+                autocomplete="off"
+                spellcheck="false"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-controls="bang-command-results"
+                aria-expanded="false"
+              >
+            </div>
+            <div
+              id="bang-command-results"
+              class="command-results absolute inset-x-0 top-[calc(100%+0.5rem)] z-30 hidden max-h-80 overflow-y-auto rounded-lg border border-chrome-1 bg-bg-secondary p-1.5 shadow-xl shadow-black/35"
+              role="listbox"
+              aria-label="Bang search results"
+            ></div>
+          </form>
+        </search>
+        <div
+          class="mt-2.5 flex w-full items-center justify-between gap-3 px-1 text-xs text-text-secondary"
+        >
+          <span id="home-bang-count">14,000+ shortcuts</span>
           <button
             type="button"
-            id="copy-btn"
-            class="btn max-w-[5rem] min-w-[5rem]"
+            id="open-setup"
+            class="address-setup group inline-flex shrink-0 items-center gap-1 border-none bg-transparent p-0 text-xs font-medium cursor-pointer sm:text-sm"
           >
-            Copy
+            <span>Use from address bar</span>
+            <svg
+              class="size-3.5 transition-transform duration-150 group-hover:translate-x-0.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
           </button>
         </div>
-        <p class="text-[0.95rem] text-text-secondary mt-2.5">
-          the
-          <a href="/bench" class="text-success font-semibold hover:underline"
-            >sub-1ms</a
-          >
-          local first duck-duck-go style bang redirects.
-        </p>
       </main>
 
       <footer
         class="absolute bottom-0 inset-x-0 text-center p-5 text-sm text-text-secondary"
       >
+        <div class="mb-2.5">
+          the
+          <a href="/bench" class="text-success font-semibold hover:underline"
+            >sub-1ms</a
+          >
+          local first duck-duck-go style bang redirects.
+        </div>
         <div>
           <a href="https://github.com/ph1losof/flashbang">source code</a>
           <span class="mx-1 opacity-50">&middot;</span>
@@ -101,6 +141,93 @@
           made with &lt;3 by Dmytro Pletenskyi
         </div>
       </footer>
+    </div>
+
+    <div
+      id="setup-modal"
+      class="fixed inset-0 z-110 flex items-end justify-center bg-black/65 px-0 opacity-0 invisible sm:items-center sm:px-4"
+      aria-hidden="true"
+    >
+      <div
+        id="setup-card"
+        class="setup-card relative w-full max-w-[460px] translate-y-4 rounded-t-2xl border border-border bg-bg p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl shadow-black/50 sm:rounded-2xl sm:p-6"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="setup-title"
+      >
+        <div class="mb-5 flex items-center justify-between">
+          <h2 id="setup-title" class="text-base font-semibold tracking-tight">
+            Use from address bar
+          </h2>
+          <button
+            type="button"
+            id="setup-close"
+            class="border-none bg-transparent py-1 px-2 rounded-md text-2xl leading-none text-text-secondary cursor-pointer hover:bg-bg-hover hover:text-text"
+            aria-label="Close address bar setup"
+          >
+            &times;
+          </button>
+        </div>
+
+        <div class="space-y-4">
+          <div>
+            <label
+              for="setup-search-url"
+              class="mb-1.5 block text-xs font-medium text-text-secondary"
+              >Search URL</label
+            >
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                id="setup-search-url"
+                readonly
+                class="input-field min-w-0 flex-1 font-mono text-xs"
+              >
+              <button
+                type="button"
+                id="copy-search-url"
+                data-label="Search URL"
+                class="btn setup-copy inline-flex min-w-20 shrink-0 items-center justify-center gap-1.5 px-3 py-2.5"
+                aria-label="Copy search URL"
+              >
+                <span data-copy-label>Copy</span>
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label
+              for="setup-suggest-url"
+              class="mb-1.5 block text-xs font-medium text-text-secondary"
+              >Suggestions URL
+              <span class="font-normal opacity-70">(optional)</span></label
+            >
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                id="setup-suggest-url"
+                readonly
+                class="input-field min-w-0 flex-1 font-mono text-xs"
+              >
+              <button
+                type="button"
+                id="copy-suggest-url"
+                data-label="Suggestions URL"
+                class="btn setup-copy inline-flex min-w-20 shrink-0 items-center justify-center gap-1.5 px-3 py-2.5"
+                aria-label="Copy suggestions URL"
+              >
+                <span data-copy-label>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <span
+          id="setup-copy-status"
+          class="sr-only"
+          role="status"
+          aria-live="polite"
+        ></span>
+      </div>
     </div>
 
     <div
@@ -186,14 +313,24 @@
         <!-- Default Bang -->
         <section class="card mb-5">
           <h3 class="section-title">Default Search Engine</h3>
-          <div class="flex gap-2 items-center">
-            <span class="text-text-secondary font-mono text-sm">!</span>
-            <input
-              type="text"
-              id="default-bang"
-              class="input-field w-20 font-mono text-sm"
-            >
-            <span id="bang-status" class="text-sm text-text-secondary"></span>
+          <div class="relative">
+            <div class="flex gap-2 items-center">
+              <span class="text-text-secondary font-mono text-sm">!</span>
+              <input
+                type="text"
+                id="default-bang"
+                class="input-field w-20 font-mono text-sm"
+                autocomplete="off"
+                spellcheck="false"
+              >
+              <span id="bang-status" class="text-sm text-text-secondary"></span>
+            </div>
+            <div
+              id="default-bang-results"
+              class="absolute inset-x-0 top-[calc(100%+0.375rem)] z-20 hidden max-h-44 overflow-y-auto rounded-lg border border-border bg-bg p-1 shadow-xl shadow-black/35"
+              role="listbox"
+              aria-label="Matching bangs"
+            ></div>
           </div>
         </section>
 
@@ -323,22 +460,6 @@
               aria-label="Copy Firefox suggestion URL"
             ></button>
           </div>
-        </section>
-
-        <!-- Bang Search -->
-        <section class="card mb-5">
-          <h3 class="section-title">Search Bangs</h3>
-          <p id="bang-count" class="label-text mb-2"></p>
-          <input
-            type="text"
-            id="bang-search"
-            placeholder="Search by name or shortcut..."
-            class="input-field text-sm"
-          >
-          <div
-            id="bang-results"
-            class="max-h-60 overflow-y-auto mt-2 rounded-lg pr-1.5 pt-1"
-          ></div>
         </section>
 
         <!-- Custom Bangs -->

@@ -411,11 +411,103 @@ export async function initSettings(db: DB) {
 
   const mod = await import("../generated/bangs-meta.js");
   const full: Record<string, { s: string; d: string }> = mod.BANGS;
+  const bangEntries = Object.entries(full).map(([trigger, bang]) => ({
+    bang,
+    domainLower: bang.d.toLowerCase(),
+    nameLower: bang.s.toLowerCase(),
+    trigger,
+  }));
+  const bangResults = $("#default-bang-results");
   $("#bang-status").textContent = full[defaultBang]?.s || "Unknown";
-  $("#bang-count").textContent =
-    `${Object.keys(full).length.toLocaleString()} bangs available`;
+
+  function closeBangPreview(): void {
+    bangResults.classList.add("hidden");
+    bangResults.replaceChildren();
+  }
+
+  function bangPreviewScore(
+    trigger: string,
+    name: string,
+    query: string
+  ): number {
+    if (trigger.startsWith(query)) {
+      return 0;
+    }
+    return name.startsWith(query) ? 1 : 2;
+  }
+
+  let bangPreviewTimer: ReturnType<typeof setTimeout>;
+  defaultInput.addEventListener("input", () => {
+    clearTimeout(bangPreviewTimer);
+    const query = defaultInput.value.replace(/^!+/, "").trim().toLowerCase();
+    if (!query) {
+      closeBangPreview();
+      return;
+    }
+    bangPreviewTimer = setTimeout(() => {
+      const hits = bangEntries
+        .filter(
+          ({ trigger, nameLower, domainLower }) =>
+            trigger.includes(query) ||
+            nameLower.includes(query) ||
+            domainLower.includes(query)
+        )
+        .sort((a, b) => {
+          const aScore = bangPreviewScore(a.trigger, a.nameLower, query);
+          const bScore = bangPreviewScore(b.trigger, b.nameLower, query);
+          return aScore - bScore || a.trigger.length - b.trigger.length;
+        })
+        .slice(0, 6);
+
+      if (hits.length === 0) {
+        bangResults.replaceChildren(
+          el(
+            "div",
+            "px-2.5 py-2 text-center text-xs text-text-secondary",
+            "No matching bangs"
+          )
+        );
+      } else {
+        bangResults.replaceChildren(
+          ...hits.map(({ trigger, bang }) => {
+            const row = el(
+              "button",
+              "flex w-full items-center gap-2 rounded-md border-none bg-transparent px-2 py-1.5 text-left text-text cursor-pointer hover:bg-bg-hover"
+            );
+            row.type = "button";
+            row.dataset.trigger = trigger;
+            row.setAttribute("role", "option");
+            row.append(
+              el(
+                "code",
+                "min-w-14 rounded bg-bg-active px-1.5 py-0.5 text-center font-mono text-xs",
+                `!${trigger}`
+              ),
+              el("span", "min-w-0 flex-1 truncate text-xs font-medium", bang.s),
+              el(
+                "span",
+                "hidden max-w-28 truncate text-[10px] text-text-secondary sm:block",
+                bang.d
+              )
+            );
+            row.addEventListener("pointerdown", (event) => {
+              event.preventDefault();
+            });
+            row.addEventListener("click", () => {
+              defaultInput.value = trigger;
+              closeBangPreview();
+              defaultInput.dispatchEvent(new Event("change"));
+            });
+            return row;
+          })
+        );
+      }
+      bangResults.classList.remove("hidden");
+    }, 120);
+  });
 
   defaultInput.addEventListener("change", () => {
+    closeBangPreview();
     const val = defaultInput.value.replace(/^!+/, "").toLowerCase().trim();
     if (full[val]) {
       void runWrite(() => db.setSetting("default-bang", val), {
@@ -586,66 +678,6 @@ export async function initSettings(db: DB) {
         luckyUrlInput.value = committedLuckyUrl;
       },
     });
-  });
-
-  let timer: ReturnType<typeof setTimeout>;
-  let cachedEntries: [string, { s: string; d: string }][] | null = null;
-  $<HTMLInputElement>("#bang-search").addEventListener("input", (e) => {
-    clearTimeout(timer);
-    const q = (e.target as HTMLInputElement).value.trim().toLowerCase();
-    if (!q) {
-      $("#bang-results").replaceChildren();
-      return;
-    }
-    timer = setTimeout(() => {
-      if (!cachedEntries) {
-        cachedEntries = Object.entries(full);
-      }
-      const hits = cachedEntries
-        .filter(
-          ([t, b]) =>
-            t.includes(q) || b.s.toLowerCase().includes(q) || b.d.includes(q)
-        )
-        .sort((a, b) => {
-          const as_ = a[0].startsWith(q) ? 0 : 1;
-          const bs_ = b[0].startsWith(q) ? 0 : 1;
-          return as_ - bs_ || a[0].length - b[0].length;
-        })
-        .slice(0, 20);
-      const container = $("#bang-results");
-      if (hits.length === 0) {
-        container.replaceChildren(
-          el(
-            "div",
-            "py-3 text-center text-sm text-text-secondary",
-            "No matches"
-          )
-        );
-      } else {
-        container.replaceChildren(
-          ...hits.map(([t, b]) => {
-            const row = el(
-              "div",
-              "flex items-center gap-3 px-2.5 py-2 rounded-lg bg-bg-secondary mb-1"
-            );
-            row.append(
-              el(
-                "code",
-                "px-1.5 py-0.5 rounded bg-bg-active text-xs min-w-15 text-center font-mono",
-                `!${t}`
-              ),
-              el("span", "flex-1 text-[13px] font-medium", b.s),
-              el(
-                "span",
-                "text-[11px] text-text-secondary max-w-30 overflow-hidden text-ellipsis whitespace-nowrap",
-                b.d
-              )
-            );
-            return row;
-          })
-        );
-      }
-    }, 200);
   });
 
   const refreshCustomBangs = setupCustomBangs(

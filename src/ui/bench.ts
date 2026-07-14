@@ -1,4 +1,8 @@
 import { $ } from "./dom";
+import { initLiquidMetal } from "./liquid-metal";
+
+initLiquidMetal($<HTMLCanvasElement>("#metal-canvas"), "flashbang");
+$(".wordmark").classList.add("has-shader");
 
 const QUERY_TYPES = [
   { label: "Prefix bang", example: "!g kittens", query: "!g kittens" },

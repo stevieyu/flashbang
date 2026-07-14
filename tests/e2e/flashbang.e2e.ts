@@ -196,7 +196,7 @@ async function openSettingsModal(page: Page): Promise<void> {
     "aria-hidden",
     "false"
   );
-  await expect(page.locator("#bang-count")).not.toHaveText("");
+  await expect(page.locator("#bang-status")).not.toHaveText("");
 }
 
 async function settingsWriteCount(page: Page): Promise<number> {
@@ -374,6 +374,143 @@ test("suggestions include custom bang entries from the suggest cookie", async ({
   const payload = await response.json();
   expect(payload[0]).toBe(query);
   expect(payload[1]).toContain(`!${customBang}`);
+});
+
+test("homepage bang finder supports keyboard selection", async ({ page }) => {
+  await openHome(page);
+  const input = page.locator("#bang-command-input");
+
+  await input.fill("github");
+  const results = page.locator("#bang-command-results");
+  await expect(results).toBeVisible();
+  await expect(results).toContainText("!gh");
+  await expect(results).toContainText("GitHub");
+  await expect(input).toHaveAttribute("aria-expanded", "true");
+
+  await input.press("Tab");
+  await expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    "bang-command-option-1"
+  );
+  await input.press("Shift+Tab");
+  await expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    "bang-command-option-0"
+  );
+  await input.press("Control+j");
+  await expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    "bang-command-option-1"
+  );
+  await input.press("Control+k");
+  await expect(input).toHaveAttribute(
+    "aria-activedescendant",
+    "bang-command-option-0"
+  );
+  await input.press("Control+y");
+  await expect(input).toHaveValue("github ");
+  await expect(results).toBeHidden();
+
+  await input.fill("git test");
+  await expect(results).toBeHidden();
+
+  await page.locator("h1").click();
+  await page.locator("body").press("g");
+  await page.locator("body").press("i");
+  await expect(input).toBeFocused();
+
+  await page.locator("h1").click();
+  await page.locator("body").press("Control+K");
+  await expect(input).toBeFocused();
+});
+
+test("compact address-bar setup exposes copyable URLs", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText(value: string) {
+          (
+            window as typeof window & { copiedSetupUrl?: string }
+          ).copiedSetupUrl = value;
+          return Promise.resolve();
+        },
+      },
+    });
+  });
+  await page.setViewportSize({ width: 390, height: 780 });
+  await openHome(page);
+
+  await expect(page.locator("#setup-url")).toHaveCount(0);
+  await page.click("#open-setup");
+  const modal = page.locator("#setup-modal");
+  await expect(modal).toHaveAttribute("aria-hidden", "false");
+  await expect(page.locator("#setup-search-url")).toHaveValue(
+    `${new URL(page.url()).origin}?q=%s`
+  );
+  await expect(page.locator("#setup-suggest-url")).toHaveValue(
+    `${new URL(page.url()).origin}/suggest?q=%s`
+  );
+
+  const cardBox = await page.locator("#setup-card").boundingBox();
+  expect(cardBox).not.toBeNull();
+  expect(cardBox!.y + cardBox!.height).toBeGreaterThan(760);
+
+  await page.click("#copy-search-url");
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as typeof window & { copiedSetupUrl?: string }).copiedSetupUrl
+      )
+    )
+    .toBe(`${new URL(page.url()).origin}?q=%s`);
+  await expect(page.locator("#copy-search-url [data-copy-label]")).toHaveText(
+    "Copied"
+  );
+
+  await page.keyboard.press("Escape");
+  await expect(modal).toHaveAttribute("aria-hidden", "true");
+  await expect(page.locator("#open-setup")).toBeFocused();
+});
+
+test("homepage command bar executes bang commands", async ({
+  browserName,
+  page,
+}) => {
+  test.skip(
+    browserName === "webkit",
+    "Playwright WebKit does not support service worker lifecycle testing"
+  );
+  await mockGoogleSearchRoute(page);
+  await ensureWarmController(page);
+  await openHome(page);
+
+  const input = page.locator("#bang-command-input");
+  await input.fill("google");
+  await expect(page.locator("#bang-command-results")).toBeVisible();
+  await input.press("Control+y");
+  await expect(input).toHaveValue("google ");
+  await input.pressSequentially("hello");
+  await Promise.all([page.waitForURL(GOOGLE_REDIRECT), input.press("Enter")]);
+  expect(page.url()).toMatch(GOOGLE_REDIRECT);
+});
+
+test("default search engine field previews and selects bangs", async ({
+  page,
+}) => {
+  await openSettingsModal(page);
+  const writeCount = await settingsWriteCount(page);
+
+  await page.fill("#default-bang", "youtube");
+  const results = page.locator("#default-bang-results");
+  await expect(results).toBeVisible();
+  await expect(page.locator("#bang-search")).toHaveCount(0);
+  await page.click('[data-trigger="yt"]');
+
+  await expect(page.locator("#default-bang")).toHaveValue("yt");
+  await expect(page.locator("#bang-status")).toContainText("YouTube");
+  await waitForSettingsWrite(page, writeCount);
 });
 
 test("settings invalidation applies a new default bang to redirects", async ({

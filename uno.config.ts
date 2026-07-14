@@ -155,6 +155,9 @@ export default defineConfig({
         .wordmark {
           position: relative;
           display: inline-block;
+          margin: -0.375rem -0.75rem;
+          padding: 0.375rem 0.75rem;
+          overflow: hidden;
         }
         #metal-canvas {
           position: absolute;
@@ -173,6 +176,9 @@ export default defineConfig({
         }
         .wordmark.has-shader .wordmark-text {
           visibility: hidden;
+        }
+        .home-wordmark .wordmark-text {
+          font-size: clamp(3.5rem, 10vw, 4.5rem);
         }
 
         .btn {
@@ -288,6 +294,85 @@ export default defineConfig({
           transform: translateY(0);
         }
 
+        .command-shell {
+          filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.18));
+        }
+        .command-input {
+          border-color: ${theme.colors.chrome[1]};
+          background: ${theme.colors.bg.hover};
+          caret-color: ${theme.colors.chrome[2]};
+        }
+        .command-input::placeholder {
+          color: ${theme.colors.text.secondary};
+        }
+        .command-input:focus {
+          border: 1px solid ${theme.colors.chrome[2]};
+          background: #20202f;
+          box-shadow: none;
+        }
+        .command-key {
+          color: ${theme.colors.text.secondary};
+        }
+        .command-badge {
+          color: #171722;
+          border: 1px solid rgba(220, 220, 235, 0.62);
+          background: linear-gradient(145deg, rgba(215, 215, 230, 1), rgba(145, 145, 168, 1));
+          box-shadow:
+            0 1px 0 rgba(48, 48, 64, 0.9),
+            0 2px 4px rgba(0, 0, 0, 0.32),
+            inset 0 1px 0 rgba(255, 255, 255, 0.75),
+            inset 0 -1px 2px rgba(5, 5, 10, 0.22);
+        }
+        .address-setup {
+          color: #b8b8ce;
+          text-decoration: none;
+        }
+        .address-setup span {
+          border-bottom: 1px solid rgba(184, 184, 206, 0.62);
+          transition: color 0.12s ease, border-color 0.12s ease;
+        }
+        .address-setup:hover span,
+        .address-setup:focus-visible span {
+          color: ${theme.colors.text.hover};
+          border-color: ${theme.colors.text.hover};
+        }
+        .command-results {
+          border-color: ${theme.colors.chrome[1]};
+          transform-origin: top center;
+          animation: command-results-in 0.1s ease-out;
+          backdrop-filter: blur(12px);
+        }
+        .command-result {
+          background: transparent;
+          border-radius: 0.4rem;
+          outline: none;
+          transition: background-color 0.08s ease, box-shadow 0.08s ease;
+        }
+        .command-result:focus,
+        .command-result:focus-visible {
+          outline: none;
+        }
+        .command-result-active {
+          background: ${theme.colors.bg.active};
+        }
+        .command-result:active {
+          background: ${theme.colors.bg.active};
+        }
+        @keyframes command-results-in {
+          from { opacity: 0; transform: translateY(-2px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        #setup-modal {
+          transition: opacity 0.18s ease, visibility 0.18s;
+          backdrop-filter: blur(6px);
+        }
+        #setup-card {
+          transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        .setup-copy {
+          transition: color 0.15s ease, background-color 0.15s ease, transform 0.12s ease;
+        }
         @media (prefers-reduced-motion: reduce) {
           .flash-anim,
           .shake-anim,
@@ -298,8 +383,16 @@ export default defineConfig({
             transition: color 0.15s, background-color 0.15s;
           }
           #settings-modal,
-          #settings-modal .modal-card {
+          #settings-modal .modal-card,
+          #setup-modal,
+          #setup-card,
+          .command-shell,
+          .command-result,
+          .setup-copy {
             transition: none;
+          }
+          .command-results {
+            animation: none;
           }
         }
       `,
