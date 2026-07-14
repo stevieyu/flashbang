@@ -8,6 +8,7 @@ import { hashFNV1a } from "../src/shared/hash";
 
 const bangs: Array<{ trigger: string; url: string }> =
   await Bun.file("data/bangs.json").json();
+const generatedSource = await Bun.file("src/generated/bangs-min.js").text();
 
 describe("codegen round-trip", () => {
   test("every 100th bang resolves to a non-null entry", () => {
@@ -27,6 +28,20 @@ describe("codegen round-trip", () => {
       expect(result).not.toBeNull();
       expect(result![0]).toContain("://");
     }
+  });
+
+  test("materializes and caches URL tuples on demand", () => {
+    const hash = hashFNV1a("g");
+    const first = lookupBang("g", hash);
+    expect(first).not.toBeNull();
+    expect(lookupBang("g", hash)).toBe(first);
+  });
+
+  test("keeps triggers and URL parts packed during initialization", () => {
+    expect(generatedSource).not.toContain("const _TS=");
+    expect(generatedSource).not.toContain("_TC[_i]=");
+    expect(generatedSource).toContain("_TB.startsWith(trigger,_TO[idx])");
+    expect(generatedSource).toContain("function _tuple(idx)");
   });
 
   test("regex bangs are emitted only through the sparse advanced lookup", () => {
