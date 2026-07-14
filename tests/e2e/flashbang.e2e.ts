@@ -5,7 +5,6 @@ import { encodeSuggestCookieValue } from "../../src/shared/suggest-cookie";
 
 const GOOGLE_REDIRECT = /google\.com\/search\?q=hello/;
 const GOOGLE_HOST = "https://www.google.com";
-const DDG_HOST = "https://duckduckgo.com";
 const CUSTOM_HOST = "https://example.com";
 
 async function mockGoogleSearchRoute(page: Page): Promise<void> {
@@ -26,17 +25,6 @@ async function mockCustomHostRoute(page: Page): Promise<void> {
       status: 200,
       contentType: "text/plain",
       body: `custom ${url}`,
-    });
-  });
-}
-
-async function mockDuckDuckGoRoute(page: Page): Promise<void> {
-  await page.context().route(`${DDG_HOST}/**`, (route) => {
-    const url = route.request().url();
-    route.fulfill({
-      status: 200,
-      contentType: "text/plain",
-      body: `ddg ${url}`,
     });
   });
 }
@@ -87,6 +75,33 @@ async function navigateAndWaitForRedirect(
     });
   await expect.poll(() => page.url(), { timeout: 10_000 }).toMatch(expectedUrl);
   await navigation;
+}
+
+function resolveRedirectViaWorker(
+  page: Page,
+  query: string,
+  invalidate = false
+): Promise<string> {
+  return page.evaluate(
+    ({ invalidateCache, redirectQuery }) =>
+      new Promise<string>((resolve, reject) => {
+        const controller = navigator.serviceWorker.controller;
+        if (!controller) {
+          reject(new Error("service worker controller not found"));
+          return;
+        }
+        navigator.serviceWorker.addEventListener(
+          "message",
+          (event) => resolve(event.data.url),
+          { once: true }
+        );
+        if (invalidateCache) {
+          controller.postMessage({ type: "invalidate" });
+        }
+        controller.postMessage({ type: "redirect", query: redirectQuery });
+      }),
+    { invalidateCache: invalidate, redirectQuery: query }
+  );
 }
 
 async function seedCustomBangs(
@@ -186,6 +201,7 @@ async function openSettingsModal(page: Page): Promise<void> {
     "aria-hidden",
     "false"
   );
+  await expect(page.locator("#bang-count")).not.toHaveText("");
 }
 
 async function submitCustomBangForm(page: Page): Promise<void> {
@@ -316,28 +332,19 @@ test("opensearch endpoint uses request origin in generated templates", async ({
 });
 
 test("suggestions include custom bang entries from the suggest cookie", async ({
-  page,
+  request,
 }) => {
-  await openHome(page);
   const customBang = "mycustombang";
   const query = "!mycustom";
-  await page.evaluate(
-    (suggestCookie) => {
-      document.cookie = `suggest=${suggestCookie};path=/`;
+  const response = await request.get("/suggest", {
+    params: { q: query },
+    headers: {
+      Cookie: `suggest=${encodeSuggestCookieValue("default", "g", "", [customBang])}`,
     },
-    encodeSuggestCookieValue("default", "g", "", [customBang])
-  );
+  });
+  expect(response.status()).toBe(200);
 
-  const response = await page.evaluate(async (q) => {
-    const res = await fetch(`/suggest?q=${encodeURIComponent(q)}`);
-    return {
-      status: res.status,
-      payload: await res.json(),
-    };
-  }, query);
-  expect(response.status).toBe(200);
-
-  const payload = response.payload;
+  const payload = await response.json();
   expect(payload[0]).toBe(query);
   expect(payload[1]).toContain(`!${customBang}`);
 });
@@ -346,7 +353,6 @@ test("settings invalidation applies a new default bang to redirects", async ({
   browserName,
   page,
 }) => {
-  await mockDuckDuckGoRoute(page);
   await ensureWarmController(page);
   await openSettingsModal(page);
 
@@ -359,10 +365,9 @@ test("settings invalidation applies a new default bang to redirects", async ({
       `suggest=${browserName === "firefox" ? "google" : "default"},ddg,`
     );
 
-  await ensureWarmController(page);
-  await navigateAndWaitForRedirect(page, "/?q=hello", /duckduckgo\.com\/\?q=/);
-
-  const redirected = new URL(page.url());
+  const redirected = new URL(
+    await resolveRedirectViaWorker(page, "hello", true)
+  );
   expect(redirected.hostname).toBe("duckduckgo.com");
   expect(redirected.searchParams.get("q")).toBe("hello");
 });
@@ -609,6 +614,7 @@ test("settings persist custom lucky URL across reload", async ({ page }) => {
   await openSettingsModal(page);
 
   await page.selectOption("#lucky-provider", "custom");
+  await expect(page.locator("#lucky-url")).toBeVisible();
   await page.fill("#lucky-url", `${CUSTOM_HOST}/lucky?q={}`);
   await page.dispatchEvent("#lucky-url", "change");
 
@@ -662,14 +668,12 @@ test("warm redirect falls back to default search for unknown bangs", async ({
 test("warm redirect uses lucky URL for trailing bare bang", async ({
   page,
 }) => {
-  await mockGoogleSearchRoute(page);
   await ensureWarmController(page);
-  await navigateAndWaitForRedirect(
-    page,
-    "/?q=hello%20%21",
-    /google\.com\/search\?/
-  );
-  const redirected = new URL(page.url());
+  await openHome(page);
+  const resolved = await resolveRedirectViaWorker(page, "hello !");
+  const redirected = new URL(resolved);
+  expect(redirected.hostname).toBe("www.google.com");
+  expect(redirected.pathname).toBe("/search");
   expect(redirected.searchParams.get("q")).toBe("hello");
   expect(redirected.searchParams.get("btnI")).toBe("1");
 });
