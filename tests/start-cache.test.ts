@@ -1,0 +1,49 @@
+import { describe, expect, test } from "bun:test";
+import {
+  acceptsBrotli,
+  cacheControlForAsset,
+  staticAssetHeaders,
+} from "../scripts/start";
+
+describe("production static caching", () => {
+  test("negotiates Brotli using encoding q-values", () => {
+    expect(acceptsBrotli("gzip, br")).toBe(true);
+    expect(acceptsBrotli("gzip, br;q=0")).toBe(false);
+    expect(acceptsBrotli("gzip, br;q=0.25")).toBe(true);
+    expect(acceptsBrotli("gzip, *;q=0.5")).toBe(true);
+    expect(acceptsBrotli("gzip, *;q=0.5, br;q=0")).toBe(false);
+    expect(acceptsBrotli("xbr, gzip")).toBe(false);
+  });
+
+  test("only content-hashed chunks are immutable", () => {
+    expect(cacheControlForAsset("/chunk-abc12345.js")).toBe(
+      "public, max-age=31536000, immutable"
+    );
+    for (const path of [
+      "/app.js",
+      "/bench.js",
+      "/icon.svg",
+      "/manifest.json",
+      "/robots.txt",
+    ]) {
+      expect(cacheControlForAsset(path)).toBe(
+        "public, max-age=0, must-revalidate"
+      );
+    }
+    expect(cacheControlForAsset("/index.html")).toBe("no-cache");
+    expect(cacheControlForAsset("/sw.js")).toBe("no-cache");
+  });
+
+  test("compressed and identity responses share representation headers", () => {
+    const identity = staticAssetHeaders("/app.js", "text/javascript", false);
+    const compressed = staticAssetHeaders("/app.js", "text/javascript", true);
+
+    expect(identity["Content-Type"]).toBe("text/javascript");
+    expect(compressed["Content-Type"]).toBe(identity["Content-Type"]);
+    expect(compressed["Cache-Control"]).toBe(identity["Cache-Control"]);
+    expect(identity.Vary).toBe("Accept-Encoding");
+    expect(compressed.Vary).toBe("Accept-Encoding");
+    expect(identity["Content-Encoding"]).toBeUndefined();
+    expect(compressed["Content-Encoding"]).toBe("br");
+  });
+});
