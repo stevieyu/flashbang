@@ -121,7 +121,19 @@
         >
           &times;
         </button>
-        <h2 class="section-title mb-5">Settings</h2>
+        <div class="mb-5 flex items-center gap-3 pr-10">
+          <h2 class="section-title mb-0">Settings</h2>
+          <span
+            id="settings-save-status"
+            class="text-sm text-success"
+            role="status"
+            aria-live="polite"
+            data-state="saved"
+            data-pending="0"
+            data-write-count="0"
+            >Saved</span
+          >
+        </div>
 
         <!-- Default Bang -->
         <section class="card mb-5">
@@ -383,7 +395,12 @@
               <input type="file" id="import-file" accept=".json" class="hidden">
             </label>
           </div>
-          <span id="import-status" class="text-sm mt-2 block"></span>
+          <span
+            id="import-status"
+            class="text-sm mt-2 block"
+            role="status"
+            aria-live="polite"
+          ></span>
         </section>
       </div>
     </div>

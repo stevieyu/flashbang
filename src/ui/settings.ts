@@ -1,3 +1,4 @@
+import { validateSimpleBangUrl } from "../shared/capture-template";
 import {
   DEFAULT_LUCKY_PROVIDER,
   LUCKY_TRIGGER_PROVIDERS,
@@ -32,6 +33,9 @@ export async function initSettings(db: DB) {
   const luckyDefaultPrefix = $("#lucky-default-prefix");
   const luckyDefaultProvider = $("#lucky-default-provider");
   const luckyUrlInput = $<HTMLInputElement>("#lucky-url");
+  const saveStatus = $("#settings-save-status");
+  const importFile = $<HTMLInputElement>("#import-file");
+  const exportButton = $<HTMLButtonElement>("#export-btn");
 
   const [rawSettings, initialCustom] = await Promise.all([
     db.getMultipleSettings([
@@ -50,6 +54,13 @@ export async function initSettings(db: DB) {
   const savedLuckyUrl = rawSettings[4] || "";
   let activeDefaultBang = defaultBang;
   let custom = initialCustom;
+  let committedDefaultBang = defaultBang;
+  let committedSuggestProvider = savedProvider;
+  let committedSuggestUrl = savedUrl;
+  let committedLuckyProvider = savedLucky;
+  let committedLuckyUrl = savedLuckyUrl;
+  let pendingSuggestCustom = false;
+  let pendingLuckyCustom = false;
 
   function setDefaultDisplay(
     select: HTMLSelectElement,
@@ -91,9 +102,9 @@ export async function initSettings(db: DB) {
 
   function syncCookie() {
     setSuggestCookie(
-      suggestSelect.value,
-      defaultInput.value.replace(/^!+/, "").toLowerCase().trim(),
-      suggestUrlInput.value.trim(),
+      committedSuggestProvider,
+      committedDefaultBang,
+      committedSuggestUrl,
       custom
     );
   }
@@ -111,7 +122,8 @@ export async function initSettings(db: DB) {
     suggestUrlInput.value = savedUrl;
   }
 
-  if (/Firefox\//.test(navigator.userAgent)) {
+  const isFirefox = /Firefox\//.test(navigator.userAgent);
+  if (isFirefox) {
     let firefoxProvider = "google";
     let menuHideTimer: ReturnType<typeof setTimeout>;
     let providerMenuPinned = false;
@@ -171,6 +183,7 @@ export async function initSettings(db: DB) {
     );
 
     suggestSelect.value = "google";
+    committedSuggestProvider = "google";
     suggestSelect.disabled = true;
     suggestSelect.classList.add("select-locked");
     suggestUrlInput.disabled = true;
@@ -238,6 +251,123 @@ export async function initSettings(db: DB) {
     }
   }
 
+  const customFormControls = Array.from(
+    $<HTMLFormElement>("#add-bang-form").elements
+  ).filter(
+    (
+      control
+    ): control is HTMLInputElement | HTMLSelectElement | HTMLButtonElement =>
+      control instanceof HTMLInputElement ||
+      control instanceof HTMLSelectElement ||
+      control instanceof HTMLButtonElement
+  );
+  const settingControls = [
+    defaultInput,
+    suggestSelect,
+    suggestUrlInput,
+    luckySelect,
+    luckyUrlInput,
+    importFile,
+    exportButton,
+    ...customFormControls,
+  ];
+  const permanentlyDisabled = new Set(
+    settingControls.filter((control) => control.disabled)
+  );
+  let pendingWrites = 0;
+  let completedWrites = 0;
+  const failedWrites = new Set<string>();
+  const validationErrors = new Map<string, string>();
+  let writeChain: Promise<void> = Promise.resolve();
+
+  function renderWriteState(): void {
+    saveStatus.dataset.pending = String(pendingWrites);
+    saveStatus.dataset.writeCount = String(completedWrites);
+    if (pendingWrites > 0) {
+      saveStatus.dataset.state = "saving";
+      saveStatus.textContent = "Saving\u2026";
+      saveStatus.className = "text-sm text-text-secondary";
+    } else if (validationErrors.size > 0 || failedWrites.size > 0) {
+      saveStatus.dataset.state = "error";
+      saveStatus.dataset.failed = [...failedWrites].join(",");
+      saveStatus.textContent =
+        validationErrors.values().next().value || "Could not save settings";
+      saveStatus.className = "text-sm text-danger";
+    } else {
+      saveStatus.dataset.state = "saved";
+      delete saveStatus.dataset.failed;
+      saveStatus.textContent = "Saved";
+      saveStatus.className = "text-sm text-success";
+    }
+    for (const control of settingControls) {
+      control.disabled = pendingWrites > 0 || permanentlyDisabled.has(control);
+    }
+  }
+
+  interface WriteOptions {
+    key?: string;
+    onCommit?: () => void;
+    onFailure?: () => void;
+  }
+
+  function runWrite(
+    write: () => Promise<unknown>,
+    options: WriteOptions = {}
+  ): Promise<boolean> {
+    const key = options.key || "custom-bangs";
+    pendingWrites++;
+    renderWriteState();
+    const task = writeChain.then(async () => {
+      await write();
+      failedWrites.delete(key);
+      options.onCommit?.();
+    });
+    writeChain = task.then(
+      () => undefined,
+      () => undefined
+    );
+    return task
+      .then(() => true)
+      .catch((error) => {
+        failedWrites.add(key);
+        options.onFailure?.();
+        console.error("Failed to save settings", error);
+        return false;
+      })
+      .finally(() => {
+        pendingWrites--;
+        completedWrites++;
+        renderWriteState();
+      });
+  }
+
+  function showValidationError(
+    key: string,
+    message: string,
+    input?: HTMLInputElement | HTMLSelectElement
+  ): void {
+    validationErrors.set(key, message);
+    input?.setAttribute("aria-invalid", "true");
+    renderWriteState();
+  }
+
+  function clearValidationError(
+    key: string,
+    input?: HTMLInputElement | HTMLSelectElement
+  ): void {
+    validationErrors.delete(key);
+    input?.removeAttribute("aria-invalid");
+    renderWriteState();
+  }
+
+  window.addEventListener("beforeunload", (event) => {
+    if (pendingWrites > 0) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+  });
+  renderWriteState();
+
   updateDefaultDisplays(activeDefaultBang);
   syncCookie();
 
@@ -247,17 +377,28 @@ export async function initSettings(db: DB) {
   $("#bang-count").textContent =
     `${Object.keys(full).length.toLocaleString()} bangs available`;
 
-  defaultInput.addEventListener("change", async () => {
+  defaultInput.addEventListener("change", () => {
     const val = defaultInput.value.replace(/^!+/, "").toLowerCase().trim();
     if (full[val]) {
-      activeDefaultBang = val;
-      await db.setSetting("default-bang", val);
-      notifySW("invalidate");
-      syncCookie();
-      updateDefaultDisplays(activeDefaultBang);
-      flashAnim(defaultInput);
-      $("#bang-status").textContent = full[val].s;
-      $("#bang-status").className = "text-sm text-success";
+      void runWrite(() => db.setSetting("default-bang", val), {
+        key: "default-bang",
+        onCommit: () => {
+          activeDefaultBang = val;
+          committedDefaultBang = val;
+          notifySW("invalidate");
+          syncCookie();
+          updateDefaultDisplays(activeDefaultBang);
+          flashAnim(defaultInput);
+          $("#bang-status").textContent = full[val].s;
+          $("#bang-status").className = "text-sm text-success";
+        },
+        onFailure: () => {
+          defaultInput.value = committedDefaultBang;
+          $("#bang-status").textContent =
+            full[committedDefaultBang]?.s || "Unknown";
+          $("#bang-status").className = "text-sm text-danger";
+        },
+      });
     } else {
       shakeAnim(defaultInput);
       $("#bang-status").textContent = "Unknown bang";
@@ -265,38 +406,148 @@ export async function initSettings(db: DB) {
     }
   });
 
-  suggestSelect.addEventListener("change", async () => {
-    await db.setSetting("suggest-provider", suggestSelect.value);
-    notifySW("invalidate");
-    syncCookie();
-    updateDefaultDisplays(activeDefaultBang);
-    if (suggestSelect.value === "custom") {
+  suggestSelect.addEventListener("change", () => {
+    const value = suggestSelect.value;
+    if (value === "custom") {
       suggestUrlInput.classList.remove("hidden");
+      const error = validateSimpleBangUrl(committedSuggestUrl);
+      if (error) {
+        pendingSuggestCustom = true;
+        suggestSelect.value = committedSuggestProvider;
+        showValidationError(
+          "suggest-url",
+          `Custom suggestion URL: ${error}`,
+          suggestUrlInput
+        );
+        suggestUrlInput.focus();
+        return;
+      }
+      pendingSuggestCustom = false;
     } else {
+      pendingSuggestCustom = false;
       suggestUrlInput.classList.add("hidden");
     }
+    clearValidationError("suggest-url", suggestUrlInput);
+    void runWrite(() => db.setSetting("suggest-provider", value), {
+      key: "suggest-provider",
+      onCommit: () => {
+        committedSuggestProvider = value;
+        syncCookie();
+        updateDefaultDisplays(activeDefaultBang);
+      },
+      onFailure: () => {
+        suggestSelect.value = committedSuggestProvider;
+        suggestUrlInput.classList.toggle(
+          "hidden",
+          committedSuggestProvider !== "custom"
+        );
+        updateDefaultDisplays(activeDefaultBang);
+      },
+    });
   });
 
-  suggestUrlInput.addEventListener("change", async () => {
-    await db.setSetting("suggest-url", suggestUrlInput.value.trim());
-    notifySW("invalidate");
-    syncCookie();
+  suggestUrlInput.addEventListener("change", () => {
+    const value = suggestUrlInput.value.trim();
+    let error = value ? validateSimpleBangUrl(value) : null;
+    if (!value && committedSuggestProvider === "custom") {
+      error = "URL must contain {} for the query";
+    }
+    if (error) {
+      showValidationError(
+        "suggest-url",
+        `Invalid suggestion URL: ${error}`,
+        suggestUrlInput
+      );
+      return;
+    }
+    clearValidationError("suggest-url", suggestUrlInput);
+    void runWrite(() => db.setSetting("suggest-url", value), {
+      key: "suggest-url",
+      onCommit: () => {
+        committedSuggestUrl = value;
+        syncCookie();
+        if (pendingSuggestCustom) {
+          pendingSuggestCustom = false;
+          suggestSelect.value = "custom";
+          suggestSelect.dispatchEvent(new Event("change"));
+        }
+      },
+      onFailure: () => {
+        suggestUrlInput.value = committedSuggestUrl;
+      },
+    });
   });
 
-  luckySelect.addEventListener("change", async () => {
-    await db.setSetting("lucky-provider", luckySelect.value);
-    notifySW("invalidate");
-    updateDefaultDisplays(activeDefaultBang);
-    if (luckySelect.value === "custom") {
+  luckySelect.addEventListener("change", () => {
+    const value = luckySelect.value;
+    if (value === "custom") {
       luckyUrlInput.classList.remove("hidden");
+      const error = validateSimpleBangUrl(committedLuckyUrl);
+      if (error) {
+        pendingLuckyCustom = true;
+        luckySelect.value = committedLuckyProvider;
+        showValidationError(
+          "lucky-url",
+          `Custom lucky URL: ${error}`,
+          luckyUrlInput
+        );
+        luckyUrlInput.focus();
+        return;
+      }
+      pendingLuckyCustom = false;
     } else {
+      pendingLuckyCustom = false;
       luckyUrlInput.classList.add("hidden");
     }
+    clearValidationError("lucky-url", luckyUrlInput);
+    void runWrite(() => db.setSetting("lucky-provider", value), {
+      key: "lucky-provider",
+      onCommit: () => {
+        committedLuckyProvider = value;
+        notifySW("invalidate");
+        updateDefaultDisplays(activeDefaultBang);
+      },
+      onFailure: () => {
+        luckySelect.value = committedLuckyProvider;
+        luckyUrlInput.classList.toggle(
+          "hidden",
+          committedLuckyProvider !== "custom"
+        );
+        updateDefaultDisplays(activeDefaultBang);
+      },
+    });
   });
 
-  luckyUrlInput.addEventListener("change", async () => {
-    await db.setSetting("lucky-url", luckyUrlInput.value.trim());
-    notifySW("invalidate");
+  luckyUrlInput.addEventListener("change", () => {
+    const value = luckyUrlInput.value.trim();
+    let error = value ? validateSimpleBangUrl(value) : null;
+    if (!value && committedLuckyProvider === "custom") {
+      error = "URL must contain {} for the query";
+    }
+    if (error) {
+      showValidationError(
+        "lucky-url",
+        `Invalid lucky URL: ${error}`,
+        luckyUrlInput
+      );
+      return;
+    }
+    clearValidationError("lucky-url", luckyUrlInput);
+    void runWrite(() => db.setSetting("lucky-url", value), {
+      key: "lucky-url",
+      onCommit: () => {
+        committedLuckyUrl = value;
+        notifySW("invalidate");
+        if (pendingLuckyCustom) {
+          pendingLuckyCustom = false;
+          luckySelect.value = "custom";
+          luckySelect.dispatchEvent(new Event("change"));
+        }
+      },
+      onFailure: () => {
+        luckyUrlInput.value = committedLuckyUrl;
+      },
+    });
   });
 
   let timer: ReturnType<typeof setTimeout>;
@@ -359,38 +610,123 @@ export async function initSettings(db: DB) {
     }, 200);
   });
 
-  setupCustomBangs(db, (nextCustom) => {
-    custom = nextCustom;
-    syncCookie();
+  const refreshCustomBangs = setupCustomBangs(
+    db,
+    (nextCustom) => {
+      custom = nextCustom;
+      syncCookie();
+    },
+    runWrite
+  );
+
+  exportButton.addEventListener("click", async () => {
+    try {
+      const data = await db.exportAll();
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `flashbang-${new Date().toISOString().split("T")[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      $("#import-status").textContent = "Exported settings successfully";
+      $("#import-status").className = "text-sm mt-2 block text-success";
+    } catch (error) {
+      $("#import-status").textContent =
+        error instanceof Error
+          ? `Export failed: ${error.message}`
+          : "Export failed";
+      $("#import-status").className = "text-sm mt-2 block text-danger";
+    }
   });
 
-  $("#export-btn").addEventListener("click", async () => {
-    const data = await db.exportAll();
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: "application/json",
-    });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `flashbang-${new Date().toISOString().split("T")[0]}.json`;
-    a.click();
-    URL.revokeObjectURL(a.href);
-  });
-
-  $<HTMLInputElement>("#import-file").addEventListener("change", async (e) => {
+  importFile.addEventListener("change", async (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) {
       return;
     }
     try {
       const data = JSON.parse(await file.text());
-      await db.importAll(data);
+      const preview = await db.importAll(data, () => false);
+      const summary = `${preview.importedSettings} settings, ${preview.acceptedCustomBangs} custom bangs accepted, ${preview.rejectedCustomBangs} rejected`;
+      $("#import-status").textContent = `Ready to replace: ${summary}`;
+      $("#import-status").className = "text-sm mt-2 block text-text-secondary";
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => resolve())
+      );
+      if (!window.confirm(`Replace current settings?\n\n${summary}`)) {
+        $("#import-status").textContent = `Import canceled: ${summary}`;
+        return;
+      }
+      let result = preview;
+      const committed = await runWrite(
+        async () => {
+          result = await db.importAll(data);
+        },
+        { key: "import" }
+      );
+      if (!committed) {
+        throw new Error("Import failed");
+      }
+      const importedSettings = await db.getMultipleSettings([
+        "default-bang",
+        "suggest-provider",
+        "suggest-url",
+        "lucky-provider",
+        "lucky-url",
+      ]);
+      committedDefaultBang = importedSettings[0] || "g";
+      committedSuggestProvider = isFirefox
+        ? "google"
+        : importedSettings[1] || "default";
+      committedSuggestUrl = importedSettings[2] || "";
+      committedLuckyProvider = importedSettings[3] || "default";
+      committedLuckyUrl = importedSettings[4] || "";
+      activeDefaultBang = committedDefaultBang;
+      defaultInput.value = committedDefaultBang;
+      $("#bang-status").textContent =
+        full[committedDefaultBang]?.s || "Unknown";
+      $("#bang-status").className = full[committedDefaultBang]
+        ? "text-sm text-success"
+        : "text-sm text-danger";
+      suggestUrlInput.value = committedSuggestUrl;
+      suggestUrlInput.removeAttribute("aria-invalid");
+      if (!isFirefox) {
+        suggestSelect.value = committedSuggestProvider;
+        suggestUrlInput.classList.toggle(
+          "hidden",
+          committedSuggestProvider !== "custom"
+        );
+      }
+      luckySelect.value = committedLuckyProvider;
+      luckyUrlInput.value = committedLuckyUrl;
+      luckyUrlInput.removeAttribute("aria-invalid");
+      luckyUrlInput.classList.toggle(
+        "hidden",
+        committedLuckyProvider !== "custom"
+      );
+      pendingSuggestCustom = false;
+      pendingLuckyCustom = false;
+      validationErrors.clear();
+      failedWrites.clear();
+      updateDefaultDisplays(activeDefaultBang);
+      await refreshCustomBangs();
+      syncCookie();
       notifySW("invalidate");
-      $("#import-status").textContent = "Imported successfully";
-      $("#import-status").className = "text-sm mt-2 block text-success";
-      setTimeout(() => location.reload(), 1000);
-    } catch {
-      $("#import-status").textContent = "Invalid file";
+      renderWriteState();
+      $("#import-status").textContent =
+        `Imported: ${result.importedSettings} settings, ${result.acceptedCustomBangs} custom bangs accepted, ${result.rejectedCustomBangs} rejected`;
+      $("#import-status").className =
+        result.rejectedCustomBangs > 0
+          ? "text-sm mt-2 block text-danger"
+          : "text-sm mt-2 block text-success";
+    } catch (error) {
+      $("#import-status").textContent =
+        error instanceof Error ? error.message : "Invalid file";
       $("#import-status").className = "text-sm mt-2 block text-danger";
+    } finally {
+      importFile.value = "";
     }
   });
 }

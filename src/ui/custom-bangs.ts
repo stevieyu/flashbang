@@ -10,13 +10,20 @@ import type { DB } from "./db";
 import { $, el } from "./dom";
 import { notifySW } from "./sw-bridge";
 
+type RunWrite = (write: () => Promise<unknown>) => Promise<boolean>;
+
 async function renderCustom(
   db: DB,
   onChange: ((customTriggers: string[]) => void) | undefined,
   onEdit: (bang: CustomBangRecord) => void,
-  onRemove: (trigger: string) => void
+  onRemove: (trigger: string) => void,
+  runWrite?: RunWrite,
+  isCurrent: () => boolean = () => true
 ) {
   const custom = await db.getAllCustomBangs();
+  if (!isCurrent()) {
+    return;
+  }
   onChange?.(custom.map((b) => b.trigger));
   const list = $("#custom-list");
   if (custom.length === 0) {
@@ -35,10 +42,17 @@ async function renderCustom(
       editBtn.addEventListener("click", () => onEdit(b));
       const rmBtn = el("button", "btn-danger", "remove");
       rmBtn.addEventListener("click", async () => {
-        await db.removeCustomBang(b.trigger);
+        rmBtn.disabled = true;
+        const committed = runWrite
+          ? await runWrite(() => db.removeCustomBang(b.trigger))
+          : await db.removeCustomBang(b.trigger).then(() => true);
+        if (!committed) {
+          rmBtn.disabled = false;
+          return;
+        }
         onRemove(b.trigger);
         notifySW("invalidate");
-        await renderCustom(db, onChange, onEdit, onRemove);
+        await renderCustom(db, onChange, onEdit, onRemove, runWrite, isCurrent);
       });
       row.append(
         el(
@@ -75,7 +89,8 @@ async function renderCustom(
 
 export function setupCustomBangs(
   db: DB,
-  onChange?: (customTriggers: string[]) => void
+  onChange?: (customTriggers: string[]) => void,
+  runWrite?: RunWrite
 ) {
   const form = $<HTMLFormElement>("#add-bang-form");
   const shortcutInput = form.elements.namedItem("shortcut") as HTMLInputElement;
@@ -125,7 +140,18 @@ export function setupCustomBangs(
     }
   }
 
-  const refresh = () => renderCustom(db, onChange, editBang, removedBang);
+  let refreshVersion = 0;
+  const refresh = () => {
+    const version = ++refreshVersion;
+    return renderCustom(
+      db,
+      onChange,
+      editBang,
+      removedBang,
+      runWrite,
+      () => version === refreshVersion
+    );
+  };
 
   void refresh();
   cancelButton.addEventListener("click", resetForm);
@@ -170,13 +196,23 @@ export function setupCustomBangs(
       ...(regex ? { regex, encoding } : {}),
       ...(snap ? { snap } : {}),
     };
-    if (editingTrigger === null) {
-      await db.addCustomBang(bang);
-    } else {
-      await db.updateCustomBang(editingTrigger, bang);
+    const write =
+      editingTrigger === null
+        ? () => db.addCustomBang(bang)
+        : () => db.updateCustomBang(editingTrigger as string, bang);
+    const committed = runWrite
+      ? await runWrite(write)
+      : await write().then(() => true);
+    if (!committed) {
+      return;
     }
     notifySW("invalidate");
     resetForm();
     await refresh();
   });
+
+  return () => {
+    resetForm();
+    return refresh();
+  };
 }

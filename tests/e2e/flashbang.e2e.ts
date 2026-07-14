@@ -199,7 +199,34 @@ async function openSettingsModal(page: Page): Promise<void> {
   await expect(page.locator("#bang-count")).not.toHaveText("");
 }
 
-async function submitCustomBangForm(page: Page): Promise<void> {
+async function settingsWriteCount(page: Page): Promise<number> {
+  return Number(
+    await page.locator("#settings-save-status").getAttribute("data-write-count")
+  );
+}
+
+async function waitForSettingsWrite(
+  page: Page,
+  previousCount: number,
+  writes = 1,
+  state = "saved"
+): Promise<void> {
+  const status = page.locator("#settings-save-status");
+  await expect
+    .poll(async () => Number(await status.getAttribute("data-write-count")))
+    .toBeGreaterThanOrEqual(previousCount + writes);
+  await expect(status).toHaveAttribute("data-pending", "0");
+  await expect(status).toHaveAttribute("data-state", state);
+  if (state === "saved") {
+    await expect(status).toHaveText("Saved");
+  }
+}
+
+async function submitCustomBangForm(
+  page: Page,
+  expectWrite = true
+): Promise<void> {
+  const writeCount = expectWrite ? await settingsWriteCount(page) : 0;
   await page.evaluate(() => {
     const form = document.querySelector("#add-bang-form");
     if (!(form instanceof HTMLFormElement)) {
@@ -207,6 +234,9 @@ async function submitCustomBangForm(page: Page): Promise<void> {
     }
     form.requestSubmit();
   });
+  if (expectWrite) {
+    await waitForSettingsWrite(page, writeCount);
+  }
 }
 
 test("suggest endpoint returns 400 when q parameter is missing", async ({
@@ -351,8 +381,10 @@ test("settings invalidation applies a new default bang to redirects", async ({
   await ensureWarmController(page);
   await openSettingsModal(page);
 
+  const writeCount = await settingsWriteCount(page);
   await page.fill("#default-bang", "ddg");
   await page.dispatchEvent("#default-bang", "change");
+  await waitForSettingsWrite(page, writeCount);
 
   await expect
     .poll(() => page.evaluate(() => document.cookie))
@@ -378,27 +410,37 @@ test("default provider labels follow the selected bang", async ({
   await expect(luckyDefault).toHaveText(/Match bang\s*Google/);
   await expect(suggestDefault).toHaveText(/Match bang\s*Google/);
 
+  let writeCount = await settingsWriteCount(page);
   await page.fill("#default-bang", "google");
   await page.dispatchEvent("#default-bang", "change");
+  await waitForSettingsWrite(page, writeCount);
   await expect(luckyDefault).toHaveText(/Match bang\s*Google/);
   await expect(suggestDefault).toHaveText(/Match bang\s*Google/);
 
+  writeCount = await settingsWriteCount(page);
   await page.fill("#default-bang", "s");
   await page.dispatchEvent("#default-bang", "change");
+  await waitForSettingsWrite(page, writeCount);
   await expect(luckyDefault).toHaveText(/Fallback\s*DuckDuckGo/);
   await expect(suggestDefault).toHaveText(/Match bang\s*Startpage/);
 
+  writeCount = await settingsWriteCount(page);
   await page.fill("#default-bang", "w");
   await page.dispatchEvent("#default-bang", "change");
+  await waitForSettingsWrite(page, writeCount);
   await expect(luckyDefault).toHaveText(/Fallback\s*DuckDuckGo/);
   await expect(suggestDefault).toHaveText(/Fallback\s*None/);
 
   if (browserName === "firefox") {
     return;
   }
+  writeCount = await settingsWriteCount(page);
   await page.selectOption("#suggest-provider", "google");
+  await waitForSettingsWrite(page, writeCount);
   await expect(suggestDefault).toBeHidden();
+  writeCount = await settingsWriteCount(page);
   await page.selectOption("#suggest-provider", "default");
+  await waitForSettingsWrite(page, writeCount);
   await expect(suggestDefault).toBeVisible();
 });
 
@@ -413,7 +455,9 @@ test("settings persist suggest provider none across reload", async ({
   );
   await openSettingsModal(page);
 
+  const writeCount = await settingsWriteCount(page);
   await page.selectOption("#suggest-provider", "none");
+  await waitForSettingsWrite(page, writeCount);
   if (browserName === "webkit") {
     await openHome(page);
     await page.click("#gear-btn");
@@ -434,6 +478,274 @@ test("settings persist suggest provider none across reload", async ({
   });
   expect(response.status()).toBe(200);
   await expect(response.json()).resolves.toEqual(["hello", []]);
+});
+
+test("rapid settings changes commit in order before immediate reload", async ({
+  page,
+}) => {
+  await openSettingsModal(page);
+  const writeCount = await settingsWriteCount(page);
+
+  await page.evaluate(() => {
+    const select = document.querySelector("#lucky-provider");
+    if (!(select instanceof HTMLSelectElement)) {
+      throw new Error("lucky provider not found");
+    }
+    for (const value of ["google", "ddg", "kagi"]) {
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+  await waitForSettingsWrite(page, writeCount, 3);
+
+  await openHome(page);
+  await page.click("#gear-btn");
+  await expect(page.locator("#lucky-provider")).toHaveValue("kagi");
+});
+
+test("failed settings writes stay visible until that setting succeeds", async ({
+  page,
+}) => {
+  await openSettingsModal(page);
+  await page.evaluate(() => {
+    const originalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (...args) {
+      const value = args[0] as { key?: string };
+      if (value?.key === "default-bang") {
+        IDBObjectStore.prototype.put = originalPut;
+        throw new DOMException("Injected write failure", "UnknownError");
+      }
+      return originalPut.apply(this, args);
+    };
+  });
+
+  let writeCount = await settingsWriteCount(page);
+  await page.evaluate(() => {
+    const input = document.querySelector("#default-bang");
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("default bang input not found");
+    }
+    input.value = "ddg";
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await waitForSettingsWrite(page, writeCount, 1, "error");
+  await expect(page.locator("#settings-save-status")).toHaveAttribute(
+    "data-failed",
+    "default-bang"
+  );
+  await expect(page.locator("#default-bang")).toHaveValue("g");
+
+  writeCount = await settingsWriteCount(page);
+  await page.selectOption("#lucky-provider", "google");
+  await waitForSettingsWrite(page, writeCount, 1, "error");
+
+  writeCount = await settingsWriteCount(page);
+  await page.evaluate(() => {
+    const input = document.querySelector("#default-bang");
+    if (!(input instanceof HTMLInputElement)) {
+      throw new Error("default bang input not found");
+    }
+    input.value = "ddg";
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await waitForSettingsWrite(page, writeCount);
+  await expect(page.locator("#default-bang")).toHaveValue("ddg");
+});
+
+test("custom providers require valid committed URL templates", async ({
+  browserName,
+  page,
+}) => {
+  test.skip(
+    browserName === "firefox",
+    "Firefox intentionally locks cookie-backed suggestion settings"
+  );
+  await openSettingsModal(page);
+  const writeCount = await settingsWriteCount(page);
+
+  await page.selectOption("#suggest-provider", "custom");
+  await expect(page.locator("#settings-save-status")).toHaveAttribute(
+    "data-state",
+    "error"
+  );
+  await expect(page.locator("#suggest-provider")).toHaveValue("default");
+  await expect(page.locator("#suggest-url")).toBeVisible();
+  await expect(page.locator("#suggest-url")).toHaveAttribute(
+    "aria-invalid",
+    "true"
+  );
+
+  await page.fill("#suggest-url", "https://suggest.example/no-placeholder");
+  await page.dispatchEvent("#suggest-url", "change");
+  await expect(page.locator("#settings-save-status")).toContainText(
+    "URL must contain {}"
+  );
+  expect(await settingsWriteCount(page)).toBe(writeCount);
+
+  await page.selectOption("#lucky-provider", "google");
+  await waitForSettingsWrite(page, writeCount, 1, "error");
+
+  const retryCount = await settingsWriteCount(page);
+  await page.fill("#suggest-url", "https://suggest.example/?q={}");
+  await page.dispatchEvent("#suggest-url", "change");
+  await waitForSettingsWrite(page, retryCount, 2);
+  await expect(page.locator("#suggest-provider")).toHaveValue("custom");
+  await expect(page.locator("#suggest-url")).not.toHaveAttribute(
+    "aria-invalid"
+  );
+});
+
+test("settings export includes its schema version", async ({ page }) => {
+  await openSettingsModal(page);
+
+  const downloadPromise = page.waitForEvent("download");
+  await page.click("#export-btn");
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  const exported = JSON.parse(await readFile(path as string, "utf8"));
+
+  expect(exported.schemaVersion).toBe(1);
+  expect(exported.settings).toBeTruthy();
+  expect(exported.customBangs).toEqual([]);
+});
+
+test("settings export reports malformed legacy values without changing them", async ({
+  page,
+}) => {
+  await openHome(page);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open("flashbang", 1);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const db = request.result;
+          const tx = db.transaction("settings", "readwrite");
+          const store = tx.objectStore("settings");
+          store.put({ key: "suggest-provider", value: "custom" });
+          store.put({
+            key: "suggest-url",
+            value: "https://suggest.example/no-placeholder",
+          });
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+          tx.onabort = () => reject(tx.error);
+        };
+      })
+  );
+  await openSettingsModal(page);
+
+  await page.click("#export-btn");
+  await expect(page.locator("#import-status")).toContainText(
+    "Export failed: Invalid suggestion URL template"
+  );
+  await expect(page.locator("#suggest-url")).toHaveValue(
+    "https://suggest.example/no-placeholder"
+  );
+});
+
+test("invalid settings import preserves existing data", async ({ page }) => {
+  await openSettingsModal(page);
+  const writeCount = await settingsWriteCount(page);
+  await page.fill("#default-bang", "ddg");
+  await page.dispatchEvent("#default-bang", "change");
+  await waitForSettingsWrite(page, writeCount);
+
+  await page.setInputFiles("#import-file", {
+    name: "empty.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("{}"),
+  });
+  await expect(page.locator("#import-status")).toContainText(
+    "contains no recognized data"
+  );
+
+  await openHome(page);
+  await page.click("#gear-btn");
+  await expect(page.locator("#default-bang")).toHaveValue("ddg");
+});
+
+test("settings import shows a summary and requires confirmation", async ({
+  page,
+}) => {
+  await openSettingsModal(page);
+  await page.fill('input[name="shortcut"]', "oldimport");
+  await page.fill('input[name="name"]', "Old Import");
+  await page.fill('input[name="url"]', "https://example.com/old?q={}");
+  await submitCustomBangForm(page);
+  const payload = {
+    schemaVersion: 1,
+    settings: {
+      defaultBang: "ddg",
+      suggestProvider: "custom",
+      suggestUrl: "https://suggest.example/?q={}",
+      luckyProvider: "custom",
+      luckyUrl: "https://lucky.example/?q={}",
+    },
+    customBangs: [
+      {
+        trigger: "validimport",
+        name: "Valid Import",
+        url: "https://example.com/import?q={}",
+      },
+      {
+        trigger: "badimport",
+        name: "Bad Import",
+        url: "https://example.com/no-placeholder",
+      },
+    ],
+  };
+  const file = {
+    name: "settings.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(payload)),
+  };
+
+  let confirmation = "";
+  await Promise.all([
+    page.waitForEvent("dialog").then(async (dialog) => {
+      confirmation = dialog.message();
+      await dialog.dismiss();
+    }),
+    page.setInputFiles("#import-file", file),
+  ]);
+  expect(confirmation).toContain("Replace current settings?");
+  expect(confirmation).toContain(
+    "5 settings, 1 custom bangs accepted, 1 rejected"
+  );
+  await expect(page.locator("#import-status")).toContainText("Import canceled");
+
+  const writeCount = await settingsWriteCount(page);
+  await Promise.all([
+    page.waitForEvent("dialog").then((dialog) => dialog.accept()),
+    page.setInputFiles("#import-file", file),
+  ]);
+  await waitForSettingsWrite(page, writeCount);
+  await expect(page.locator("#import-status")).toHaveText(
+    "Imported: 5 settings, 1 custom bangs accepted, 1 rejected"
+  );
+  await expect(page.locator("#default-bang")).toHaveValue("ddg");
+  await expect(page.locator("#lucky-provider")).toHaveValue("custom");
+  await expect(page.locator("#lucky-url")).toHaveValue(
+    "https://lucky.example/?q={}"
+  );
+  await expect(page.locator("#lucky-url")).toBeVisible();
+  await expect(page.locator("#custom-list")).toContainText("!validimport");
+  await expect(page.locator("#custom-list")).not.toContainText("!oldimport");
+  if (test.info().project.name !== "firefox") {
+    await expect(page.locator("#suggest-provider")).toHaveValue("custom");
+    await expect(page.locator("#suggest-url")).toBeVisible();
+  }
+
+  await openHome(page);
+  await page.click("#gear-btn");
+  await expect(page.locator("#default-bang")).toHaveValue("ddg");
+  await expect(page.locator("#custom-list")).toContainText("!validimport");
+  await expect(page.locator("#custom-list")).not.toContainText("!badimport");
 });
 
 test("settings persist custom bang creation across reload", async ({
@@ -481,7 +793,7 @@ test("settings reject invalid custom bang URL format", async ({ page }) => {
   await page.fill('input[name="shortcut"]', "bad");
   await page.fill('input[name="name"]', "Bad");
   await page.fill('input[name="url"]', "https://example.com/search");
-  await submitCustomBangForm(page);
+  await submitCustomBangForm(page, false);
 
   await expect(page.locator("#custom-list")).toContainText(
     "No custom bangs yet"
@@ -608,10 +920,17 @@ test("settings persist custom lucky URL across reload", async ({ page }) => {
   await ensureWarmController(page);
   await openSettingsModal(page);
 
+  const writeCount = await settingsWriteCount(page);
   await page.selectOption("#lucky-provider", "custom");
+  await expect(page.locator("#settings-save-status")).toHaveAttribute(
+    "data-state",
+    "error"
+  );
   await expect(page.locator("#lucky-url")).toBeVisible();
   await page.fill("#lucky-url", `${CUSTOM_HOST}/lucky?q={}`);
   await page.dispatchEvent("#lucky-url", "change");
+  await waitForSettingsWrite(page, writeCount, 2);
+  await expect(page.locator("#lucky-provider")).toHaveValue("custom");
 
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await ensureWarmController(page);

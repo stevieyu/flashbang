@@ -4,17 +4,236 @@ import {
   validateCaptureBang,
   validateSimpleBangUrl,
 } from "../shared/capture-template";
+import { LUCKY_URLS, SUGGEST_URLS } from "../shared/constants";
 import { validateCustomTrigger } from "../shared/custom-trigger";
 import { idbWrap, openDB } from "../shared/idb";
 import { validateSnapTarget } from "../shared/snap-target";
 
-const VALID_SETTING_KEYS: Record<string, string> = {
-  defaultBang: "default-bang",
-  suggestProvider: "suggest-provider",
-  suggestUrl: "suggest-url",
-  luckyProvider: "lucky-provider",
-  luckyUrl: "lucky-url",
-};
+export const SETTINGS_SCHEMA_VERSION = 1;
+
+const VALID_SETTING_KEYS = new Map([
+  ["defaultBang", "default-bang"],
+  ["suggestProvider", "suggest-provider"],
+  ["suggestUrl", "suggest-url"],
+  ["luckyProvider", "lucky-provider"],
+  ["luckyUrl", "lucky-url"],
+]);
+const CONFIGURABLE_SETTING_KEYS = [...VALID_SETTING_KEYS.values()];
+
+const SUGGEST_PROVIDERS = new Set([
+  "default",
+  "custom",
+  "none",
+  ...Object.keys(SUGGEST_URLS),
+]);
+const LUCKY_PROVIDERS = new Set([
+  "default",
+  "custom",
+  "none",
+  ...Object.keys(LUCKY_URLS),
+]);
+const DOCUMENT_KEYS = new Set([
+  "schemaVersion",
+  "settings",
+  "customBangs",
+  "exported",
+]);
+const CUSTOM_BANG_KEYS = new Set([
+  "trigger",
+  "name",
+  "url",
+  "regex",
+  "snap",
+  "encoding",
+]);
+
+export interface ImportResult {
+  acceptedCustomBangs: number;
+  rejectedCustomBangs: number;
+  importedSettings: number;
+  replaced: boolean;
+}
+
+interface PreparedImport extends ImportResult {
+  customBangs: CustomBangRecord[];
+  settings: Array<{ key: string; value: string }>;
+}
+
+function transactionDone(tx: IDBTransaction): Promise<void> {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("IndexedDB write failed"));
+    tx.onabort = () => reject(tx.error ?? new Error("IndexedDB write aborted"));
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function prepareImport(data: unknown): PreparedImport {
+  if (!isRecord(data)) {
+    throw new Error("Invalid import document");
+  }
+  for (const key of Object.keys(data)) {
+    if (!DOCUMENT_KEYS.has(key)) {
+      throw new Error(`Unrecognized import field: ${key}`);
+    }
+  }
+
+  const versioned = Object.hasOwn(data, "schemaVersion");
+  if (versioned && data.schemaVersion !== SETTINGS_SCHEMA_VERSION) {
+    throw new Error("Unsupported settings schema version");
+  }
+  const hasSettings = Object.hasOwn(data, "settings");
+  const hasCustomBangs = Object.hasOwn(data, "customBangs");
+  if (!(hasSettings || hasCustomBangs)) {
+    throw new Error("Import document contains no recognized data");
+  }
+  if (Object.hasOwn(data, "exported") && typeof data.exported !== "string") {
+    throw new Error("Invalid export timestamp");
+  }
+
+  const settings: Array<{ key: string; value: string }> = [];
+  let importedSettings = 0;
+  let suggestProvider: string | null = null;
+  let suggestUrl: string | null = null;
+  let luckyProvider: string | null = null;
+  let luckyUrl: string | null = null;
+  if (hasSettings) {
+    if (!isRecord(data.settings)) {
+      throw new Error("Invalid settings data");
+    }
+    const entries = Object.entries(data.settings);
+    if (entries.length === 0 && !hasCustomBangs) {
+      throw new Error("Import document contains no recognized data");
+    }
+    for (const [exportKey, value] of entries) {
+      const idbKey = VALID_SETTING_KEYS.get(exportKey);
+      if (!idbKey) {
+        throw new Error(`Unrecognized setting: ${exportKey}`);
+      }
+      if (value !== null && typeof value !== "string") {
+        throw new Error(`Invalid value for setting: ${exportKey}`);
+      }
+      importedSettings++;
+      if (value === null) {
+        continue;
+      }
+      if (exportKey === "defaultBang") {
+        if (
+          value !== value.trim().toLowerCase() ||
+          validateCustomTrigger(value)
+        ) {
+          throw new Error("Invalid default bang");
+        }
+      } else if (exportKey === "suggestProvider") {
+        if (!SUGGEST_PROVIDERS.has(value)) {
+          throw new Error("Invalid suggestion provider");
+        }
+        suggestProvider = value;
+      } else if (exportKey === "luckyProvider") {
+        if (!LUCKY_PROVIDERS.has(value)) {
+          throw new Error("Invalid lucky provider");
+        }
+        luckyProvider = value;
+      } else if (exportKey === "suggestUrl") {
+        suggestUrl = value;
+        const error = value ? validateSimpleBangUrl(value) : null;
+        if (error) {
+          throw new Error(`Invalid suggestion URL template: ${error}`);
+        }
+      } else if (exportKey === "luckyUrl") {
+        luckyUrl = value;
+        const error = value ? validateSimpleBangUrl(value) : null;
+        if (error) {
+          throw new Error(`Invalid lucky URL template: ${error}`);
+        }
+      }
+      if (value) {
+        settings.push({ key: idbKey, value });
+      }
+    }
+  }
+  if (suggestProvider === "custom" && !suggestUrl) {
+    throw new Error("Custom suggestion provider requires a URL template");
+  }
+  if (luckyProvider === "custom" && !luckyUrl) {
+    throw new Error("Custom lucky provider requires a URL template");
+  }
+
+  const customBangs: CustomBangRecord[] = [];
+  let rejectedCustomBangs = 0;
+  const triggers = new Set<string>();
+  if (hasCustomBangs) {
+    if (!Array.isArray(data.customBangs)) {
+      throw new Error("Invalid custom bangs data");
+    }
+    for (const item of data.customBangs) {
+      if (!isRecord(item)) {
+        rejectedCustomBangs++;
+        continue;
+      }
+      const unknownField = Object.keys(item).some(
+        (key) => !CUSTOM_BANG_KEYS.has(key)
+      );
+      const trigger = item.trigger;
+      const name = item.name;
+      const url = item.url;
+      const regex = item.regex;
+      const snap = item.snap;
+      const encoding = item.encoding;
+      if (
+        unknownField ||
+        typeof trigger !== "string" ||
+        trigger !== trigger.trim().toLowerCase() ||
+        validateCustomTrigger(trigger) ||
+        triggers.has(trigger) ||
+        typeof name !== "string" ||
+        !name.trim() ||
+        typeof url !== "string" ||
+        (regex !== undefined && (typeof regex !== "string" || !regex)) ||
+        (snap !== undefined && (typeof snap !== "string" || !snap)) ||
+        (encoding !== undefined && !isCaptureEncoding(encoding)) ||
+        (encoding !== undefined && regex === undefined)
+      ) {
+        rejectedCustomBangs++;
+        continue;
+      }
+      const urlError = regex
+        ? validateCaptureBang(url, regex)
+        : validateSimpleBangUrl(url);
+      const validationError =
+        urlError ?? (snap ? validateSnapTarget(snap) : null);
+      if (validationError) {
+        rejectedCustomBangs++;
+        continue;
+      }
+      triggers.add(trigger);
+      customBangs.push({
+        trigger,
+        name,
+        url,
+        ...(regex
+          ? {
+              regex,
+              encoding: isCaptureEncoding(encoding) ? encoding : "percent",
+            }
+          : {}),
+        ...(snap ? { snap } : {}),
+      });
+    }
+  }
+
+  return {
+    acceptedCustomBangs: customBangs.length,
+    rejectedCustomBangs,
+    importedSettings,
+    replaced: false,
+    customBangs,
+    settings,
+  };
+}
 
 export class DB {
   private readonly dbp: Promise<IDBDatabase> = openDB();
@@ -45,8 +264,13 @@ export class DB {
   }
 
   async setSetting(key: string, value: string) {
-    const s = await this.store("settings", "readwrite");
-    await idbWrap(s.put({ key, value }));
+    const db = await this.dbp;
+    const tx = db.transaction("settings", "readwrite");
+    const done = transactionDone(tx);
+    await Promise.all([
+      idbWrap(tx.objectStore("settings").put({ key, value })),
+      done,
+    ]);
   }
 
   async getAllCustomBangs(): Promise<CustomBangRecord[]> {
@@ -59,8 +283,13 @@ export class DB {
     if (triggerError) {
       throw new Error(triggerError);
     }
-    const s = await this.store("custom-bangs", "readwrite");
-    await idbWrap(s.put(bang));
+    const db = await this.dbp;
+    const tx = db.transaction("custom-bangs", "readwrite");
+    const done = transactionDone(tx);
+    await Promise.all([
+      idbWrap(tx.objectStore("custom-bangs").put(bang)),
+      done,
+    ]);
   }
 
   async updateCustomBang(previousTrigger: string, bang: CustomBangRecord) {
@@ -68,18 +297,26 @@ export class DB {
     if (triggerError) {
       throw new Error(triggerError);
     }
-    const s = await this.store("custom-bangs", "readwrite");
+    const db = await this.dbp;
+    const tx = db.transaction("custom-bangs", "readwrite");
+    const done = transactionDone(tx);
+    const s = tx.objectStore("custom-bangs");
     const ops: Promise<unknown>[] = [];
     if (previousTrigger !== bang.trigger) {
       ops.push(idbWrap(s.delete(previousTrigger)));
     }
     ops.push(idbWrap(s.put(bang)));
-    await Promise.all(ops);
+    await Promise.all([...ops, done]);
   }
 
   async removeCustomBang(trigger: string) {
-    const s = await this.store("custom-bangs", "readwrite");
-    await idbWrap(s.delete(trigger));
+    const db = await this.dbp;
+    const tx = db.transaction("custom-bangs", "readwrite");
+    const done = transactionDone(tx);
+    await Promise.all([
+      idbWrap(tx.objectStore("custom-bangs").delete(trigger)),
+      done,
+    ]);
   }
 
   async exportAll() {
@@ -111,7 +348,8 @@ export class DB {
       ),
       idbWrap<CustomBangRecord[]>(tx.objectStore("custom-bangs").getAll()),
     ]);
-    return {
+    const result = {
+      schemaVersion: SETTINGS_SCHEMA_VERSION,
       settings: {
         defaultBang: defaultBang?.value ?? null,
         suggestProvider: suggestProvider?.value ?? null,
@@ -122,73 +360,57 @@ export class DB {
       customBangs,
       exported: new Date().toISOString(),
     };
+    const preflight = prepareImport(result);
+    if (preflight.rejectedCustomBangs > 0) {
+      throw new Error(
+        `Cannot export: ${preflight.rejectedCustomBangs} custom bangs are invalid`
+      );
+    }
+    return result;
   }
 
-  async importAll(data: unknown) {
-    if (!data || typeof data !== "object") {
-      throw new Error("Invalid import data");
+  async importAll(
+    data: unknown,
+    confirmReplace?: (summary: ImportResult) => boolean | Promise<boolean>
+  ): Promise<ImportResult> {
+    const prepared = prepareImport(data);
+    const summary: ImportResult = {
+      acceptedCustomBangs: prepared.acceptedCustomBangs,
+      rejectedCustomBangs: prepared.rejectedCustomBangs,
+      importedSettings: prepared.importedSettings,
+      replaced: false,
+    };
+    if (confirmReplace && !(await confirmReplace(summary))) {
+      return summary;
     }
-    const obj = data as Record<string, unknown>;
-
     const db = await this.dbp;
     const tx = db.transaction(["settings", "custom-bangs"], "readwrite");
+    const done = transactionDone(tx);
     const settingsStore = tx.objectStore("settings");
     const customStore = tx.objectStore("custom-bangs");
-    const ops: Promise<unknown>[] = [
-      idbWrap(settingsStore.clear()),
-      idbWrap(customStore.clear()),
-    ];
-
-    if (obj.settings && typeof obj.settings === "object") {
-      const settings = obj.settings as Record<string, unknown>;
-      for (const [exportKey, idbKey] of Object.entries(VALID_SETTING_KEYS)) {
-        const value = settings[exportKey];
-        if (typeof value === "string" && value) {
-          ops.push(idbWrap(settingsStore.put({ key: idbKey, value })));
-        }
+    const ops: Promise<unknown>[] = [];
+    try {
+      for (const key of CONFIGURABLE_SETTING_KEYS) {
+        ops.push(idbWrap(settingsStore.delete(key)));
       }
-    }
-
-    if (Array.isArray(obj.customBangs)) {
-      for (const item of obj.customBangs) {
-        if (!item || typeof item !== "object") {
-          continue;
-        }
-        const b = item as Record<string, unknown>;
-        if (
-          typeof b.trigger !== "string" ||
-          typeof b.name !== "string" ||
-          typeof b.url !== "string"
-        ) {
-          continue;
-        }
-        const regex = typeof b.regex === "string" ? b.regex : undefined;
-        const snap = typeof b.snap === "string" ? b.snap : undefined;
-        const encoding = isCaptureEncoding(b.encoding) ? b.encoding : undefined;
-        const triggerError = validateCustomTrigger(b.trigger);
-        const urlError = regex
-          ? validateCaptureBang(b.url, regex)
-          : validateSimpleBangUrl(b.url);
-        const validationError =
-          triggerError ?? urlError ?? (snap ? validateSnapTarget(snap) : null);
-        if (validationError) {
-          continue;
-        }
-        ops.push(
-          idbWrap(
-            customStore.put({
-              trigger: b.trigger,
-              name: b.name,
-              url: b.url,
-              ...(regex ? { regex, encoding: encoding ?? "percent" } : {}),
-              ...(snap ? { snap } : {}),
-            })
-          )
-        );
+      ops.push(idbWrap(customStore.clear()));
+      for (const setting of prepared.settings) {
+        ops.push(idbWrap(settingsStore.put(setting)));
       }
+      for (const bang of prepared.customBangs) {
+        ops.push(idbWrap(customStore.put(bang)));
+      }
+    } catch (error) {
+      try {
+        tx.abort();
+      } catch {
+        // The transaction may already have aborted after the setup error.
+      }
+      await done.catch(() => undefined);
+      throw error;
     }
-
-    await Promise.all(ops);
+    await Promise.all([...ops, done]);
+    return { ...summary, replaced: true };
   }
 }
 
