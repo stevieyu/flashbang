@@ -3,12 +3,12 @@ import {
   type CustomBangRecord,
   validateCaptureBang,
   validateSimpleBangUrl,
-} from "../shared/capture-template";
-import { validateCustomTrigger } from "../shared/custom-trigger";
-import { validateSnapTarget } from "../shared/snap-target";
-import type { DB } from "./db";
-import { $, el } from "./dom";
-import { notifySW } from "./sw-bridge";
+} from "../../shared/capture-template";
+import { validateCustomTrigger } from "../../shared/custom-trigger";
+import { validateSnapTarget } from "../../shared/snap-target";
+import type { DB } from "../db";
+import { $, el } from "../dom";
+import { notifySW } from "../sw-bridge";
 
 type RunWrite = (write: () => Promise<unknown>) => Promise<boolean>;
 

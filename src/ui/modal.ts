@@ -1,56 +1,71 @@
-import { $ } from "./dom";
+interface DialogOptions {
+  closeButton: HTMLElement;
+  modal: HTMLElement;
+  onFirstOpen?: () => void;
+  openButton: HTMLElement;
+}
 
-export function setupModal(onFirstOpen: () => void) {
-  const modal = $("#settings-modal");
-  const gearBtn = $("#gear-btn");
-  const closeBtn = $("#modal-close");
-  const card = modal.querySelector('[role="dialog"]') as HTMLElement;
+export function setupDialog({
+  closeButton,
+  modal,
+  onFirstOpen,
+  openButton,
+}: DialogOptions) {
+  const cardElement = modal.querySelector<HTMLElement>('[role="dialog"]');
+  if (!cardElement) {
+    throw new Error("Dialog card not found");
+  }
+  const card: HTMLElement = cardElement;
 
   let initialized = false;
+  let previousBodyOverflow = "";
+  openButton.setAttribute("aria-expanded", "false");
 
-  function openModal() {
+  function openDialog(): void {
+    if (modal.classList.contains("open")) {
+      return;
+    }
     if (!initialized) {
       initialized = true;
-      onFirstOpen();
+      onFirstOpen?.();
     }
     modal.classList.replace("opacity-0", "opacity-100");
     modal.classList.replace("invisible", "visible");
     modal.classList.add("open");
     modal.setAttribute("aria-hidden", "false");
-    card.classList.replace("translate-y-2", "translate-y-0");
-    gearBtn.classList.add("rotate-180");
+    openButton.setAttribute("aria-expanded", "true");
+    previousBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    closeBtn.focus();
+    closeButton.focus();
   }
 
-  function closeModal() {
+  function closeDialog(): void {
+    if (!modal.classList.contains("open")) {
+      return;
+    }
     modal.classList.replace("opacity-100", "opacity-0");
     modal.classList.replace("visible", "invisible");
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
-    card.classList.replace("translate-y-0", "translate-y-2");
-    gearBtn.classList.remove("rotate-180");
-    document.body.style.overflow = "";
-    gearBtn.focus();
+    openButton.setAttribute("aria-expanded", "false");
+    document.body.style.overflow = previousBodyOverflow;
+    openButton.focus();
   }
 
-  gearBtn.addEventListener("click", openModal);
-  closeBtn.addEventListener("click", closeModal);
-
-  modal.addEventListener("click", (e) => {
-    if (e.target === modal) {
-      closeModal();
+  openButton.addEventListener("click", openDialog);
+  closeButton.addEventListener("click", closeDialog);
+  modal.addEventListener("click", (event) => {
+    if (event.target === modal) {
+      closeDialog();
     }
   });
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && modal.classList.contains("open")) {
-      closeModal();
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && modal.classList.contains("open")) {
+      closeDialog();
     }
   });
-
-  modal.addEventListener("keydown", (e) => {
-    if (e.key !== "Tab") {
+  modal.addEventListener("keydown", (event) => {
+    if (event.key !== "Tab") {
       return;
     }
     const focusable = card.querySelectorAll<HTMLElement>(
@@ -61,16 +76,14 @@ export function setupModal(onFirstOpen: () => void) {
     }
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (e.shiftKey) {
-      if (document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      }
-    } else if (document.activeElement === last) {
-      e.preventDefault();
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
       first.focus();
     }
   });
 
-  return { openModal };
+  return { closeDialog, openDialog };
 }

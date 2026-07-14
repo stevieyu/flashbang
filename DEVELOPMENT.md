@@ -83,18 +83,29 @@ flashbang/
 │   │   └── frecency.ts        # Top-K frecency helpers used by SW
 │   └── ui/
 │       ├── index.html         # HTML template
-│       ├── home.html          # Home page partial
 │       ├── bench.html         # Benchmark page
 │       ├── bench.ts           # Benchmark script
 │       ├── app.ts             # Initialization & orchestration
-│       ├── home.ts            # Homepage bang finder and address-bar setup
+│       ├── bang-catalog.ts    # Shared normalized bang metadata and bounded search
+│       ├── home/
+│       │   ├── index.html     # Home page partial
+│       │   ├── index.ts       # Homepage initialization
+│       │   ├── command.ts     # Homepage bang finder and keyboard controls
+│       │   ├── shortcuts.ts   # Global homepage input focus shortcuts
+│       │   └── address-bar-setup.ts # Address-bar setup and copy actions
+│       ├── settings/
+│       │   ├── index.ts       # Settings initialization and shared state
+│       │   ├── default-bang.ts # Default bang preview and persistence
+│       │   ├── firefox.ts     # Firefox suggestion-provider picker
+│       │   ├── providers.ts   # Suggestion and lucky provider controls
+│       │   ├── transfer.ts    # Settings import and export
+│       │   ├── write.ts       # Serialized writes, validation, and save status
+│       │   └── custom-bangs.ts # Custom bang list and add/edit form
 │       ├── dom.ts             # $() selector & el() factory
 │       ├── sw-bridge.ts       # notifySW() — postMessage to Service Worker
 │       ├── cookie.ts          # Suggest cookie management (provider, custom bangs)
 │       ├── animations.ts      # Flash & shake CSS animations
-│       ├── modal.ts           # Settings modal with focus trapping
-│       ├── settings.ts        # Settings event wiring, bang search, import/export
-│       ├── custom-bangs.ts    # Custom bang list and add/edit form
+│       ├── modal.ts           # Shared dialog lifecycle and focus trapping
 │       ├── db.ts              # IndexedDB wrapper
 │       ├── liquid-metal.ts    # WebGL2 shader effect
 │       ├── icon.svg           # App icon

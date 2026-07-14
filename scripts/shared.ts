@@ -13,8 +13,11 @@ export async function buildHTMLAssets(css: string): Promise<void> {
     minify(Buffer.from(indexHtml), { minify_css: true, minify_js: true })
   );
 
-  for (const name of ["home", "bench"] as const) {
-    const html = await Bun.file(`src/ui/${name}.html`).text();
+  for (const [name, source] of [
+    ["home", "src/ui/home/index.html"],
+    ["bench", "src/ui/bench.html"],
+  ] as const) {
+    const html = await Bun.file(source).text();
     await Bun.write(
       `dist/${name}.html`,
       minify(Buffer.from(inlineCSS(html)), {

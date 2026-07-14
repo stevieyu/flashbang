@@ -9,6 +9,8 @@ precision highp float;uniform sampler2D u_mask;uniform float u_time;uniform floa
 interface LiquidMetalControls {
   destroy: () => void;
   flash: () => void;
+  pause: () => void;
+  resume: () => void;
 }
 
 function createTextMaskTexture(
@@ -162,6 +164,8 @@ export function initLiquidMetal(
 
   let brightness = 1.0;
   let rafId = 0;
+  let paused = false;
+  let destroyed = false;
   const startTime = performance.now();
   let maskTex: WebGLTexture | null = null;
 
@@ -207,6 +211,9 @@ export function initLiquidMetal(
   ).matches;
 
   function render() {
+    if (paused || destroyed) {
+      return;
+    }
     const t = (performance.now() - startTime) / 1000;
     gl.uniform1f(uTime, t);
     gl.uniform1f(uBrightness, brightness);
@@ -226,6 +233,7 @@ export function initLiquidMetal(
 
   return {
     destroy() {
+      destroyed = true;
       cancelAnimationFrame(rafId);
       ro.disconnect();
       gl.deleteTexture(maskTex);
@@ -248,6 +256,21 @@ export function initLiquidMetal(
       }
       requestAnimationFrame(animFlash);
     },
+    pause() {
+      if (paused || destroyed || reducedMotion) {
+        return;
+      }
+      paused = true;
+      cancelAnimationFrame(rafId);
+      rafId = 0;
+    },
+    resume() {
+      if (!paused || destroyed || reducedMotion) {
+        return;
+      }
+      paused = false;
+      rafId = requestAnimationFrame(render);
+    },
   };
 }
 
@@ -265,6 +288,12 @@ function fallback(canvas: HTMLCanvasElement): LiquidMetalControls {
         wm.classList.add("flash-burst");
         setTimeout(() => wm.classList.remove("flash-burst"), 600);
       }
+    },
+    pause() {
+      // no-op when WebGL is unavailable
+    },
+    resume() {
+      // no-op when WebGL is unavailable
     },
   };
 }

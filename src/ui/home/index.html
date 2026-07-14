@@ -36,6 +36,7 @@
           id="gear-btn"
           class="bg-transparent border-none cursor-pointer text-text-secondary p-2 rounded-lg flex items-center justify-center hover:text-text hover:bg-bg-hover"
           aria-label="Settings"
+          aria-expanded="false"
         >
           <svg
             width="24"
@@ -145,12 +146,12 @@
 
     <div
       id="setup-modal"
-      class="fixed inset-0 z-110 flex items-end justify-center bg-black/65 px-0 opacity-0 invisible sm:items-center sm:px-4"
+      class="dialog fixed inset-0 z-110 flex items-end justify-center bg-black/65 px-0 sm:items-center sm:px-4"
       aria-hidden="true"
     >
       <div
         id="setup-card"
-        class="setup-card relative w-full max-w-[460px] translate-y-4 rounded-t-2xl border border-border bg-bg p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl shadow-black/50 sm:rounded-2xl sm:p-6"
+        class="dialog-card relative w-full max-w-[460px] rounded-t-2xl border border-border bg-bg p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl shadow-black/50 sm:rounded-2xl sm:p-6"
         role="dialog"
         aria-modal="true"
         aria-labelledby="setup-title"
@@ -232,11 +233,11 @@
 
     <div
       id="settings-modal"
-      class="fixed inset-0 z-100 flex items-center justify-center bg-black/60 opacity-0 invisible"
+      class="dialog fixed inset-0 z-100 flex items-center justify-center bg-black/60"
       aria-hidden="true"
     >
       <div
-        class="modal-card relative bg-bg rounded-2xl p-5 sm:p-8 max-w-[520px] w-[calc(100%-2rem)] max-h-[calc(100vh-4rem)] overflow-y-auto translate-y-2"
+        class="dialog-card relative bg-bg rounded-2xl p-5 sm:p-8 max-w-[520px] w-[calc(100%-2rem)] max-h-[calc(100vh-4rem)] overflow-y-auto"
         role="dialog"
         aria-label="Settings"
       >

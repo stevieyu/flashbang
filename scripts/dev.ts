@@ -82,7 +82,7 @@ async function build() {
     }),
   ]);
 
-  await $`bunx unocss "src/ui/home.html" "src/ui/bench.html" "src/ui/**/*.ts" -o dist/styles.css --minify`.quiet();
+  await $`bunx unocss "src/ui/home/index.html" "src/ui/bench.html" "src/ui/**/*.ts" -o dist/styles.css --minify`.quiet();
 
   const css = await Bun.file("dist/styles.css").text();
   await buildHTMLAssets(css);

@@ -1,7 +1,10 @@
 import { $ } from "./dom";
 import { initLiquidMetal } from "./liquid-metal";
 
-initLiquidMetal($<HTMLCanvasElement>("#metal-canvas"), "flashbang");
+const metal = initLiquidMetal(
+  $<HTMLCanvasElement>("#metal-canvas"),
+  "flashbang"
+);
 $(".wordmark").classList.add("has-shader");
 
 const QUERY_TYPES = [
@@ -239,6 +242,7 @@ runBtn.addEventListener("click", async () => {
   );
 
   runBtn.disabled = true;
+  metal.pause();
   let benchmarkModeEnabled = false;
 
   try {
@@ -288,6 +292,7 @@ runBtn.addEventListener("click", async () => {
         /* The client-scoped mode cannot affect other tabs. */
       });
     }
+    metal.resume();
     runBtn.disabled = false;
   }
 });

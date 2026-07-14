@@ -283,14 +283,23 @@ export default defineConfig({
         #gear-btn {
           transition: color 0.15s, background-color 0.15s, transform 0.6s ease;
         }
-
-        #settings-modal {
+        #gear-btn[aria-expanded="true"] {
+          transform: rotate(180deg);
+        }
+        .dialog {
+          opacity: 0;
+          visibility: hidden;
           transition: opacity 0.2s ease, visibility 0.2s;
         }
-        #settings-modal .modal-card {
+        .dialog.open {
+          opacity: 1;
+          visibility: visible;
+        }
+        .dialog-card {
+          transform: translateY(0.5rem);
           transition: transform 0.2s ease;
         }
-        #settings-modal.open .modal-card {
+        .dialog.open .dialog-card {
           transform: translateY(0);
         }
 
@@ -364,11 +373,14 @@ export default defineConfig({
         }
 
         #setup-modal {
-          transition: opacity 0.18s ease, visibility 0.18s;
           backdrop-filter: blur(6px);
         }
-        #setup-card {
+        #setup-modal .dialog-card {
+          transform: translateY(1rem);
           transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+        #setup-modal.open .dialog-card {
+          transform: translateY(0);
         }
         .setup-copy {
           transition: color 0.15s ease, background-color 0.15s ease, transform 0.12s ease;
@@ -382,10 +394,8 @@ export default defineConfig({
           #gear-btn {
             transition: color 0.15s, background-color 0.15s;
           }
-          #settings-modal,
-          #settings-modal .modal-card,
-          #setup-modal,
-          #setup-card,
+          .dialog,
+          .dialog-card,
           .command-shell,
           .command-result,
           .setup-copy {

@@ -1,10 +1,10 @@
 import { setSuggestCookie } from "./cookie";
 import { DB, readCustomBangs } from "./db";
 import { $ } from "./dom";
-import { initHome } from "./home";
+import { initHome } from "./home/index";
 import { initLiquidMetal } from "./liquid-metal";
-import { setupModal } from "./modal";
-import { initSettings } from "./settings";
+import { setupDialog } from "./modal";
+import { initSettings } from "./settings/index";
 
 const db = new DB();
 
@@ -29,10 +29,15 @@ function init() {
   $(".wordmark").classList.add("has-shader");
   initHome(db);
 
-  const { openModal } = setupModal(() => initSettings(db));
+  const { openDialog } = setupDialog({
+    closeButton: $("#modal-close"),
+    modal: $("#settings-modal"),
+    onFirstOpen: () => void initSettings(db),
+    openButton: $("#gear-btn"),
+  });
 
   if (location.pathname === "/settings") {
-    openModal();
+    openDialog();
     history.replaceState(null, "", "/");
   }
 }

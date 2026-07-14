@@ -1,0 +1,133 @@
+import { flashAnim } from "../animations";
+import { $, el } from "../dom";
+import type { SettingsWriter } from "./write";
+
+interface FirefoxSuggestionControls {
+  suggestSelect: HTMLSelectElement;
+  suggestUrlInput: HTMLInputElement;
+}
+
+export function setupFirefoxSuggestions(
+  { suggestSelect, suggestUrlInput }: FirefoxSuggestionControls,
+  writer: SettingsWriter
+): void {
+  const note = $("#suggest-firefox-note");
+  const pickerWrap = $("#suggest-firefox-provider-picker-wrap");
+  const picker = $<HTMLButtonElement>("#suggest-firefox-provider-picker");
+  const label = $("#suggest-firefox-provider-label");
+  const url = $<HTMLButtonElement>("#suggest-firefox-url");
+  const menu = $("#suggest-firefox-provider-menu");
+  let provider = "google";
+  let menuHideTimer: ReturnType<typeof setTimeout>;
+  let menuPinned = false;
+
+  const suggestionUrl = () => `${location.origin}/suggest?q=%s&sp=${provider}`;
+  const showMenu = () => {
+    clearTimeout(menuHideTimer);
+    menu.classList.remove("hidden");
+    picker.setAttribute("aria-expanded", "true");
+  };
+  const hideMenu = () => {
+    menu.classList.add("hidden");
+    picker.setAttribute("aria-expanded", "false");
+  };
+  const renderUrl = () => {
+    const providerToken = el(
+      "span",
+      "rounded bg-success px-1 py-0.5 text-bg",
+      provider
+    );
+    label.textContent = provider;
+    url.replaceChildren(`${location.origin}/suggest?q=%s&sp=`, providerToken);
+    for (const option of menu.children) {
+      const selected = (option as HTMLElement).dataset.provider === provider;
+      option.setAttribute("aria-selected", String(selected));
+      option.classList.toggle("bg-bg-active", selected);
+    }
+  };
+
+  const providerOptions = Array.from(suggestSelect.options).filter(
+    (option) => !["default", "custom", "none"].includes(option.value)
+  );
+  menu.replaceChildren(
+    ...providerOptions.map((option) => {
+      const button = el(
+        "button",
+        "block w-full rounded-md border-none bg-transparent px-2.5 py-1.5 text-left text-xs text-text cursor-pointer hover:bg-bg-hover",
+        option.text
+      );
+      button.type = "button";
+      button.dataset.provider = option.value;
+      button.setAttribute("role", "option");
+      button.addEventListener("click", () => {
+        provider = option.value;
+        menuPinned = false;
+        renderUrl();
+        hideMenu();
+        picker.focus();
+      });
+      button.addEventListener("focus", showMenu);
+      return button;
+    })
+  );
+
+  suggestSelect.value = "google";
+  suggestSelect.classList.add("select-locked");
+  suggestSelect.setAttribute("aria-describedby", "suggest-firefox-note");
+  note.classList.remove("hidden");
+  writer.lock(suggestSelect);
+  writer.lock(suggestUrlInput);
+  renderUrl();
+
+  pickerWrap.addEventListener("pointerenter", () => {
+    if (!menuPinned) {
+      showMenu();
+    }
+  });
+  pickerWrap.addEventListener("pointerleave", () => {
+    if (!menuPinned) {
+      menuHideTimer = setTimeout(hideMenu, 150);
+    }
+  });
+  picker.addEventListener("click", () => {
+    menuPinned = !menuPinned;
+    if (menuPinned) {
+      showMenu();
+    } else {
+      hideMenu();
+    }
+  });
+  picker.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      menuPinned = true;
+      showMenu();
+      (menu.firstElementChild as HTMLElement)?.focus();
+    }
+  });
+  menu.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      menuPinned = false;
+      hideMenu();
+      picker.focus();
+    }
+  });
+  document.addEventListener("click", (event) => {
+    if (
+      menuPinned &&
+      event.target instanceof Node &&
+      !pickerWrap.contains(event.target)
+    ) {
+      menuPinned = false;
+      hideMenu();
+    }
+  });
+  url.addEventListener("click", async () => {
+    const value = suggestionUrl();
+    hideMenu();
+    await navigator.clipboard.writeText(value);
+    url.textContent = "Copied suggestion URL";
+    flashAnim(url);
+    setTimeout(renderUrl, 1500);
+  });
+}
