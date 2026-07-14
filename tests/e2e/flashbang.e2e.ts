@@ -387,6 +387,8 @@ test("suggestions include custom bang entries from the suggest cookie", async ({
 test("homepage bang finder supports keyboard selection", async ({ page }) => {
   await openHome(page);
   const input = page.locator("#bang-command-input");
+  await expect(input).toHaveCSS("border-top-width", "1px");
+  await expect(input).toHaveCSS("border-top-style", "solid");
 
   await input.fill("github");
   const results = page.locator("#bang-command-results");
@@ -416,10 +418,16 @@ test("homepage bang finder supports keyboard selection", async ({ page }) => {
     "bang-command-option-0"
   );
   await input.press("Control+y");
-  await expect(input).toHaveValue("github ");
+  const selectedBang = page.locator("#bang-command-selected");
+  await expect(selectedBang).toBeVisible();
+  await expect(selectedBang).toContainText("!github");
+  await expect(input).toHaveValue("");
+  await expect(input).toHaveAttribute("placeholder", "Search with GitHub");
   await expect(results).toBeHidden();
 
-  await input.fill("git test");
+  await selectedBang.click();
+  await expect(selectedBang).toBeHidden();
+  await input.fill("gh react");
   await expect(results).toBeHidden();
 
   await page.locator("h1").click();
@@ -430,6 +438,36 @@ test("homepage bang finder supports keyboard selection", async ({ page }) => {
   await page.locator("h1").click();
   await page.locator("body").press("Control+K");
   await expect(input).toBeFocused();
+});
+
+test("homepage bang finder supports suffix bang and snap selection", async ({
+  page,
+}) => {
+  await openHome(page);
+  const input = page.locator("#bang-command-input");
+  const results = page.locator("#bang-command-results");
+  const selectedBang = page.locator("#bang-command-selected");
+
+  await input.fill("Hello World !");
+  await expect(results).toBeVisible();
+  await expect(results.locator("code").first()).toContainText("!");
+
+  await input.fill("Hello World !gh");
+  await expect(results.locator("code").first()).toHaveText("!gh");
+  await input.press("Control+y");
+  await expect(selectedBang).toContainText("!gh");
+  await expect(input).toHaveValue("Hello World");
+
+  await selectedBang.click();
+  await input.fill("Hello World @");
+  await expect(results).toBeVisible();
+  await expect(results.locator("code").first()).toContainText("@");
+
+  await input.fill("Hello World @gh");
+  await expect(results.locator("code").first()).toHaveText("@gh");
+  await input.press("Control+y");
+  await expect(selectedBang).toContainText("@gh");
+  await expect(input).toHaveValue("Hello World");
 });
 
 test("compact address-bar setup exposes copyable URLs", async ({ page }) => {
@@ -498,7 +536,8 @@ test("homepage command bar executes bang commands", async ({
   await input.fill("google");
   await expect(page.locator("#bang-command-results")).toBeVisible();
   await input.press("Control+y");
-  await expect(input).toHaveValue("google ");
+  await expect(page.locator("#bang-command-selected")).toContainText("!google");
+  await expect(input).toHaveValue("");
   await input.pressSequentially("hello");
   await Promise.all([page.waitForURL(GOOGLE_REDIRECT), input.press("Enter")]);
   expect(page.url()).toMatch(GOOGLE_REDIRECT);

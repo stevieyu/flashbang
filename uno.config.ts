@@ -307,7 +307,7 @@ export default defineConfig({
           filter: drop-shadow(0 8px 12px rgba(0, 0, 0, 0.18));
         }
         .command-input {
-          border-color: ${theme.colors.chrome[1]};
+          border: 1px solid ${theme.colors.chrome[1]};
           background: ${theme.colors.bg.hover};
           caret-color: ${theme.colors.chrome[2]};
         }
@@ -319,9 +319,6 @@ export default defineConfig({
           background: #20202f;
           box-shadow: none;
         }
-        .command-key {
-          color: ${theme.colors.text.secondary};
-        }
         .command-badge {
           color: #171722;
           border: 1px solid rgba(220, 220, 235, 0.62);
@@ -331,6 +328,18 @@ export default defineConfig({
             0 2px 4px rgba(0, 0, 0, 0.32),
             inset 0 1px 0 rgba(255, 255, 255, 0.75),
             inset 0 -1px 2px rgba(5, 5, 10, 0.22);
+        }
+        .command-selected-badge {
+          transform: translateY(-50%);
+          transition: filter 0.12s ease, transform 0.12s ease;
+        }
+        .command-selected-badge:hover,
+        .command-selected-badge:focus-visible {
+          filter: brightness(1.08);
+          outline: none;
+        }
+        .command-selected-badge:active {
+          transform: translateY(calc(-50% + 1px));
         }
         .address-setup {
           color: #b8b8ce;
@@ -397,6 +406,7 @@ export default defineConfig({
           .dialog,
           .dialog-card,
           .command-shell,
+          .command-selected-badge,
           .command-result,
           .setup-copy {
             transition: none;

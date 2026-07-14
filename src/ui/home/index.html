@@ -66,17 +66,19 @@
         <search class="relative mt-4 w-full text-left">
           <form id="bang-command-form" class="relative">
             <div class="command-shell relative">
-              <span
-                class="command-key pointer-events-none absolute inset-y-0 left-0 z-1 flex w-8 items-center justify-center font-mono text-sm font-semibold"
-                aria-hidden="true"
-                >!</span
+              <button
+                id="bang-command-selected"
+                class="command-badge command-selected-badge absolute left-2 top-1/2 z-1 hidden max-w-[45%] items-center rounded-md px-2 py-1 font-mono text-xs font-semibold cursor-pointer"
+                type="button"
               >
+                <span id="bang-command-selected-text" class="truncate"></span>
+              </button>
               <label for="bang-command-input" class="sr-only"
                 >Search bangs or enter a command</label
               >
               <input
                 id="bang-command-input"
-                class="input-field command-input w-full py-3 pl-8 pr-3 text-sm sm:text-base"
+                class="input-field command-input w-full px-3 py-3 text-sm sm:text-base"
                 type="text"
                 placeholder="Search bangs or enter !gh react"
                 autocomplete="off"

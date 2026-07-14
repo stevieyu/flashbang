@@ -18,8 +18,11 @@ function customDomain(url: string): string {
 export function setupBangCommand(db: DB): HTMLInputElement {
   const form = $<HTMLFormElement>("#bang-command-form");
   const input = $<HTMLInputElement>("#bang-command-input");
+  const selectedBadge = $<HTMLButtonElement>("#bang-command-selected");
+  const selectedBadgeText = $("#bang-command-selected-text");
   const results = $("#bang-command-results");
   const count = $("#home-bang-count");
+  const defaultPlaceholder = input.placeholder;
   let entries: readonly BangMeta[] | null = null;
   let loading: Promise<void> | null = null;
   let visible: BangMeta[] = [];
@@ -37,18 +40,37 @@ export function setupBangCommand(db: DB): HTMLInputElement {
     selected = -1;
   }
 
-  function commandParts(): { marker: "!" | "@"; search: string } | null {
+  function commandParts(): {
+    marker: "!" | "@";
+    search: string;
+    terms: string;
+  } | null {
     const value = input.value.trimStart();
-    const marker = value.charAt(0);
-    if (marker !== "!" && marker !== "@") {
-      const search = value.toLowerCase().trim();
-      return /\s/.test(search) ? null : { marker: "!", search };
+    const leadingMarker = value.charAt(0);
+    if (leadingMarker === "!" || leadingMarker === "@") {
+      const search = value.substring(1);
+      return /\s/.test(search)
+        ? null
+        : { marker: leadingMarker, search: search.toLowerCase(), terms: "" };
     }
-    const rest = value.substring(1);
-    if (/\s/.test(rest)) {
-      return null;
+
+    const bangIndex = value.lastIndexOf(" !");
+    const snapIndex = value.lastIndexOf(" @");
+    const markerIndex = Math.max(bangIndex, snapIndex);
+    if (markerIndex !== -1) {
+      const marker = value.charAt(markerIndex + 1) as "!" | "@";
+      const search = value.substring(markerIndex + 2);
+      return /\s/.test(search)
+        ? null
+        : {
+            marker,
+            search: search.toLowerCase(),
+            terms: value.substring(0, markerIndex).trim(),
+          };
     }
-    return { marker, search: rest.toLowerCase().trim() };
+
+    const search = value.toLowerCase().trim();
+    return /\s/.test(search) ? null : { marker: "!", search, terms: "" };
   }
 
   function renderSelection(previous = -1, scroll = true): void {
@@ -79,21 +101,36 @@ export function setupBangCommand(db: DB): HTMLInputElement {
     renderSelection(previous);
   }
 
-  function select(entry: BangMeta, marker: "!" | "@"): void {
+  function select(entry: BangMeta, marker: "!" | "@", terms: string): void {
     selectedCommand = { marker, trigger: entry.trigger };
-    input.value = `${entry.trigger} `;
+    selectedBadgeText.textContent = `${marker}${entry.trigger}`;
+    selectedBadge.setAttribute(
+      "aria-label",
+      `Remove ${marker}${entry.trigger} ${entry.name} bang`
+    );
+    selectedBadge.title = `Remove ${marker}${entry.trigger}`;
+    selectedBadge.classList.remove("hidden");
+    selectedBadge.classList.add("flex");
+    input.style.paddingLeft = `${selectedBadge.offsetWidth + 16}px`;
+    input.value = terms;
+    input.placeholder = `Search with ${entry.name}`;
     closeResults();
     input.focus();
   }
 
-  function hasSelectedCommand(value: string): boolean {
-    if (!selectedCommand) {
-      return false;
+  function clearSelectedCommand(showResults = false): void {
+    selectedCommand = null;
+    selectedBadge.classList.add("hidden");
+    selectedBadge.classList.remove("flex");
+    selectedBadgeText.textContent = "";
+    selectedBadge.removeAttribute("aria-label");
+    selectedBadge.removeAttribute("title");
+    input.style.removeProperty("padding-left");
+    input.placeholder = defaultPlaceholder;
+    input.focus();
+    if (showResults && entries && input.value.trim()) {
+      renderResults();
     }
-    return (
-      value === selectedCommand.trigger ||
-      value.startsWith(`${selectedCommand.trigger} `)
-    );
   }
 
   function renderResults(): void {
@@ -101,11 +138,13 @@ export function setupBangCommand(db: DB): HTMLInputElement {
       return;
     }
     const parts = commandParts();
-    if (!parts?.search) {
+    if (!parts) {
       closeResults();
       return;
     }
-    visible = searchBangs(entries, parts.search, 7);
+    visible = parts.search
+      ? searchBangs(entries, parts.search, 7)
+      : entries.slice(0, 7);
     selected = visible.length > 0 ? 0 : -1;
     optionElements = [];
 
@@ -143,7 +182,9 @@ export function setupBangCommand(db: DB): HTMLInputElement {
         row.addEventListener("pointerenter", () => {
           setSelection(index);
         });
-        row.addEventListener("click", () => select(entry, parts.marker));
+        row.addEventListener("click", () =>
+          select(entry, parts.marker, parts.terms)
+        );
         return row;
       });
       results.replaceChildren(...optionElements);
@@ -204,11 +245,8 @@ export function setupBangCommand(db: DB): HTMLInputElement {
   });
   input.addEventListener("input", () => {
     if (selectedCommand) {
-      if (hasSelectedCommand(input.value.trimStart())) {
-        closeResults();
-        return;
-      }
-      selectedCommand = null;
+      closeResults();
+      return;
     }
     if (entries) {
       renderResults();
@@ -226,7 +264,10 @@ export function setupBangCommand(db: DB): HTMLInputElement {
       event.key === "ArrowUp" ||
       vimKey === "k" ||
       (event.key === "Tab" && event.shiftKey);
-    if (next && visible.length > 0) {
+    if (event.key === "Backspace" && selectedCommand && input.value === "") {
+      event.preventDefault();
+      clearSelectedCommand();
+    } else if (next && visible.length > 0) {
       event.preventDefault();
       event.stopPropagation();
       setSelection((selected + 1) % visible.length);
@@ -235,7 +276,11 @@ export function setupBangCommand(db: DB): HTMLInputElement {
       event.stopPropagation();
       setSelection((selected - 1 + visible.length) % visible.length);
     } else if (event.key === "Escape") {
-      closeResults();
+      if (selectedCommand) {
+        clearSelectedCommand();
+      } else {
+        closeResults();
+      }
     } else if (
       (event.key === "Enter" || vimKey === "y") &&
       selected >= 0 &&
@@ -245,20 +290,21 @@ export function setupBangCommand(db: DB): HTMLInputElement {
       if (parts) {
         event.preventDefault();
         event.stopPropagation();
-        select(visible[selected], parts.marker);
+        select(visible[selected], parts.marker, parts.terms);
       }
     }
   });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    let query = input.value.trim();
-    if (selectedCommand && hasSelectedCommand(query)) {
-      query = `${selectedCommand.marker}${query}`;
-    }
+    const terms = input.value.trim();
+    const query = selectedCommand
+      ? `${selectedCommand.marker}${selectedCommand.trigger}${terms ? ` ${terms}` : ""}`
+      : terms;
     if (query) {
       location.assign(`/?q=${encodeURIComponent(query)}`);
     }
   });
+  selectedBadge.addEventListener("click", () => clearSelectedCommand(true));
   document.addEventListener("pointerdown", (event) => {
     if (event.target instanceof Node && !form.contains(event.target)) {
       closeResults();
