@@ -1,0 +1,51 @@
+import { describe, expect, test } from "bun:test";
+import { createCacheVersion, precacheFileInputs } from "../scripts/build";
+
+describe("build cache version", () => {
+  test("is deterministic regardless of input order", () => {
+    const inputs = [
+      { path: "/home", bytes: new TextEncoder().encode("home") },
+      { path: "/sw.js", bytes: new TextEncoder().encode("worker") },
+    ];
+
+    expect(createCacheVersion(inputs)).toBe(
+      createCacheVersion(inputs.toReversed())
+    );
+  });
+
+  test("changes for asset paths, asset bytes, and preliminary SW bytes", () => {
+    const base = [
+      { path: "/home", bytes: new TextEncoder().encode("home") },
+      { path: "/sw.js", bytes: new TextEncoder().encode("worker") },
+    ];
+    const version = createCacheVersion(base);
+
+    expect(
+      createCacheVersion([{ path: "/bench", bytes: base[0].bytes }, base[1]])
+    ).not.toBe(version);
+    expect(
+      createCacheVersion([
+        { path: "/home", bytes: new TextEncoder().encode("changed") },
+        base[1],
+      ])
+    ).not.toBe(version);
+    expect(
+      createCacheVersion([
+        base[0],
+        { path: "/sw.js", bytes: new TextEncoder().encode("changed") },
+      ])
+    ).not.toBe(version);
+  });
+
+  test("maps every concrete core and chunk precache input", () => {
+    expect(precacheFileInputs(["/chunk-abc12345.js"])).toEqual([
+      ["/home", "dist/home.html"],
+      ["/bench", "dist/bench.html"],
+      ["/bench.js", "dist/bench.js"],
+      ["/app.js", "dist/app.js"],
+      ["/icon.svg", "dist/icon.svg"],
+      ["/manifest.json", "dist/manifest.json"],
+      ["/chunk-abc12345.js", "dist/chunk-abc12345.js"],
+    ]);
+  });
+});
