@@ -178,20 +178,15 @@ async function seedCustomBangs(
 
 async function openHome(page: Page): Promise<void> {
   const target = test.info().project.name === "webkit" ? "/home" : "/";
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      await page.goto(target, { waitUntil: "domcontentloaded" });
-      await page.waitForSelector("#gear-btn");
-      return;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("interrupted by another navigation")) {
-        continue;
-      }
+  try {
+    await page.goto(target, { waitUntil: "domcontentloaded" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.includes("interrupted by another navigation")) {
       throw error;
     }
   }
-  throw new Error("failed to open app after service worker registration");
+  await page.waitForSelector("#gear-btn");
 }
 
 async function openSettingsModal(page: Page): Promise<void> {
