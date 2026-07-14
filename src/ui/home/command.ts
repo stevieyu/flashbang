@@ -243,6 +243,13 @@ export function setupBangCommand(db: DB): HTMLInputElement {
   }
 
   input.addEventListener("focus", () => void loadEntries());
+  input.addEventListener("blur", () => {
+    setTimeout(() => {
+      if (!form.contains(document.activeElement)) {
+        closeResults();
+      }
+    });
+  });
   form.addEventListener("pointerenter", () => void loadEntries(), {
     once: true,
   });

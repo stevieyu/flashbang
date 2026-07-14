@@ -265,6 +265,10 @@ test("benchmark page loads its feature bundle", async ({ page }) => {
   await expect(page).toHaveTitle("flashbang — query type benchmark");
   await expect(page.locator(".wordmark")).toHaveClass(/has-shader/);
   await expect(page.locator("#run-btn")).toBeEnabled();
+  const iterations = page.locator("#iterations");
+  await iterations.focus();
+  await iterations.press("Control+[");
+  await expect(iterations).not.toBeFocused();
 });
 
 test("Firefox locks cookie-backed suggestion settings", async ({ page }) => {
@@ -429,6 +433,12 @@ test("homepage bang finder supports keyboard selection", async ({ page }) => {
   await selectedBang.click();
   await expect(selectedBang).toBeHidden();
   await input.fill("gh react");
+  await expect(results).toBeHidden();
+
+  await input.fill("github");
+  await expect(results).toBeVisible();
+  await input.press("Control+[");
+  await expect(input).not.toBeFocused();
   await expect(results).toBeHidden();
 
   await page.locator("h1").click();

@@ -104,6 +104,7 @@ flashbang/
 │       │   └── custom-bangs.ts # Custom bang list and add/edit form
 │       ├── clipboard.ts       # Shared Clipboard API and legacy fallback
 │       ├── dom.ts             # $() selector & el() factory
+│       ├── keyboard.ts        # Shared keyboard focus shortcuts
 │       ├── sw-bridge.ts       # notifySW() — postMessage to Service Worker
 │       ├── cookie.ts          # Suggest cookie management (provider, custom bangs)
 │       ├── animations.ts      # Flash & shake CSS animations

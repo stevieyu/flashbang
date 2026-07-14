@@ -1,6 +1,8 @@
 import { $ } from "../dom";
+import { setupVimBlurShortcut } from "../keyboard";
 import { initLiquidMetal } from "../liquid-metal";
 
+setupVimBlurShortcut();
 const metal = initLiquidMetal(
   $<HTMLCanvasElement>("#metal-canvas"),
   "flashbang"

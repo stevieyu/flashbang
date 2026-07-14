@@ -2,6 +2,7 @@ import { setSuggestCookie } from "./cookie";
 import { DB, readCustomBangs } from "./db";
 import { $ } from "./dom";
 import { initHome } from "./home/index";
+import { setupVimBlurShortcut } from "./keyboard";
 import { initLiquidMetal } from "./liquid-metal";
 import { setupDialog } from "./modal";
 import { initSettings } from "./settings/index";
@@ -23,6 +24,7 @@ async function syncSuggestCookie() {
 }
 
 function init() {
+  setupVimBlurShortcut();
   syncSuggestCookie();
 
   initLiquidMetal($<HTMLCanvasElement>("#metal-canvas"), "flashbang");
