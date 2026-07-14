@@ -279,6 +279,8 @@ export async function initSettings(db: DB) {
   );
   let pendingWrites = 0;
   let completedWrites = 0;
+  let showSavingIndicator = false;
+  let savingIndicatorTimer: ReturnType<typeof setTimeout> | null = null;
   const failedWrites = new Set<string>();
   const validationErrors = new Map<string, string>();
   let writeChain: Promise<void> = Promise.resolve();
@@ -288,11 +290,13 @@ export async function initSettings(db: DB) {
     saveStatus.dataset.writeCount = String(completedWrites);
     if (pendingWrites > 0) {
       saveStatus.dataset.state = "saving";
-      saveStatus.setAttribute("aria-label", "Saving settings");
-      saveStatus.removeAttribute("title");
-      savedIcon.classList.add("hidden");
-      savingIcon.classList.remove("hidden");
-      errorIcon.classList.add("hidden");
+      if (showSavingIndicator) {
+        saveStatus.setAttribute("aria-label", "Saving settings");
+        saveStatus.removeAttribute("title");
+        savedIcon.classList.add("hidden");
+        savingIcon.classList.remove("hidden");
+        errorIcon.classList.add("hidden");
+      }
     } else if (validationErrors.size > 0 || failedWrites.size > 0) {
       const message =
         validationErrors.values().next().value || "Could not save settings";
@@ -328,7 +332,21 @@ export async function initSettings(db: DB) {
     options: WriteOptions = {}
   ): Promise<boolean> {
     const key = options.key || "custom-bangs";
+    const wasIdle = pendingWrites === 0;
     pendingWrites++;
+    if (wasIdle) {
+      showSavingIndicator = false;
+      if (savingIndicatorTimer !== null) {
+        clearTimeout(savingIndicatorTimer);
+      }
+      savingIndicatorTimer = setTimeout(() => {
+        savingIndicatorTimer = null;
+        if (pendingWrites > 0) {
+          showSavingIndicator = true;
+          renderWriteState();
+        }
+      }, 250);
+    }
     renderWriteState();
     const task = writeChain.then(async () => {
       await write();
@@ -350,6 +368,13 @@ export async function initSettings(db: DB) {
       .finally(() => {
         pendingWrites--;
         completedWrites++;
+        if (pendingWrites === 0) {
+          if (savingIndicatorTimer !== null) {
+            clearTimeout(savingIndicatorTimer);
+            savingIndicatorTimer = null;
+          }
+          showSavingIndicator = false;
+        }
         renderWriteState();
       });
   }

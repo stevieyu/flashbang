@@ -509,8 +509,8 @@ test("rapid settings changes commit in order before immediate reload", async ({
     };
   });
   expect(pendingState).toEqual({
-    label: "Saving settings",
-    spinnerHidden: false,
+    label: "Settings saved",
+    spinnerHidden: true,
     state: "saving",
   });
   await waitForSettingsWrite(page, writeCount, 3);
