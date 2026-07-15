@@ -9,3 +9,10 @@ build/target/
 src/generated/
 *.DS_Store
 .codegraph
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
